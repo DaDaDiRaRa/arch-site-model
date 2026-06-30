@@ -1,0 +1,9 @@
+# 런타임 의존성 (pyproject.toml 과 동기). 빠른 설치용.
+#   python -m pip install -r requirements.txt
+pyproj>=3.6
+mcp>=1.2
+python-dotenv>=1.0
+httpx>=0.27
+
+# 개발/테스트
+pytest>=8.0

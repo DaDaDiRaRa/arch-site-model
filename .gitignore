@@ -1,0 +1,35 @@
+# 환경변수 (비밀 키)
+.env
+
+# 지형 비축 스토어 (대용량 DEM/등고선)
+geo_store/
+
+# 출력물
+*.skp
+*.3dm
+*.obj
+*.gltf
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# 테스트/캐시
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
