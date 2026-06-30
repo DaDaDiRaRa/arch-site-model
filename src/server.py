@@ -34,12 +34,15 @@ def generate_site_model(
     floor_height_m: float = DEFAULT_FLOOR_H_M,
     outputs: list[str] | None = None,
     layers: dict | None = None,
+    output_dir: str | None = None,
     setback: bool = False,
 ) -> dict:
     """주소 → 건물 매싱 3D 대지모델 생성 (사양서 §4.2).
 
     Phase 2: 건물만 (LT_C_SPBD footprint × gro_flo_co 층수 → 쿼드 솔리드).
+    Phase 4: outputs=["skp","3dm"] 로 .3dm 이중 출력. output_dir 미지정 시 "output/" 사용.
     반환의 outputs.skp.code 는 SketchUp MCP build_model 에 넣을 Python 코드.
+    반환의 outputs["3dm"]["path"] 는 저장된 .3dm 절대 경로.
     origin_offset(stats)은 실제 위치 복원용으로 반드시 보존한다.
     """
     return _generate(
@@ -48,6 +51,7 @@ def generate_site_model(
         floor_h_m=floor_height_m,
         outputs=outputs,
         layers=layers,
+        output_dir=output_dir,
     )
 
 

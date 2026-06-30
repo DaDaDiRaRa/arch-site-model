@@ -10,6 +10,8 @@ SketchUp MCP 규칙(검증됨):
   - 옆면 = 수직 쿼드 (변마다 1면)
 """
 
+from __future__ import annotations
+
 from src.config import M2I
 
 # §6.2 검증된 돌출 헬퍼: 미터 footprint → 인치 쿼드 솔리드 GeometryInput.
@@ -84,9 +86,42 @@ if xs:
 '''
 
 
+# Phase 3B: 지형 삼각망 생성 + 내부 엣지 소프트닝
+_TERRAIN_BUILD = '''\
+if TERRAIN_VERTS:
+    grp_t = Group()
+    model.get_entities().add_group(grp_t)
+    g_t = GeometryInput()
+    g_t.set_vertices([SUPoint3D(x, y, z) for (x, y, z) in TERRAIN_VERTS])
+    for tri in TERRAIN_TRIS:
+        lp = LoopInput()
+        for vi in tri:
+            lp.add_vertex_index(vi)
+        _, g_t = g_t.add_face(lp)
+    grp_t.get_entities().fill(g_t, weld_vertices=True)
+    try:
+        grp_t.set_name("terrain")
+    except Exception:
+        pass
+    try:
+        for edge in grp_t.get_entities().edges():
+            edge.set_soft(True)
+            edge.set_smooth(True)
+    except Exception:
+        pass
+'''
+
+
 def extrude_solid_snippet() -> str:
     """재사용 가능한 extrude_solid 헬퍼 텍스트(M2I 포함)."""
     return _EXTRUDE_HELPER
+
+
+def _terrain_literal(mesh) -> str:
+    """TerrainMesh → build_model 코드에 박을 Python 리터럴."""
+    verts = ", ".join(f"({x!r}, {y!r}, {z!r})" for x, y, z in mesh.vertices)
+    tris = ", ".join(f"({a}, {b}, {c})" for a, b, c in mesh.triangles)
+    return f"TERRAIN_VERTS = [{verts}]\nTERRAIN_TRIS = [{tris}]\n"
 
 
 def _solids_literal(solids) -> str:
@@ -108,14 +143,19 @@ def _solids_literal(solids) -> str:
 def build_skp_code(solids, terrain=None, camera: bool = True) -> str:
     """solids → SketchUp MCP build_model 에 넣을 완전한 Python 코드 문자열.
 
-    terrain 은 Phase 3 예약(현재 미사용). camera=True 면 상공 시점 카메라를 설정한다.
+    terrain: TerrainMesh (Phase 3B). None 이면 건물만 출력(Phase 2 호환).
+    camera=True 면 상공 시점 카메라를 설정한다.
     """
+    phase = "Phase 3B" if terrain is not None else "Phase 2"
     parts = [
-        "# arch-site-model — generated building massing (Phase 2)",
+        f"# arch-site-model — generated building massing + terrain ({phase})",
         _EXTRUDE_HELPER,
         _solids_literal(solids),
         _BUILD_LOOP,
     ]
+    if terrain is not None:
+        parts.append(_terrain_literal(terrain))
+        parts.append(_TERRAIN_BUILD)
     if camera:
         parts.append(_CAMERA)
     parts.append('result = {"buildings_built": built, "solids": len(SOLIDS)}')

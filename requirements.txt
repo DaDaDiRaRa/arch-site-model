@@ -5,6 +5,7 @@ mcp>=1.2
 python-dotenv>=1.0
 requests>=2.31        # VWorld API 호출
 shapely>=2.0          # bbox 포함 판정 (지형 타일 조회)
+rhino3dm>=8.0         # .3dm 출력 (Phase 4)
 
 # 개발/테스트
 pytest>=8.0
