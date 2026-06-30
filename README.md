@@ -10,8 +10,22 @@
 
 - **Phase 0** ✅ 스캐폴드 + 환경변수 + 좌표변환 유틸
 - **Phase 1** ✅ `check_site_data` — 주소→좌표→건물/지적 취득 가능성 + 지형 비축 확인
+- **Phase 2** ✅ `generate_site_model` (건물) — LT_C_SPBD footprint × 층수 → 쿼드 솔리드 → `.skp`
 
-(이후 Phase: 2 건물 `.skp` → 3 지형 → 4 `.3dm`/오프셋 → 5 지적/이격면)
+(이후 Phase: 3 지형 → 4 `.3dm`/오프셋 → 5 지적/이격면)
+
+### `generate_site_model` (Phase 2: 건물)
+
+```powershell
+python -c "from src.pipeline import generate; o=generate('대전광역시 서구 괴정동 358', 120); print(o['stats']); open('skp_code.py','w',encoding='utf-8').write(o['outputs']['skp']['code'])"
+```
+
+엔진은 **SketchUp MCP `build_model` 에 넣을 Python 코드 문자열**을 `outputs.skp.code` 로 반환한다
+(실제 `.skp` 조립은 오케스트레이터가 MCP로 수행 — 사양서 §4 권장 방식). `stats.origin_offset`
+(EPSG:5186 원점)은 실제 위치 복원용으로 반드시 보존한다.
+
+검증(실측): 괴정동 358 / 120m → 건물 7동, 면수 = footprint 변수 + 2 (직사각형 6 / L자 8),
+높이 = gro_flo_co × 층고. SketchUp MCP `.skp` 생성 1건 확인.
 
 ### `check_site_data` 사용 예
 

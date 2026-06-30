@@ -9,6 +9,7 @@ geo_store/
 *.3dm
 *.obj
 *.gltf
+skp_code.py        # generate() 가 뽑는 build_model 코드 (예시/디버그용)
 
 # Python
 __pycache__/
