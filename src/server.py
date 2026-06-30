@@ -10,12 +10,24 @@
 
 from mcp.server.fastmcp import FastMCP
 
+from src.site_check import check_site_data as _check_site_data
+
 mcp = FastMCP("arch-site-model")
 
 
-# --- 도구 등록 위치 (Phase 1+) ---
+@mcp.tool()
+def check_site_data(address: str, radius_m: int = 250) -> dict:
+    """주소의 3D 대지모델 생성 가능성 선검사 (사양서 §4.1).
+
+    주소 → 좌표 → 건물/지적 취득 가능 여부 + 지형 비축 여부를 리포트한다.
+    실제 생성은 하지 않는다.
+    """
+    return _check_site_data(address, radius_m)
+
+
+# --- 도구 등록 위치 (Phase 2+) ---
 # @mcp.tool()
-# def check_site_data(address: str, radius_m: int = 250) -> dict: ...
+# def generate_site_model(...): ...
 
 
 def main() -> None:

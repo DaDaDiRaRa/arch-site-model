@@ -1,0 +1,84 @@
+{
+  "response": {
+    "service": {
+      "name": "data",
+      "version": "2.0",
+      "operation": "GetFeature",
+      "time": "34(ms)"
+    },
+    "status": "OK",
+    "record": { "total": "4", "current": "4" },
+    "page": { "size": "1000", "current": "1", "total": "1" },
+    "result": {
+      "featureCollection": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "geometry": {
+              "type": "MultiPolygon",
+              "coordinates": [[[[127.3705, 36.3398], [127.3708, 36.3398], [127.3708, 36.3401], [127.3705, 36.3401], [127.3705, 36.3398]]]]
+            },
+            "properties": {
+              "gro_flo_co": "4",
+              "bd_mgt_sn": "3017010800103580000000001",
+              "buld_nm": "괴정빌딩",
+              "rd_nm": "갈마로",
+              "sido": "대전광역시",
+              "sigungu": "서구",
+              "gu": ""
+            }
+          },
+          {
+            "type": "Feature",
+            "geometry": {
+              "type": "MultiPolygon",
+              "coordinates": [[[[127.3710, 36.3399], [127.3713, 36.3399], [127.3713, 36.3402], [127.3710, 36.3402], [127.3710, 36.3399]]]]
+            },
+            "properties": {
+              "gro_flo_co": "10",
+              "bd_mgt_sn": "3017010800103580000000002",
+              "buld_nm": "",
+              "rd_nm": "갈마로",
+              "sido": "대전광역시",
+              "sigungu": "서구",
+              "gu": ""
+            }
+          },
+          {
+            "type": "Feature",
+            "geometry": {
+              "type": "MultiPolygon",
+              "coordinates": [[[[127.3702, 36.3395], [127.3704, 36.3395], [127.3704, 36.3397], [127.3702, 36.3397], [127.3702, 36.3395]]]]
+            },
+            "properties": {
+              "gro_flo_co": "0",
+              "bd_mgt_sn": "3017010800103580000000003",
+              "buld_nm": "창고",
+              "rd_nm": "",
+              "sido": "대전광역시",
+              "sigungu": "서구",
+              "gu": ""
+            }
+          },
+          {
+            "type": "Feature",
+            "geometry": {
+              "type": "MultiPolygon",
+              "coordinates": [[[[127.3715, 36.3403], [127.3717, 36.3403], [127.3717, 36.3405], [127.3715, 36.3405], [127.3715, 36.3403]]]]
+            },
+            "properties": {
+              "gro_flo_co": null,
+              "bd_mgt_sn": "3017010800103580000000004",
+              "buld_nm": "미상",
+              "rd_nm": "",
+              "sido": "대전광역시",
+              "sigungu": "서구",
+              "gu": ""
+            }
+          }
+        ]
+      }
+    }
+  }
+}

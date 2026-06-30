@@ -1,0 +1,22 @@
+{
+  "tiles": [
+    {
+      "region": "대전 서구",
+      "file": "dem_daejeon_seogu_2026Q2.tif",
+      "crs": "EPSG:5186",
+      "bounds_4326": [127.360, 36.330, 127.382, 36.350],
+      "source": "DEM",
+      "updated": "2026-04-01",
+      "sheets": ["N3F_..."]
+    },
+    {
+      "region": "대전 유성구",
+      "file": "dem_daejeon_yuseong_2026Q2.tif",
+      "crs": "EPSG:5186",
+      "bounds_4326": [127.300, 36.350, 127.360, 36.400],
+      "source": "DEM",
+      "updated": "2026-04-01",
+      "sheets": []
+    }
+  ]
+}

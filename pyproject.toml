@@ -7,7 +7,8 @@ dependencies = [
     "pyproj>=3.6",        # EPSG:5186 ↔ 4326 좌표변환
     "mcp>=1.2",           # FastMCP 서버
     "python-dotenv>=1.0", # .env 로드
-    "httpx>=0.27",        # VWorld API 호출 (Phase 1+)
+    "requests>=2.31",     # VWorld API 호출
+    "shapely>=2.0",       # bbox 포함 판정 (지형 타일 조회)
 ]
 
 [project.optional-dependencies]
@@ -27,7 +28,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["src", "src.geo", "src.data", "src.geometry", "src.output"]
+packages = ["src", "src.geo", "src.data", "src.geometry", "src.output", "src.terrain"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

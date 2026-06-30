@@ -7,6 +7,11 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# 프로젝트 루트의 .env 를 로드(이미 설정된 환경변수는 덮어쓰지 않음).
+load_dotenv()
+
 # --- VWorld API ---
 # 테스트 키 우선, 없으면 운영 키. (사양서 §11: 테스트/운영 키 분리 유지)
 VWORLD_KEY = os.environ.get("VWORLD_TEST_KEY") or os.environ.get("VWORLD_KEY")

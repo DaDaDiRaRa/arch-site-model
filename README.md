@@ -8,8 +8,20 @@
 
 ## 현재 상태
 
-**Phase 0 — 스캐폴드 & 환경** 완료: 프로젝트 뼈대 + 환경변수 + 좌표변환 유틸.
-(이후 Phase: 1 `check_site_data` → 2 건물 `.skp` → 3 지형 → 4 `.3dm`/오프셋 → 5 지적/이격면)
+- **Phase 0** ✅ 스캐폴드 + 환경변수 + 좌표변환 유틸
+- **Phase 1** ✅ `check_site_data` — 주소→좌표→건물/지적 취득 가능성 + 지형 비축 확인
+
+(이후 Phase: 2 건물 `.skp` → 3 지형 → 4 `.3dm`/오프셋 → 5 지적/이격면)
+
+### `check_site_data` 사용 예
+
+```powershell
+python -c "from src.site_check import check_site_data; import json; print(json.dumps(check_site_data('대전광역시 서구 괴정동 358', 250), ensure_ascii=False, indent=2))"
+```
+
+→ `buildings.count`/`with_floors`, `cadastral`, `terrain.available`, `warnings` 리포트.
+MCP 도구로도 등록됨(`src/server.py`). 실측 검증은 `pytest tests/test_integration_api.py`
+(키 없으면 자동 skip).
 
 ## 요구사항
 

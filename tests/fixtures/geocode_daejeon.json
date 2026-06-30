@@ -1,0 +1,31 @@
+{
+  "response": {
+    "service": {
+      "name": "address",
+      "version": "2.0",
+      "operation": "getCoord",
+      "time": "12(ms)"
+    },
+    "status": "OK",
+    "input": {
+      "type": "PARCEL",
+      "address": "대전광역시 서구 괴정동 358"
+    },
+    "refined": {
+      "text": "대전광역시 서구 괴정동 358",
+      "structure": {
+        "level0": "대한민국",
+        "level1": "대전광역시",
+        "level2": "서구",
+        "level4L": "괴정동"
+      }
+    },
+    "result": {
+      "crs": "EPSG:4326",
+      "point": {
+        "x": "127.37098",
+        "y": "36.33998"
+      }
+    }
+  }
+}
