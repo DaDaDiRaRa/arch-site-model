@@ -13,13 +13,29 @@
 
 ---
 
-## 1. 백엔드 로컬 실행
+## 1. 로컬 실행
 
+**백엔드만** (API + 문서):
 ```powershell
 .venv\Scripts\Activate.ps1
 uvicorn src.api:app --reload --port 8000
 # http://localhost:8000/docs  (Swagger UI)
 ```
+
+**프론트엔드 개발 서버** (React, 백엔드로 프록시):
+```powershell
+cd frontend
+npm install        # 최초 1회
+npm run dev        # http://localhost:5173 (/api 는 :8000 백엔드로 프록시)
+```
+
+**프론트 빌드 후 백엔드가 통합 서빙** (프로덕션과 동일):
+```powershell
+cd frontend; npm run build      # → frontend/dist
+cd ..; uvicorn src.api:app --port 8000
+# http://localhost:8000  (프론트) · /docs (API)
+```
+FastAPI는 `frontend/dist`가 있으면 루트에서 자동 서빙(없으면 API 전용).
 
 API:
 - `GET  /health` — 헬스 체크

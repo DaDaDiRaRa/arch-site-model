@@ -19,6 +19,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from src import config
@@ -126,3 +127,11 @@ def get_file(job_id: str, kind: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="파일 없음")
     path = matches[0]
     return FileResponse(path, filename=path.name)
+
+
+# --- 프론트엔드 정적 서빙 (빌드된 React) ---------------------------------------
+# 반드시 모든 API 라우트 정의 이후에 마운트(루트 "/"가 API를 가리지 않도록).
+# 빌드 산출물(frontend/dist)이 있을 때만 마운트 → 백엔드 단독 실행(개발/테스트)에도 무해.
+_FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if _FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend")

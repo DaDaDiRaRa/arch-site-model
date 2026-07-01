@@ -16,6 +16,10 @@ htmlcov/
 # 비밀 — 절대 이미지에 넣지 않음(런타임 env로 주입)
 .env
 
+# 프론트엔드: 소스만 필요(멀티스테이지가 npm ci + build 재수행). node_modules·dist 제외.
+**/node_modules
+frontend/dist
+
 # 개발 산출물/문서 (런타임 불필요)
 # 주의: 앞에 / 필수 — 없으면 .gitignore처럼 모든 깊이에서 매치돼 src/output/(코드!)까지
 # 제외되는 사고가 남(실제로 발생: ModuleNotFoundError: src.output, 2026-07-01).

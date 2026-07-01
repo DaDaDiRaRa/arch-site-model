@@ -42,6 +42,11 @@ def _fake_generate_factory():
     return fake_generate
 
 
+def test_docs_available():
+    # 프론트 빌드 유무와 무관하게 API 문서는 항상 제공(앱 기동 확인)
+    assert _client().get("/docs").status_code == 200
+
+
 def test_health():
     r = _client().get("/health")
     assert r.status_code == 200
