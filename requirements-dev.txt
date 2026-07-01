@@ -8,3 +8,4 @@
 pytest>=8.0
 httpx>=0.27           # FastAPI TestClient (tests/test_api.py)
 geopandas>=1.0        # 오프라인 등고선 SHP → DEM 굽기 (src/terrain/contour_bake.py)
+scipy>=1.11           # contour_bake 보간 (LinearNDInterpolator, cKDTree)
