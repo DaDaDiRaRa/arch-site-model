@@ -61,10 +61,36 @@ def test_not_found_is_empty(monkeypatch):
 
 
 def test_error_status_raises(monkeypatch):
-    payload = {"response": {"status": "ERROR", "error": {"text": "INCORRECT_KEY"}}}
+    # code 없는 일반 ERROR → 재시도 대상 아님 → 즉시 raise
+    payload = {"response": {"status": "ERROR", "error": {"text": "잘못된 요청"}}}
     monkeypatch.setattr(vw.requests, "get", make_fake_get(payload))
     with pytest.raises(VWorldError):
         VWorldClient("DUMMY").get_features(DATASET_BUILDING, BBOX)
+
+
+def test_transient_incorrect_key_retries_then_succeeds(monkeypatch):
+    """VWorld data API의 간헐적 INCORRECT_KEY → 재시도 후 성공."""
+    err = {"response": {"status": "ERROR",
+                        "error": {"code": "INCORRECT_KEY", "text": "인증키 정보가 올바르지 않습니다."}}}
+    ok = load_fixture("buildings_daejeon.json")
+    fake = make_fake_get([err, err, ok])   # 두 번 실패 후 성공
+    monkeypatch.setattr(vw.requests, "get", fake)
+    client = VWorldClient("DUMMY", retry_wait=0)   # 대기 없이 즉시 재시도
+    feats = client.get_features(DATASET_BUILDING, BBOX, geometry=False)
+    assert len(feats) == 4
+    assert len(fake.calls) == 3                    # 재시도 2회 + 성공 1회
+
+
+def test_persistent_incorrect_key_exhausts_and_raises(monkeypatch):
+    """INCORRECT_KEY가 계속되면 재시도 소진 후 raise (실제 잘못된 키 등)."""
+    err = {"response": {"status": "ERROR",
+                        "error": {"code": "INCORRECT_KEY", "text": "인증키 정보가 올바르지 않습니다."}}}
+    fake = make_fake_get(err)   # 매번 동일 오류
+    monkeypatch.setattr(vw.requests, "get", fake)
+    client = VWorldClient("DUMMY", retries=3, retry_wait=0)
+    with pytest.raises(VWorldError):
+        client.count(DATASET_BUILDING, BBOX)
+    assert len(fake.calls) == 3   # 정확히 retries 회 시도
 
 
 def test_empty_key_raises():
