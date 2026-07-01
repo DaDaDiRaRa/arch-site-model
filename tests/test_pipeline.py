@@ -253,3 +253,107 @@ def test_skp_output_cadastral_parcels_key(monkeypatch):
         client=FakeClient(_daejeon_features()),
     )
     assert "cadastral_parcels" in out["outputs"]["skp"]
+
+
+# ---------------------------------------------------------------------------
+# 정사영상 텍스처 (Tier 1) — mock 타일 페처
+# ---------------------------------------------------------------------------
+
+def _solid_png8(rgb=(20, 180, 90)) -> bytes:
+    """8x8 단색 PNG(합성 타일)."""
+    import struct
+    import zlib
+
+    r, g, b = rgb
+    raw = bytearray()
+    for _ in range(8):
+        raw.append(0)
+        raw += bytes((r, g, b)) * 8
+
+    def _chunk(typ, data):
+        return (
+            struct.pack(">I", len(data)) + typ + data
+            + struct.pack(">I", zlib.crc32(typ + data) & 0xFFFFFFFF)
+        )
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", struct.pack(">IIBBBBB", 8, 8, 8, 2, 0, 0, 0))
+        + _chunk(b"IDAT", zlib.compress(bytes(raw), 6))
+        + _chunk(b"IEND", b"")
+    )
+
+
+def _patch_small_ortho(monkeypatch):
+    """소형 타일 소스 + 낮은 zoom으로 테스트 가속."""
+    from src.geo.ortho import TileSource
+
+    small = TileSource(name="t", url_template="http://t/{z}/{x}/{y}.png", tile_size=8)
+    monkeypatch.setattr(pl, "_resolve_ortho_source", lambda: (small, "KEY", "TestOrtho"))
+    monkeypatch.setattr(pl.config, "ORTHO_ZOOM", 16)
+
+
+def test_generate_orthophoto_textures_terrain(monkeypatch, tmp_path):
+    """orthophoto=True → .3dm 지형 메시에 텍스처 좌표 + provenance 기록."""
+    import rhino3dm
+
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
+    )
+    _patch_small_ortho(monkeypatch)
+    out = generate(
+        "대전광역시 서구 괴정동 358",
+        client=FakeClient(_daejeon_features()),
+        outputs=["3dm"],
+        layers={"buildings": True, "terrain": True, "orthophoto": True},
+        output_dir=str(tmp_path),
+        ortho_fetch=lambda url: _solid_png8(),
+    )
+    assert out["ok"] is True
+    o3 = out["outputs"]["3dm"]["orthophoto"]
+    assert o3 is not None
+    assert o3["missing_tiles"] == 0
+    from pathlib import Path
+    assert Path(o3["image_path"]).exists()          # PNG가 .3dm 옆에 저장됨
+    assert out["provenance"]["orthophoto_src"] == "TestOrtho"
+
+    m = rhino3dm.File3dm.Read(out["outputs"]["3dm"]["path"])
+    meshes = [o for o in m.Objects if type(o.Geometry).__name__ == "Mesh"]
+    assert meshes, "지형 메시가 있어야 함"
+    assert len(meshes[0].Geometry.TextureCoordinates) > 0
+
+
+def test_orthophoto_without_terrain_warns_and_skips(monkeypatch, tmp_path):
+    """지형 없이 orthophoto만 → 경고 + orthophoto None(조용한 fallback)."""
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
+    )
+    _patch_small_ortho(monkeypatch)
+    out = generate(
+        "대전광역시 서구 괴정동 358",
+        client=FakeClient(_daejeon_features()),
+        outputs=["3dm"],
+        layers={"buildings": True, "orthophoto": True},  # terrain 없음
+        output_dir=str(tmp_path),
+        ortho_fetch=lambda url: _solid_png8(),
+    )
+    assert out["ok"] is True
+    assert out["outputs"]["3dm"]["orthophoto"] is None
+    assert any("지형" in w and "정사영상" in w for w in out["warnings"])
+
+
+def test_orthophoto_skp_only_warns(monkeypatch):
+    """outputs=skp만 + orthophoto → .3dm 전용이라 경고."""
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
+    )
+    _patch_small_ortho(monkeypatch)
+    out = generate(
+        "대전광역시 서구 괴정동 358",
+        client=FakeClient(_daejeon_features()),
+        outputs=["skp"],
+        layers={"buildings": True, "terrain": True, "orthophoto": True},
+        ortho_fetch=lambda url: _solid_png8(),
+    )
+    assert out["ok"] is True
+    assert any(".3dm" in w and "정사영상" in w for w in out["warnings"])

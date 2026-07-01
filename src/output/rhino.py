@@ -29,6 +29,8 @@ def write_3dm(
     path: str | Path,
     offset: tuple[float, float],
     cadastral: list[CadastralParcel] | None = None,
+    ortho_image: str | Path | None = None,
+    ortho_extent_m: tuple[float, float, float, float] | None = None,
 ) -> str:
     """BuildingSolid(+TerrainMesh+CadastralParcel) → .3dm 파일.
 
@@ -38,6 +40,9 @@ def write_3dm(
     path: 저장 경로 (.3dm 확장자 권장)
     offset: origin_offset (ox, oy) EPSG:5186 원점 오프셋. 로컬→절대좌표: abs = local + offset.
     cadastral: CadastralParcel 목록 (Phase 5). None/빈 목록 이면 지적 레이어 생략.
+    ortho_image: 정사영상 PNG 경로. 지정 시 지형 메시에 평면투영 텍스처로 입힘.
+    ortho_extent_m: 정사영상이 덮는 로컬 미터 범위 (x0, y0, x1, y1). 로컬 = 5186 − offset.
+      terrain 정점과 동일 좌표계여야 UV가 맞는다. ortho_image와 함께 지정.
     반환: 저장된 파일의 절대 경로 문자열.
     """
     model = rhino3dm.File3dm()
@@ -73,9 +78,9 @@ def write_3dm(
         layer = idx_flag if solid.flagged else idx_bldg
         _add_building(model, solid, layer, ox, oy)
 
-    # 지형 Mesh
+    # 지형 Mesh (정사영상 텍스처 옵션)
     if terrain is not None:
-        _add_terrain(model, terrain, idx_terr)
+        _add_terrain(model, terrain, idx_terr, ortho_image, ortho_extent_m)
 
     # 지적 경계 PolylineCurve
     if cadastral:
@@ -142,10 +147,14 @@ def _add_terrain(
     model: rhino3dm.File3dm,
     terrain: TerrainMesh,
     layer_idx: int,
+    ortho_image: str | Path | None = None,
+    ortho_extent_m: tuple[float, float, float, float] | None = None,
 ) -> None:
-    """TerrainMesh → rhino3dm Mesh.
+    """TerrainMesh → rhino3dm Mesh (정사영상 텍스처 옵션).
 
     TerrainMesh.vertices는 SketchUp 인치 단위이므로 /M2I 로 미터로 환산.
+    ortho_image + ortho_extent_m 지정 시 위→아래 평면투영으로 정사영상 텍스처를 입힘
+    (정사영상 특성과 정확히 일치: 표고 Z는 UV에 무영향).
     """
     if not terrain.vertices or not terrain.triangles:
         return
@@ -162,7 +171,45 @@ def _add_terrain(
     attrs.LayerIndex = layer_idx
     attrs.Name = "terrain"
 
+    if ortho_image is not None and ortho_extent_m is not None:
+        _apply_ortho_texture(model, mesh, attrs, ortho_image, ortho_extent_m)
+
     model.Objects.AddMesh(mesh, attrs)
+
+
+def _apply_ortho_texture(
+    model: rhino3dm.File3dm,
+    mesh: rhino3dm.Mesh,
+    attrs: rhino3dm.ObjectAttributes,
+    ortho_image: str | Path,
+    extent_m: tuple[float, float, float, float],
+) -> None:
+    """지형 메시에 정사영상 평면투영 텍스처 부여.
+
+    extent_m = (x0, y0, x1, y1) 로컬 미터. 메시 정점과 동일 좌표계 기준으로
+    WorldXY 평면에 dx/dy 범위를 매핑 → 정점별 UV 자동 생성. 머티리얼은 비트맵
+    텍스처(절대경로 참조 — .3dm과 같은 폴더에 이미지 유지 필요).
+    """
+    x0, y0, x1, y1 = extent_m
+    tm = rhino3dm.TextureMapping.CreatePlaneMapping(
+        rhino3dm.Plane.WorldXY(),
+        rhino3dm.Interval(x0, x1),
+        rhino3dm.Interval(y0, y1),
+        rhino3dm.Interval(0.0, 1.0),
+    )
+    mesh.SetTextureCoordinates(tm, rhino3dm.Transform.Identity(), False)
+
+    mat = rhino3dm.Material()
+    mat.Name = "orthophoto"
+    tex = rhino3dm.Texture()
+    tex.FileName = str(Path(ortho_image).resolve())
+    tex.Enabled = True
+    tex.TextureType = rhino3dm.TextureType.Bitmap
+    mat.SetBitmapTexture(tex)   # 반환 False라도 참조는 기록됨(rhino3dm 디코더 없음)
+
+    mat_idx = model.Materials.Add(mat)
+    attrs.MaterialSource = rhino3dm.ObjectMaterialSource.MaterialFromObject
+    attrs.MaterialIndex = mat_idx
 
 
 def _add_cadastral(

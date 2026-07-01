@@ -111,6 +111,78 @@ def test_write_3dm_geometry_types():
 
 
 # ---------------------------------------------------------------------------
+# 정사영상 텍스처 (Tier 1)
+# ---------------------------------------------------------------------------
+
+def _write_stub_png(path: Path) -> None:
+    """최소 유효 RGB PNG(2x2) 저장 — 텍스처 참조 검증용."""
+    import struct
+    import zlib
+
+    raw = bytearray()
+    for _ in range(2):
+        raw.append(0)
+        raw += bytes((200, 200, 200)) * 2
+
+    def _chunk(typ: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + typ + data
+            + struct.pack(">I", zlib.crc32(typ + data) & 0xFFFFFFFF)
+        )
+
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 0))
+        + _chunk(b"IDAT", zlib.compress(bytes(raw), 6))
+        + _chunk(b"IEND", b"")
+    )
+
+
+def _find_terrain_mesh(model: rhino3dm.File3dm):
+    for o in model.Objects:
+        if type(o.Geometry).__name__ == "Mesh":
+            return o
+    return None
+
+
+def test_write_3dm_ortho_sets_texcoords_and_material():
+    """정사영상 지정 시 지형 메시에 텍스처 좌표 + 비트맵 머티리얼이 붙는다."""
+    terrain = _make_terrain()
+    with tempfile.TemporaryDirectory() as td:
+        png = Path(td) / "ortho.png"
+        _write_stub_png(png)
+        path = Path(td) / "site.3dm"
+        write_3dm(
+            [], terrain, path, offset=(0.0, 0.0),
+            ortho_image=png, ortho_extent_m=(0.0, 0.0, 20.0, 20.0),
+        )
+        m = rhino3dm.File3dm.Read(str(path))
+        obj = _find_terrain_mesh(m)
+        assert obj is not None
+        mesh = obj.Geometry
+        # 텍스처 좌표가 정점 수만큼 생성됨
+        assert len(mesh.TextureCoordinates) == len(mesh.Vertices)
+        # orthophoto 비트맵 머티리얼 존재
+        assert len(m.Materials) >= 1
+        bt = m.Materials[0].GetBitmapTexture()
+        assert bt is not None
+        assert bt.FileName.endswith("ortho.png")
+
+
+def test_write_3dm_no_ortho_leaves_terrain_untextured():
+    """정사영상 미지정 시 텍스처 좌표/머티리얼이 생기지 않는다(회귀 방지)."""
+    terrain = _make_terrain()
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "site.3dm"
+        write_3dm([], terrain, path, offset=(0.0, 0.0))
+        m = rhino3dm.File3dm.Read(str(path))
+        obj = _find_terrain_mesh(m)
+        assert obj is not None
+        assert len(obj.Geometry.TextureCoordinates) == 0
+
+
+# ---------------------------------------------------------------------------
 # 레이어
 # ---------------------------------------------------------------------------
 

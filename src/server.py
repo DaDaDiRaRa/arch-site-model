@@ -46,6 +46,11 @@ def generate_site_model(
     Phase 4: outputs=["skp","3dm"] 로 .3dm 이중 출력. output_dir 미지정 시 "output/" 사용.
     Phase 5: layers={"cadastral": True} 로 지적 경계 레이어 추가.
              missing_floors_policy: "default"|"skip"|"flag" (§6.4).
+    Tier 1: layers={"terrain": True, "orthophoto": True} 로 지형에 정사영상 텍스처.
+            .3dm 전용(SketchUp `.skp`는 이미지 텍스처 미지원) + terrain 필요.
+            정사영상 PNG는 .3dm과 같은 output_dir에 저장(같이 두어야 텍스처 참조 유효).
+            소스는 config.ORTHO_SOURCE("vworld" 기본 | "ngii", .env). 문제 시 조용한
+            fallback(warnings 추가 후 건물/지형만 생성).
     반환의 outputs.skp.code 는 SketchUp MCP build_model 에 넣을 Python 코드.
     반환의 outputs["3dm"]["path"] 는 저장된 .3dm 절대 경로.
     origin_offset(stats)은 실제 위치 복원용으로 반드시 보존한다.

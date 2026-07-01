@@ -21,6 +21,17 @@ VWORLD_DOMAIN = os.environ.get("VWORLD_DOMAIN", "")
 M2I = 39.3701              # meter → inch (SketchUp MCP는 인치 단위)
 DEFAULT_FLOOR_H_M = 3.0    # 기본 층고 (m)
 
+# --- 정사영상(orthophoto) 텍스처 ---
+# 소스: "vworld"(기존 VWORLD_KEY 재사용) | "ngii"(NGII_KEY 발급 후 사용, 공공누리 1유형).
+# 기술은 동일 — TileSource만 바뀐다. NGII 키 승인 시 .env에 NGII_KEY 채우고 ORTHO_SOURCE=ngii.
+ORTHO_SOURCE = os.environ.get("ORTHO_SOURCE", "vworld")
+NGII_KEY = os.environ.get("NGII_KEY", "")
+
+try:
+    ORTHO_ZOOM = int(os.environ.get("ORTHO_ZOOM", "18"))
+except ValueError:
+    ORTHO_ZOOM = 18
+
 # --- 지형 비축 스토어 (B안) ---
 # 프로젝트 루트 기준 geo_store/ — DEM/등고선 비축 + manifest.json
 GEO_STORE = Path(os.environ.get("GEO_STORE", "geo_store"))

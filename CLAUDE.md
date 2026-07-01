@@ -59,6 +59,7 @@ src/
     bbox.py              반경 → bbox (EPSG:4326)
     crs.py               EPSG:4326 ↔ 5186 변환 + origin_offset
     vworld.py            VWorld data API 클라이언트 (페이지네이션 내장)
+    ortho.py             정사영상 WMTS 타일수학 + TileSource + 모자이크(재투영→PNG, Tier 1)
   geometry/
     building.py          LT_C_SPBD features → BuildingSolid (쿼드 솔리드, 홀 포함)
     terrain_mesh.py      DEMPatch → TerrainMesh (TIN 삼각망, Phase 3B)
@@ -113,12 +114,27 @@ tests/                   pytest 단위 테스트 (API 호출은 mock)
 | `{"buildings": true}` | 건물 매싱만 (기본값, Phase 2) |
 | `{"buildings": true, "terrain": true}` | 지형 TIN + 건물 앉힘 (Phase 3B) |
 | `{"buildings": true, "cadastral": true}` | 건물 + 대지 경계 폴리곤 (Phase 5) |
+| `{"buildings": true, "terrain": true, "orthophoto": true}` | 지형에 정사영상 텍스처 (Tier 1, **.3dm 전용**) |
 
 지형 활성화 시 추가 응답 필드:
 
 - `outputs.skp.terrain_triangles`: 생성된 삼각형 수
 - `stats.elev_range_m`: 클립 DEM 표고 범위 `[min, max]`
 - DEM 타일 없거나 범위 밖이면 `ok: true` + `warnings`에 경고 → **건물만 생성됨** (조용한 fallback)
+
+**정사영상(orthophoto) — Tier 1:**
+
+- 지형 TIN에 위→아래 평면투영으로 정사영상을 드레이프. `terrain: true` + `outputs=["3dm"]` 필요
+  (클라우드 MCP `.skp`는 샌드박스가 이미지 반입 차단 → 텍스처 불가. `.3dm`만 지원).
+- 소스: `config.ORTHO_SOURCE` = `"vworld"`(기본, `VWORLD_KEY` 재사용) | `"ngii"`(공공누리 1유형,
+  `NGII_KEY` 발급 후). 기술 동일 — `src/geo/ortho.py::TileSource`만 교체. NGII 타일 격자(3857 vs
+  5179)는 키 발급 후 GetCapabilities로 확정 필요.
+- 파이프라인: `bbox → WMTS 타일 다운로드 → 모자이크 → EPSG:5186 재투영(위도 왜곡 보정) → PNG →
+  평면매핑 UV`. PNG는 `.3dm`과 같은 `output_dir`에 저장(같이 둬야 텍스처 참조 유효).
+- 응답: `outputs.3dm.orthophoto = {image_path, missing_tiles, zoom}`,
+  `provenance.orthophoto_src`(출처표시용) + `orthophoto_zoom`.
+- 조용한 fallback: 키 없음/지형 미생성/타일 초과·실패 시 `warnings` 추가 후 건물·지형만 생성.
+- 미착수: Tier 2a — SketchUp `.skp`용 컴패니언 Ruby 드레이프(반자동). 상세 `docs/orthophoto_texture_plan.md`.
 
 ### `generate_site_tiles(address, radius_m=500, tile_size_m=200.0, floor_height_m, layers, missing_floors_policy)`
 
@@ -234,6 +250,7 @@ result = generate_site_model(
 | 확장2 | `preview_site` — 건물 목록·규모 미리보기 (생성 없음) | ✅ 완료 |
 | 확장3 | 이격면(setback) 실연동 — arch-law-diagnose | 🚧 블로커 (아래 참고) |
 | 확장4 | `generate_site_tiles` — 대량건물 타일분할 | ✅ 완료 |
+| 확장5 | 정사영상 텍스처 Tier 1 — 지형 TIN 드레이프 (.3dm) | ✅ 완료 (Tier 2a `.skp` 미착수) |
 
 ---
 

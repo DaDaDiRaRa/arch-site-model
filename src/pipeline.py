@@ -51,6 +51,20 @@ def _safe_filename(address: str) -> str:
     return s[:60] or "site"
 
 
+def _resolve_ortho_source():
+    """config.ORTHO_SOURCE → (TileSource, key, 출처표시 문자열).
+
+    "vworld"는 기존 VWORLD_KEY 재사용(즉시 작동), "ngii"는 NGII_KEY(발급 후).
+    기술적으로 동일 — 소스만 교체된다.
+    """
+    from src.geo.ortho import NGII_AERIAL, VWORLD_SATELLITE
+
+    name = (config.ORTHO_SOURCE or "vworld").lower()
+    if name == "ngii":
+        return NGII_AERIAL, config.NGII_KEY, "NGII 영상지도 (공공누리 1유형, 출처표시)"
+    return VWORLD_SATELLITE, config.VWORLD_KEY, "VWorld Satellite"
+
+
 def generate(
     address: str,
     radius_m: int = 250,
@@ -61,6 +75,7 @@ def generate(
     missing_floors_policy: str = "default",
     setback: bool = False,
     client: VWorldClient | None = None,
+    ortho_fetch=None,
 ) -> dict:
     """건물 매싱(+ 선택적 지형/지적) 생성 결과를 반환.
 
@@ -69,7 +84,14 @@ def generate(
       {"buildings": True, "terrain": True}          — 건물 + 지형 TIN
       {"buildings": True, "cadastral": True}        — 건물 + 지적 경계
       {"buildings": True, "terrain": True,
+       "orthophoto": True}                          — 지형에 정사영상 텍스처(.3dm 전용)
+      {"buildings": True, "terrain": True,
        "cadastral": True}                           — 전체 (Phase 5)
+
+    orthophoto (Tier 1): 지형 TIN에 정사영상을 위→아래 평면투영으로 드레이프한다.
+      terrain 필요 + .3dm 출력에만 적용(SketchUp MCP는 이미지 텍스처 미지원).
+      소스는 config.ORTHO_SOURCE("vworld"|"ngii"). 조용한 fallback(키·지형·타일 문제
+      시 warnings 추가 후 건물/지형만 생성). ortho_fetch는 테스트용 타일 페처 주입.
 
     outputs=["skp","3dm"] 로 두 포맷 동시 출력 가능(Phase 4).
       "3dm" 선택 시 output_dir(기본: "output/")에 .3dm 저장 후 경로 반환.
@@ -206,6 +228,55 @@ def generate(
             "setback 분석은 arch-law-diagnose 연동 예정 [목표] — 현재 stub"
         )
 
+    odir = Path(output_dir) if output_dir else Path("output")
+
+    # 7.5 정사영상 텍스처 (Tier 1) — 지형 TIN에 위→아래 평면투영으로 드레이프.
+    #     .3dm 전용(클라우드 MCP `.skp`는 이미지 반입 불가). terrain 필요.
+    ortho_info: dict | None = None
+    if layers.get("orthophoto"):
+        if "3dm" not in outputs:
+            warnings.append(
+                "정사영상(orthophoto)은 .3dm 출력에만 적용됩니다 "
+                "(SketchUp MCP는 이미지 텍스처 미지원) — 생략"
+            )
+        elif terrain_mesh is None:
+            warnings.append(
+                "정사영상은 지형(terrain)에 드레이프됩니다 — 지형 미생성으로 생략"
+            )
+        else:
+            source, okey, attribution = _resolve_ortho_source()
+            if not okey:
+                warnings.append(
+                    f"정사영상 키 없음 (source={config.ORTHO_SOURCE}) — 생략. "
+                    "NGII는 .env의 NGII_KEY, VWorld는 VWORLD_KEY 필요."
+                )
+            else:
+                try:
+                    from src.geo.ortho import build_mosaic
+
+                    odir.mkdir(parents=True, exist_ok=True)
+                    png_path = odir / (_safe_filename(cleaned) + "_ortho.png")
+                    mosaic = build_mosaic(
+                        bbox, config.ORTHO_ZOOM, source, okey, png_path,
+                        fetch=ortho_fetch,
+                    )
+                    bx0, by0, bx1, by1 = mosaic.bounds
+                    ox, oy = offset
+                    ortho_info = {
+                        "image_path": mosaic.image_path,
+                        "extent_local_m": (bx0 - ox, by0 - oy, bx1 - ox, by1 - oy),
+                        "missing_tiles": mosaic.missing_tiles,
+                        "attribution": attribution,
+                        "zoom": mosaic.zoom,
+                    }
+                    if mosaic.missing_tiles:
+                        warnings.append(
+                            f"정사영상 타일 {mosaic.missing_tiles}장 다운로드 실패 "
+                            "→ 해당 영역 회색"
+                        )
+                except Exception as e:  # 네트워크/타일수 초과 등 → 건물·지형은 계속
+                    warnings.append(f"정사영상 생성 실패 (건물/지형은 계속): {e}")
+
     # 8. 출력
     out: dict = {}
     flagged_count = sum(1 for s in solids if s.flagged)
@@ -222,17 +293,27 @@ def generate(
     if "3dm" in outputs:
         from src.output.rhino import write_3dm
 
-        odir = Path(output_dir) if output_dir else Path("output")
         fname = _safe_filename(cleaned) + ".3dm"
         saved = write_3dm(
             solids, terrain_mesh, odir / fname, offset,
             cadastral=cadastral_parcels,
+            ortho_image=ortho_info["image_path"] if ortho_info else None,
+            ortho_extent_m=ortho_info["extent_local_m"] if ortho_info else None,
         )
         out["3dm"] = {
             "path": saved,
             "solids": len(solids),
             "terrain_triangles": len(terrain_mesh.triangles) if terrain_mesh else 0,
             "cadastral_parcels": cadastral_count,
+            "orthophoto": (
+                {
+                    "image_path": ortho_info["image_path"],
+                    "missing_tiles": ortho_info["missing_tiles"],
+                    "zoom": ortho_info["zoom"],
+                }
+                if ortho_info
+                else None
+            ),
         }
 
     # 9. provenance 완성 (사양서 §4.2)
@@ -247,6 +328,9 @@ def generate(
         prov["cadastral_src"] = "VWorld LP_PA_CBND_BUBUN"
     if terrain_tile_file:
         prov["terrain_tile"] = terrain_tile_file
+    if ortho_info:
+        prov["orthophoto_src"] = ortho_info["attribution"]
+        prov["orthophoto_zoom"] = ortho_info["zoom"]
     if setback:
         prov["setback_analysis"] = "stub"
 
