@@ -1,0 +1,30 @@
+# 이미지에서 제외 (빌드 컨텍스트 축소 + 비밀/불필요 배제)
+.venv/
+venv/
+env/
+.git/
+.gitignore
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 비밀 — 절대 이미지에 넣지 않음(런타임 env로 주입)
+.env
+
+# 개발 산출물/문서 (런타임 불필요)
+output/
+tests/
+docs/
+reference/
+*.md
+
+# IDE/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,128 @@
+"""FastAPI 백엔드 — 배포용 HTTP API (팀 공유 / GCP Cloud Run 등).
+
+엔진(`pipeline.generate`)을 HTTP로 감싼다. 두 소비자를 서빙:
+  - Rhino 사용자: 텍스처 `.3dm` 다운로드 (`files.3dm`)
+  - SketchUp 확장: 지오메트리 데이터 + 정사영상 URL (추후 `/api/geometry`)
+
+배포: 이 앱을 도커 컨테이너로 만들어 사내 서버 또는 GCP Cloud Run에 올린다.
+인증(IAP/공유토큰)은 인프라·미들웨어 레이어에서 추후 추가(앱 코드 무관).
+
+로컬 실행:  uvicorn src.api:app --reload --port 8000
+문서:       http://localhost:8000/docs
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+
+from src import config
+from src.pipeline import generate as _generate
+
+# 생성물 저장 루트(잡별 하위 폴더). GCP에선 임시 볼륨/버킷으로 교체 가능.
+JOBS_DIR = Path(config.__dict__.get("JOBS_DIR", "output/jobs")).resolve()
+
+app = FastAPI(
+    title="arch-site-model API",
+    version="1.0",
+    description="주소 → 지형·건물 3D 대지모델 + 정사영상 텍스처 (.3dm / SketchUp 확장용 데이터).",
+)
+
+
+class GenerateRequest(BaseModel):
+    address: str = Field(..., description="대지 주소")
+    radius_m: int = Field(250, ge=10, le=2000, description="반경(m)")
+    floor_height_m: float = Field(config.DEFAULT_FLOOR_H_M, gt=0, description="기본 층고(m)")
+    layers: dict = Field(
+        default_factory=lambda: {"buildings": True, "terrain": True, "orthophoto": True},
+        description='레이어 토글. 예: {"buildings":true,"terrain":true,"orthophoto":true}',
+    )
+    outputs: list[str] = Field(
+        default_factory=lambda: ["3dm"], description='출력 포맷: ["3dm"] | ["skp"] | 둘 다'
+    )
+    missing_floors_policy: str = Field(
+        "default", description='층수 누락 처리: "default"|"skip"|"flag"'
+    )
+
+
+def _safe_component(s: str) -> bool:
+    """경로 조각이 안전한지(디렉터리 탈출 방지)."""
+    return bool(re.fullmatch(r"[A-Za-z0-9._가-힣-]+", s)) and s not in (".", "..")
+
+
+@app.get("/health")
+def health() -> dict:
+    """헬스 체크 (Cloud Run readiness)."""
+    return {"ok": True, "service": "arch-site-model", "ortho_source": config.ORTHO_SOURCE}
+
+
+@app.post("/api/generate")
+def generate_endpoint(req: GenerateRequest) -> dict:
+    """주소 → 모델 생성. `.3dm`은 다운로드 URL로, 통계·provenance·warnings 반환.
+
+    생성물(.3dm, 정사영상 PNG)은 잡 폴더에 저장되고 `files.*`의 URL로 내려받는다.
+    (.3dm 텍스처 참조가 유효하려면 PNG가 같은 폴더에 있어야 하므로 함께 서빙.)
+    """
+    job_id = uuid4().hex[:12]
+    job_dir = JOBS_DIR / job_id
+
+    result = _generate(
+        req.address,
+        radius_m=req.radius_m,
+        floor_h_m=req.floor_height_m,
+        outputs=req.outputs,
+        layers=req.layers,
+        output_dir=str(job_dir),
+        missing_floors_policy=req.missing_floors_policy,
+    )
+
+    if not result.get("ok"):
+        # 생성 실패(주소 오류·건물 없음 등)는 4xx로 전달
+        raise HTTPException(status_code=400, detail=result.get("error", "생성 실패"))
+
+    # 다운로드 URL은 ASCII 종류키(3dm/ortho)로 — 한글 파일명 URL 인코딩 문제 회피.
+    # 실제 파일명(한글 가능)은 다운로드 시 Content-Disposition으로 전달.
+    files: dict[str, str] = {}
+    out3dm = result.get("outputs", {}).get("3dm")
+    if out3dm:
+        files["3dm"] = f"/api/files/{job_id}/3dm"
+        if out3dm.get("orthophoto"):
+            files["ortho_png"] = f"/api/files/{job_id}/ortho"
+
+    return {
+        "ok": True,
+        "job_id": job_id,
+        "files": files,
+        "outputs": result.get("outputs"),
+        "stats": result.get("stats"),
+        "provenance": result.get("provenance"),
+        "warnings": result.get("warnings"),
+    }
+
+
+@app.get("/api/files/{job_id}/{kind}")
+def get_file(job_id: str, kind: str) -> FileResponse:
+    """잡 폴더의 생성물 다운로드. kind: "3dm"(모델) | "ortho"(정사영상 PNG).
+
+    URL은 ASCII 종류키만 받는다(경로 탈출·한글 URL 문제 차단). 실제 파일은 잡
+    폴더에서 확장자/접미사로 찾아 원본 파일명(한글 가능)으로 내려준다.
+    """
+    if not _safe_component(job_id) or kind not in ("3dm", "ortho"):
+        raise HTTPException(status_code=400, detail="잘못된 요청")
+    job_dir = (JOBS_DIR / job_id).resolve()
+    if not str(job_dir).startswith(str(JOBS_DIR)) or not job_dir.is_dir():
+        raise HTTPException(status_code=404, detail="잡 없음")
+
+    matches = (
+        list(job_dir.glob("*_ortho.png")) if kind == "ortho"
+        else [p for p in job_dir.glob("*.3dm")]
+    )
+    if not matches:
+        raise HTTPException(status_code=404, detail="파일 없음")
+    path = matches[0]
+    return FileResponse(path, filename=path.name)

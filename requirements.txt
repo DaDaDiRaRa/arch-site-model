@@ -1,11 +1,22 @@
-# 런타임 의존성 (pyproject.toml 과 동기). 빠른 설치용.
+# 런타임 의존성 (pyproject.toml 과 동기). 도커/배포용 전체 목록.
 #   python -m pip install -r requirements.txt
-pyproj>=3.6
-mcp>=1.2
-python-dotenv>=1.0
-requests>=2.31        # VWorld API 호출
-shapely>=2.0          # bbox 포함 판정 (지형 타일 조회)
-rhino3dm>=8.0         # .3dm 출력 (Phase 4)
 
-# 개발/테스트
+# --- 지오/좌표 ---
+pyproj>=3.6           # EPSG 변환 (PROJ 번들 wheel)
+numpy>=1.26           # DEM 격자·모자이크 배열
+rasterio>=1.3         # DEM 클립 + 정사영상 타일 디코드·재투영 (GDAL 번들 wheel)
+shapely>=2.0          # bbox 포함 판정 (지형 타일 조회)
+
+# --- 외부 API / 출력 ---
+requests>=2.31        # VWorld / 정사영상 타일 호출
+rhino3dm>=8.0         # .3dm 출력 + 정사영상 텍스처 (Tier 1)
+
+# --- 서버 ---
+fastapi>=0.110        # 배포용 HTTP API (src/api.py)
+uvicorn>=0.27         # ASGI 서버 (Cloud Run 진입점)
+mcp>=1.2              # MCP 서버 (src/server.py, Claude 연동)
+python-dotenv>=1.0    # .env 로드 (로컬 개발)
+
+# --- 개발/테스트 ---
 pytest>=8.0
+httpx>=0.27           # FastAPI TestClient
