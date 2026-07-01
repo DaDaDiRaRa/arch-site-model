@@ -6,7 +6,10 @@
 # geo_store/
 
 # 출력물 (런타임 생성물 — API 잡 폴더·데모 등)
-output/
+# 주의: 앞에 / 필수 — 없으면 모든 깊이에서 매치돼 src/output/(코드!)까지 제외되는 사고가
+# 남(실제 발생: gcloud run deploy --source 가 .gcloudignore 없으면 .gitignore를 그대로 써서
+# 소스 업로드 필터링 → src/output/ 통째로 빠짐 → ModuleNotFoundError: src.output, 2026-07-01).
+/output/
 *.skp
 *.3dm
 *.obj
