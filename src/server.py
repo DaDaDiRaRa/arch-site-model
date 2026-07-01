@@ -14,6 +14,7 @@ from src.config import DEFAULT_FLOOR_H_M
 from src.pipeline import generate as _generate
 from src.preview import preview_site as _preview_site
 from src.site_check import check_site_data as _check_site_data
+from src.tiles import generate_tiles as _generate_tiles
 
 mcp = FastMCP("arch-site-model")
 
@@ -74,6 +75,37 @@ def preview_site(
     실제 .skp/.3dm 파일은 생성하지 않는다.
     """
     return _preview_site(address, radius_m=radius_m, floor_height_m=floor_height_m)
+
+
+@mcp.tool()
+def generate_site_tiles(
+    address: str,
+    radius_m: int = 500,
+    tile_size_m: float = 200.0,
+    floor_height_m: float = DEFAULT_FLOOR_H_M,
+    layers: dict | None = None,
+    missing_floors_policy: str = "default",
+) -> dict:
+    """대량 건물 반경(500m+)을 tile_size_m 격자로 분할해 build_model 코드를 나눠 생성 (백로그5).
+
+    generate_site_model은 전체를 단일 code 문자열로 반환하므로 밀집 지역·큰 반경에서는
+    build_model 호출 인자가 지나치게 커진다(수백 KB). 이 도구는 VWorld 조회/origin_offset은
+    한 번만 수행하되(중복 조회·좌표 불일치 방지), footprint 중심점 기준으로 건물을
+    tile_size_m(m) 격자에 배정해 타일마다 별도 code로 반환한다.
+
+    반환의 tiles[]는 각 {"tile_id", "tile_bbox_m", "code", "solids", ...}를 담으며,
+    오케스트레이터가 타일마다 순서대로 build_model을 호출해 조립한다.
+    layers={"terrain": True} 시 지형도 타일 경계에 맞춰 분할된다.
+    stats.origin_offset은 모든 타일에 공통 적용되므로 반드시 보존한다.
+    """
+    return _generate_tiles(
+        address,
+        radius_m=radius_m,
+        tile_size_m=tile_size_m,
+        floor_h_m=floor_height_m,
+        layers=layers,
+        missing_floors_policy=missing_floors_policy,
+    )
 
 
 def main() -> None:

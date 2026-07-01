@@ -48,9 +48,11 @@ python -m pytest tests/ -v
 
 ```text
 src/
-  server.py              FastMCP 서버 진입점 (MCP 도구 2개 등록)
+  server.py              FastMCP 서버 진입점 (MCP 도구 4개 등록)
   pipeline.py            generate_site_model 파이프라인
+  tiles.py               generate_site_tiles — 대량건물 타일분할 (백로그5)
   site_check.py          check_site_data 핵심 로직
+  preview.py             preview_site 핵심 로직
   config.py              전역 설정·환경변수
   geo/
     geocode.py           주소 → 좌표 (VWorld address API)
@@ -117,6 +119,21 @@ tests/                   pytest 단위 테스트 (API 호출은 mock)
 - `outputs.skp.terrain_triangles`: 생성된 삼각형 수
 - `stats.elev_range_m`: 클립 DEM 표고 범위 `[min, max]`
 - DEM 타일 없거나 범위 밖이면 `ok: true` + `warnings`에 경고 → **건물만 생성됨** (조용한 fallback)
+
+### `generate_site_tiles(address, radius_m=500, tile_size_m=200.0, floor_height_m, layers, missing_floors_policy)`
+
+대량 건물(반경 500m+, 밀집지역 수백~천 동) 시 `generate_site_model`의 단일 `code` 문자열이
+`build_model` 호출 인자로 감당 못 할 만큼 커지는 문제(수백 KB) 해결용 — 백로그5.
+
+- VWorld 조회 + `origin_offset` 산출은 **전체 반경 1회만** 수행(타일 경계 중복 조회·좌표
+  불일치 방지). footprint(또는 지적 parcel) 중심점 기준으로 `tile_size_m` 격자에 배정 후
+  타일마다 별도 `code`를 생성한다.
+- 반환: `tiles: [{"tile_id", "tile_bbox_m", "code", "solids", "cadastral_parcels", "terrain_triangles"}, ...]`
+- `stats.origin_offset`은 모든 타일에 공통 적용 — 반드시 보존.
+- 오케스트레이터가 `tiles[]`를 순서대로 `build_model`에 호출해 조립한다.
+- `layers={"terrain": true}` 시 지형 TIN도 타일 경계에 맞춰 분할(`src/tiles.py::_split_terrain_by_tile`).
+  경계 정점은 타일마다 중복 생성되지만 각 타일이 독립 SketchUp 그룹이라 무해.
+- `generate_site_model`과 달리 `outputs`/`output_dir`(.3dm) 파라미터 없음 — `.skp` 코드 분할 전용.
 
 ---
 
@@ -215,6 +232,8 @@ result = generate_site_model(
 | 5 | 지적 레이어 + 층수 누락 정책 + provenance 완성 | ✅ 완료 |
 | 확장1 | 홀(중정) 처리 — `holes_m` + `add_face_inner_loop` | ✅ 완료 |
 | 확장2 | `preview_site` — 건물 목록·규모 미리보기 (생성 없음) | ✅ 완료 |
+| 확장3 | 이격면(setback) 실연동 — arch-law-diagnose | 🚧 블로커 (아래 참고) |
+| 확장4 | `generate_site_tiles` — 대량건물 타일분할 | ✅ 완료 |
 
 ---
 
@@ -284,11 +303,22 @@ y_abs = y_local + origin_offset_y
 - `terrain_tile` — 지형 DEM 타일 파일명 (지형 활성화 시)
 - `setback_analysis: "stub"` — `setback=True` 시 추가
 
-### setback stub
+### setback stub — 실연동 블로커 확인됨 (2026-07-01)
 
 `generate()` / `generate_site_model()` 의 `setback: bool = False` 파라미터.
 `True` 시 `warnings`에 "arch-law-diagnose 연동 예정 [목표]" 추가 + provenance에 `"stub"` 표기.
 실제 분석 호출은 미구현 [목표].
+
+`D:\APPS\arch-law-diagnose` 조사 결과 실연동은 현재 불가능:
+
+- MCP 서버가 아니라 REST API(FastAPI, `POST /api/diagnose`, uvicorn:8000). 그쪽 자체
+  CLAUDE.md에도 "MCP/API 도구화"가 `arch-law-graph` 병합 전까지 보류 상태로 명시됨.
+- `DiagnoseRequest`는 설계된 건물 프로그램 데이터(`site_area`, `building_area`,
+  `floor_area_above`, `floors_above`, `height`, `building_use` 등)를 요구하는데,
+  arch-site-model은 기존 건물의 as-built footprint/층수만 가지고 있어 애초에 채울 데이터가 없음.
+- 이격면 로직도 8개 카테고리 종합 진단 응답 안에 묻혀 있어 "이격 오프셋만" 뽑는 좁은 계약이 없음.
+- **재개 조건**: arch-law-diagnose 쪽에서 설계 프로그램 불필요 + 이격만 반환하는 좁은 API/MCP 계약을
+  노출할 때까지 보류.
 
 ---
 

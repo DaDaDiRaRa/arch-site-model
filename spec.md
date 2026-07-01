@@ -196,6 +196,50 @@ geo_store/
 }
 ```
 
+### 3.3 `preview_site(address, radius_m=250, floor_height_m=3.0)`
+
+모델 생성 없이 건물 목록·층수·예상 규모 미리보기. 실제 `.skp`/`.3dm` 파일은 생성하지 않는다.
+
+- 건물별 `name`, `floors`, `height_m`, `footprint_area_m2`, `has_courtyard` 반환
+- `summary`: 건물 수, 층수 통계(max/avg), 중정 수, 지적 수, 지형 가용 여부
+
+### 3.4 `generate_site_tiles(address, radius_m=500, tile_size_m=200.0, floor_height_m, layers, missing_floors_policy)`
+
+대량 건물(반경 500m+) 시 `generate_site_model`의 단일 `code` 문자열이 `build_model` 호출
+인자로 감당 못 할 만큼 커지는 문제(수백 KB, 대략 건물 1000동당 ~250KB) 해결용.
+
+- VWorld 조회 + `origin_offset` 산출은 전체 반경 1회만 수행 — 타일 경계에서 중복 조회나
+  좌표 불일치가 생기지 않는다.
+- footprint(또는 지적 parcel) 중심점 기준으로 `tile_size_m` 격자에 배정 후 타일마다 별도
+  `code`를 생성한다. `layers={"terrain": true}`면 지형 TIN도 같은 격자로 분할된다.
+- `.3dm`(`outputs`/`output_dir`) 미지원 — `.skp` 코드 분할 전용.
+
+```jsonc
+{
+  "ok": true,
+  "tile_size_m": 200.0,
+  "tiles": [
+    {
+      "tile_id": "3_-1",
+      "tile_bbox_m": [600.0, -200.0, 800.0, 0.0],
+      "code": "...",
+      "solids": 42,
+      "cadastral_parcels": 18,
+      "terrain_triangles": 220
+    }
+  ],
+  "stats": {
+    "buildings": 620, "solids": 620, "with_floors": 590,
+    "tile_count": 14, "cadastral_parcels": 210,
+    "origin_offset": [233142.5, 415678.2]
+  },
+  "warnings": []
+}
+```
+
+오케스트레이터는 `tiles[]`를 순서대로 `build_model`에 호출해 조립한다. `stats.origin_offset`은
+모든 타일에 공통 적용되므로 반드시 보존한다.
+
 ---
 
 ## 4. 좌표계 규칙
@@ -330,9 +374,12 @@ DEM 범위 밖 → `ok: true` + `warnings` 추가 + 건물만 생성 (조용한 
 
 ```
 src/
-  server.py              FastMCP 서버 (도구 2개: check_site_data, generate_site_model)
+  server.py              FastMCP 서버 (도구 4개: check_site_data, generate_site_model,
+                          preview_site, generate_site_tiles)
   pipeline.py            generate() 오케스트레이션
+  tiles.py               generate_tiles() — 대량건물 타일분할
   site_check.py          check_site_data 핵심 로직
+  preview.py             preview_site 핵심 로직
   config.py              환경변수 (VWORLD_KEY, M2I=39.3701, DEFAULT_FLOOR_H_M=3.0)
   geo/
     geocode.py           주소 → 좌표
@@ -366,18 +413,19 @@ src/
 | 3B | 런타임 지형 TIN + 건물 앉힘 | ✅ |
 | 4 | `.3dm` 이중 출력 + origin_offset 보존 | ✅ |
 | 5 | 지적 레이어 + 층수 누락 정책 + provenance | ✅ |
+| 확장1 | 홀(중정) 처리 — `holes_m` + inner loop | ✅ |
+| 확장2 | `preview_site` — 생성 없이 건물목록·규모 미리보기 | ✅ |
+| 확장3 | 이격면 실연동 (arch-law-diagnose) | 🚧 블로커 |
+| 확장4 | `generate_site_tiles` — 대량건물 타일분할 | ✅ |
 
 ---
 
 ## 10. 확장 로드맵
 
-| 항목 | 내용 | 선행 조건 |
+| 항목 | 내용 | 상태 |
 |---|---|---|
-| `preview_site` | 생성 없이 건물목록·층수·규모 미리보기 | — |
-| 이격면 실연동 | arch-law-diagnose 조닝 파라미터 → 이격 오프셋 | arch-law-diagnose API |
-| 정사영상 텍스처 | DEM과 동일 좌표계 정사영상 UV 매핑 | VWorld 정사영상 API |
-| 대량건물 타일분할 | 반경 500m+ 수백 건물 MCP 세션 분할 | 성능 검증 |
-| 홀(중정) 처리 | 건물 inner loop → 안뜰 뚫림 | shapely inner rings |
+| 이격면 실연동 | arch-law-diagnose 조닝 파라미터 → 이격 오프셋 | 🚧 블로커: arch-law-diagnose가 REST-only + 설계 프로그램 입력을 요구, 좁은 API 계약 없음 (§9 확장3 참고) |
+| 정사영상 텍스처 | DEM과 동일 좌표계 정사영상 UV 매핑 | 미착수 — VWorld 정사영상 API 가용 여부 확인 필요 |
 
 ---
 
@@ -393,6 +441,8 @@ src/
 8. **등고수치/수치 필드명**: 수치지형도Ver2.0 한국어 필드명. 영문 ID(`CONT`, `NUME`)와 구별.
 9. **PowerShell 한국어**: `-Encoding utf8`로 파일 출력 후 확인.
 10. **DEM fallback**: DEM 타일 없거나 범위 밖이면 지형 생략 + `warnings` 추가. 반드시 확인.
+11. **타일별 origin_offset 오해 금지**: `generate_site_tiles`의 `stats.origin_offset`은 전체 반경
+    기준 단일 값 — 타일마다 다른 원점을 쓰지 않는다. 타일별로 재계산하면 좌표가 어긋난다.
 
 ---
 
