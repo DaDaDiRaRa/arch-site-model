@@ -202,7 +202,8 @@ def _apply_ortho_texture(
     mat = rhino3dm.Material()
     mat.Name = "orthophoto"
     tex = rhino3dm.Texture()
-    tex.FileName = str(Path(ortho_image).resolve())
+    # 파일명만 저장(절대경로 X) → 다운로드한 .3dm과 PNG를 같은 폴더에 두면 Rhino가 찾음.
+    tex.FileName = Path(ortho_image).name
     tex.Enabled = True
     tex.TextureType = rhino3dm.TextureType.Bitmap
     mat.SetBitmapTexture(tex)   # 반환 False라도 참조는 기록됨(rhino3dm 디코더 없음)

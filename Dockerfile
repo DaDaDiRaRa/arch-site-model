@@ -17,9 +17,15 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---- Stage 2: 파이썬 런타임 (FastAPI + GDAL/rasterio) ----
-# rasterio·pyproj·rhino3dm 은 GDAL/PROJ 번들 wheel → 시스템 GDAL 불필요.
+# rasterio·pyproj·rhino3dm 은 GDAL/PROJ 번들 wheel이지만, GDAL이 시스템의
+# libexpat(XML 파서)에 링크돼 있어 slim 이미지엔 libexpat1을 별도 설치해야 함
+# (없으면 지형 요청 시 ImportError: libexpat.so.1 → 500).
 FROM python:3.11-slim
 WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libexpat1 \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

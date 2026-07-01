@@ -13,7 +13,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import tempfile
 from pathlib import Path
 from uuid import uuid4
 
@@ -25,8 +27,11 @@ from pydantic import BaseModel, Field
 from src import config
 from src.pipeline import generate as _generate
 
-# 생성물 저장 루트(잡별 하위 폴더). GCP에선 임시 볼륨/버킷으로 교체 가능.
-JOBS_DIR = Path(config.__dict__.get("JOBS_DIR", "output/jobs")).resolve()
+# 생성물 저장 루트(잡별 하위 폴더). 기본은 OS 임시 폴더 — Cloud Run 컨테이너 파일시스템은
+# 읽기전용일 수 있으나 /tmp는 항상 쓰기 가능. JOBS_DIR 환경변수로 재정의 가능.
+JOBS_DIR = Path(
+    os.environ.get("JOBS_DIR") or (Path(tempfile.gettempdir()) / "arch_site_model_jobs")
+).resolve()
 
 app = FastAPI(
     title="arch-site-model API",
