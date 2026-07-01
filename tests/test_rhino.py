@@ -170,6 +170,26 @@ def test_write_3dm_ortho_sets_texcoords_and_material():
         assert bt.FileName.endswith("ortho.png")
 
 
+def test_building_extrudes_upward_regardless_of_winding():
+    """CW/CCW 어느 footprint든 건물은 위로 돌출(바닥=base_z, 꼭대기=base_z+height).
+
+    회귀 방지: VWorld footprint(CW)를 그대로 쓰면 Extrusion이 아래로 돌출돼
+    건물이 지형 아래로 매달렸던 버그(2026-07-01).
+    """
+    cw = [(0.0, 0.0), (0.0, 5.0), (10.0, 5.0), (10.0, 0.0)]   # 시계방향
+    ccw = [(0.0, 0.0), (10.0, 0.0), (10.0, 5.0), (0.0, 5.0)]  # 반시계
+    for fp in (cw, ccw):
+        solid = _make_solid(footprint_m=fp, base_z_m=50.0, height_m=12.0)
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "b.3dm"
+            write_3dm([solid], None, path, offset=(0.0, 0.0))
+            m = rhino3dm.File3dm.Read(str(path))
+            ext = [o for o in m.Objects if type(o.Geometry).__name__ == "Extrusion"][0]
+            bb = ext.Geometry.GetBoundingBox()
+            assert bb.Min.Z == pytest.approx(50.0, abs=0.1)   # 바닥 = base_z (지형)
+            assert bb.Max.Z == pytest.approx(62.0, abs=0.1)   # 꼭대기 = base_z + height (위)
+
+
 def test_write_3dm_no_ortho_leaves_terrain_untextured():
     """정사영상 미지정 시 텍스처 좌표/머티리얼이 생기지 않는다(회귀 방지)."""
     terrain = _make_terrain()

@@ -93,6 +93,25 @@ def write_3dm(
     return str(p.resolve())
 
 
+def _ensure_ccw(
+    fp: list[tuple[float, float]]
+) -> list[tuple[float, float]]:
+    """footprint를 반시계(CCW)로 정규화.
+
+    `Extrusion.Create(profile, +height)`는 프로파일 평면 법선(+Z/−Z) 방향으로 돌출하는데,
+    법선은 링의 감김 방향을 따른다. VWorld footprint는 시계(CW)라 그대로 쓰면 −Z(아래)로
+    돌출돼 건물이 지형 아래로 매달린다. 신발끈 공식으로 부호면적을 구해 CW면 뒤집어 +Z(위)로
+    돌출되게 한다.
+    """
+    area2 = 0.0
+    n = len(fp)
+    for i in range(n):
+        x1, y1 = fp[i]
+        x2, y2 = fp[(i + 1) % n]
+        area2 += x1 * y2 - x2 * y1
+    return fp if area2 >= 0.0 else fp[::-1]
+
+
 def _add_building(
     model: rhino3dm.File3dm,
     solid: BuildingSolid,
@@ -101,7 +120,7 @@ def _add_building(
     oy: float,
 ) -> None:
     """BuildingSolid → Extrusion (외벽) + 중정 내벽 Extrusion (홀 있을 때)."""
-    fp = solid.footprint_m
+    fp = _ensure_ccw(solid.footprint_m)  # +Z(위)로 돌출되도록 반시계 정규화
     base_z = solid.base_z_m
     height = solid.height_m
 
@@ -131,10 +150,11 @@ def _add_building(
     if ext is not None and ext.IsValid:
         model.Objects.AddExtrusion(ext, _make_attrs(solid.name))
 
-    # 중정 내벽 Extrusion (홀 링마다 별도 객체)
+    # 중정 내벽 Extrusion (홀 링마다 별도 객체) — 내벽도 +Z로 돌출되게 CCW 정규화
     for i, hole in enumerate(solid.holes_m or []):
         if len(hole) < 3:
             continue
+        hole = _ensure_ccw(hole)
         hpts = [rhino3dm.Point3d(x, y, base_z) for x, y in hole]
         hpts.append(hpts[0])
         hprofile = rhino3dm.PolylineCurve(hpts)
