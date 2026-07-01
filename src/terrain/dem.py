@@ -75,7 +75,10 @@ def elev_at(x_local: float, y_local: float, dem: DEMPatch) -> float:
     """로컬 미터좌표 → bilinear 보간 표고(m).
 
     x_local, y_local: origin_offset 적용된 로컬 좌표(m).
-    범위 밖 또는 NaN 이웃이면 0.0 반환(건물이 지면에 닿도록 안전 fallback).
+    범위 밖이면 가장 가까운 가장자리 픽셀로 클램프한다. (0.0 반환 금지 — 절대표고
+    지형(예: 65~116m)에서는 0.0이 건물을 z≈0으로 침몰시킨다: seating의 min과 결합해
+    footprint 꼭짓점 하나만 경계를 넘어도 건물 전체가 지형 아래로 빠짐.)
+    4개 이웃이 모두 NaN이면 0.0(그 자리에 유효 표고 없음).
     """
     # 로컬 → EPSG:5186 절대 좌표
     ox, oy = dem.offset
@@ -89,8 +92,10 @@ def elev_at(x_local: float, y_local: float, dem: DEMPatch) -> float:
     row_f = (y_abs - tf.f) / tf.e
 
     rows, cols = dem.grid.shape
-    if col_f < 0.0 or row_f < 0.0 or col_f > cols - 1 or row_f > rows - 1:
-        return 0.0
+    # 범위 밖 → 가장 가까운 가장자리로 클램프(0.0 침몰 버그 방지). 경계를 살짝 넘는
+    # footprint 꼭짓점이 가장자리 표고를 받아 건물이 지형 위에 앉는다.
+    col_f = min(max(col_f, 0.0), float(cols - 1))
+    row_f = min(max(row_f, 0.0), float(rows - 1))
 
     # 클램핑: 정확히 경계(col_f=cols-1, row_f=rows-1)일 때 bilinear 인덱스 오버플로 방지
     c0 = min(int(col_f), cols - 2)

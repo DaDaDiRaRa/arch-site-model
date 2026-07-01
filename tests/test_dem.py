@@ -148,13 +148,14 @@ def test_elev_at_interpolated(synthetic_dem):
 
 
 def test_elev_at_out_of_bounds(synthetic_dem):
-    """범위 밖 좌표 → 0.0 반환 (안전 fallback)."""
+    """범위 밖 좌표 → 가장 가까운 가장자리 표고로 클램프(0.0 침몰 방지)."""
     path, _, bounds = synthetic_dem
     offset = (bounds[0], bounds[1])
     dem = clip_dem(path, bounds, offset)
 
     z = dem.elev_at(-9999.0, -9999.0)
-    assert z == 0.0
+    lo, hi = dem.z_range()
+    assert lo <= z <= hi   # 유효 표고 범위 내(0 sentinel 아님)
 
 
 def test_elev_at_method_matches_function(synthetic_dem):

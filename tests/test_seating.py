@@ -99,12 +99,13 @@ def test_seat_building_slope_not_center():
 # ---------------------------------------------------------------------------
 
 def test_seat_building_out_of_dem():
-    """모든 꼭짓점이 DEM 범위 밖 → elev_at=0 → base_z = -BURIAL_M."""
+    """모든 꼭짓점이 DEM 범위 밖 → 가장자리 표고로 클램프 → 지형 위에 앉음(침몰 방지)."""
     dem = _flat_dem(50.0)
     footprint = [(9999.0, 9999.0), (10000.0, 9999.0), (10000.0, 10000.0)]
     solid = _solid(footprint)
     bz = seat_building(solid, dem)
-    assert bz == pytest.approx(0.0 - BURIAL_M, abs=0.01)
+    # 평탄 DEM(50m) 가장자리로 클램프 → base_z = 50 - BURIAL_M (예전엔 -0.5로 침몰)
+    assert bz == pytest.approx(50.0 - BURIAL_M, abs=0.01)
 
 
 def test_seat_building_single_vertex():

@@ -1,7 +1,24 @@
 # arch-site-model — Claude Code 인계 문서
 
-> 대지 주소 입력만으로 주변 지형·건물 3D 대지모델을 자동 생성하는 MCP 서버.
+> 대지 주소 입력만으로 주변 지형·건물 3D 대지모델을 자동 생성하는 MCP 서버 + 배포 웹앱.
 > KBS TopoMap의 수동 워크플로우를 "주소 딸깍 + API 취득"으로 대체.
+
+---
+
+## 다음 작업 (TODO)
+
+> 완료하면 해당 줄을 삭제한다(항상 "남은 일"만 남게 유지).
+
+- [ ] **F2 — 브라우저 3D 미리보기**: `frontend/`에 rhino3dm.js(WASM)+three.js로 생성된 `.3dm`을
+      화면에서 바로 렌더(지형+건물+정사영상 텍스처). 다운로드 없이 결과 확인.
+- [ ] **Phase B — SketchUp 확장(.rbz)**: `.skp`용. 확장이 백엔드(`/api/generate` 또는 신규
+      지오메트리 JSON 엔드포인트) 호출 → 데스크톱 SketchUp에서 조립 + 정사영상 드레이프
+      (`Face#position_material`). 팀 대부분이 SketchUp이라 실사용 가치 큼. 데스크톱 GUI라
+      사용자 테스트 루프 필요. 상세 `docs/orthophoto_texture_plan.md`.
+- [ ] **NGII 정사영상 소스**(보류): 서버사이드 접근 막힘(브라우저 전용 키 정황) + EPSG:5179 타일
+      구현 필요. 규격은 [[orthophoto-texture-blocker]] 메모리에 저장됨. 키 서버사이드 접근이
+      풀리면 5179 `TileSource` 추가만 하면 됨.
+- [ ] **이격면(setback) 실연동**(블로커): arch-law-diagnose가 좁은 API 계약 노출할 때까지 보류.
 
 ---
 
