@@ -100,3 +100,63 @@ def test_extrude_face_count_general():
 def test_extrude_rejects_degenerate():
     with pytest.raises(ValueError):
         extrude_face_loops(2)
+
+
+# --- 중정(홀) 처리 ---
+
+def test_courtyard_has_holes_m():
+    """Polygon with interior ring → holes_m 에 1개 링."""
+    feat = _shapes()["courtyard"]
+    solids = features_to_solids([feat], floor_h_m=3.0)
+    assert len(solids) == 1
+    s = solids[0]
+    assert len(s.holes_m) == 1
+    assert len(s.holes_m[0]) >= 3
+
+
+def test_courtyard_holes_local_meters():
+    """holes_m 좌표는 로컬 미터여야 한다 (절댓값 작아야 함)."""
+    feat = _shapes()["courtyard"]
+    feats = [feat]
+    coords = collect_5186_coords(feats)
+    from src.geo.crs import origin_offset
+    offset = origin_offset(coords)
+    solids = features_to_solids(feats, floor_h_m=3.0, offset=offset)
+    hole = solids[0].holes_m[0]
+    xs = [x for x, _ in hole]
+    ys = [y for _, y in hole]
+    assert all(abs(x) < 50_000 for x in xs)
+    assert all(abs(y) < 50_000 for y in ys)
+
+
+def test_rectangle_no_holes():
+    """내부 링 없는 폴리곤 → holes_m 비어 있음."""
+    feat = _shapes()["rectangle"]
+    solids = features_to_solids([feat], floor_h_m=3.0)
+    assert solids[0].holes_m == []
+
+
+def test_multipolygon_no_holes():
+    """MultiPolygon without inner rings → 모든 solid의 holes_m 비어 있음."""
+    feat = _shapes()["multipolygon"]
+    solids = features_to_solids([feat], floor_h_m=3.0)
+    assert all(s.holes_m == [] for s in solids)
+
+
+def test_extrude_face_count_with_hole():
+    """외곽 4변 + 홀 4변 → 4+2+4 = 10면."""
+    faces = extrude_face_loops(4, hole_ns=[4])
+    assert len(faces) == 10   # 바닥+천장(2) + 외벽(4) + 내벽(4)
+
+
+def test_extrude_face_count_two_holes():
+    """외곽 6변 + 홀 4변 + 홀 3변 → 6+2+4+3 = 15면."""
+    faces = extrude_face_loops(6, hole_ns=[4, 3])
+    assert len(faces) == 15
+
+
+def test_extrude_face_count_no_hole_unchanged():
+    """hole_ns=None → 기존 동작(n+2면) 유지."""
+    for n in (3, 4, 6, 8):
+        assert len(extrude_face_loops(n)) == n + 2
+        assert len(extrude_face_loops(n, hole_ns=[])) == n + 2

@@ -37,9 +37,9 @@ def test_build_code_no_imports():
 
 def test_build_code_embeds_footprints():
     code = build_skp_code(_solids())
-    # 3개 피처(사각형/L자/멀티2) → 4개 솔리드가 SOLIDS 리터럴에 박힘.
+    # 4개 피처(사각형/L자/멀티2/중정1) → 5개 솔리드가 SOLIDS 리터럴에 박힘.
     # ("name": 마커는 리터럴에만 등장; 루프 코드는 s["name"] 형태로 구분됨)
-    assert code.count('"name": ') == 4
+    assert code.count('"name": ') == 5
     assert "직사각형동" in code
 
 
@@ -52,3 +52,38 @@ def test_generated_code_is_valid_python():
     """build_model 전송 전 — 생성 코드가 구문상 유효한 Python 인지."""
     code = build_skp_code(_solids())
     compile(code, "<skp>", "exec")   # SyntaxError 면 실패
+
+
+# --- 중정(홀) 처리 ---
+
+def _courtyard_solid():
+    feat = load_fixture("building_shapes.json")["courtyard"]
+    return features_to_solids([feat], floor_h_m=3.0)[0]
+
+
+def test_holes_in_extrude_helper():
+    """extrude_solid 헬퍼에 holes_m 파라미터와 add_face_inner_loop 포함."""
+    snip = extrude_solid_snippet()
+    assert "holes_m" in snip
+    assert "add_face_inner_loop" in snip
+
+
+def test_courtyard_solid_has_holes_in_literal():
+    """중정 건물의 SOLIDS 리터럴에 holes_m 키가 포함된다."""
+    s = _courtyard_solid()
+    code = build_skp_code([s])
+    assert '"holes_m"' in code
+
+
+def test_no_hole_solid_has_empty_holes_in_literal():
+    """홀 없는 건물도 holes_m 키가 포함된다(빈 리스트)."""
+    solids = _solids()
+    code = build_skp_code(solids)
+    assert '"holes_m": []' in code
+
+
+def test_courtyard_code_valid_python():
+    """중정 포함 생성 코드가 구문상 유효한 Python."""
+    s = _courtyard_solid()
+    code = build_skp_code([s])
+    compile(code, "<skp_courtyard>", "exec")

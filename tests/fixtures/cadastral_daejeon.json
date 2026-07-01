@@ -1,0 +1,39 @@
+{
+  "response": {
+    "service": {"name": "data", "version": "2.0"},
+    "status": "OK",
+    "record": {"total": "2", "current": "2"},
+    "page": {"size": "1000", "current": "1", "total": "1"},
+    "result": {
+      "featureCollection": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [[[127.3703, 36.3396], [127.3712, 36.3396], [127.3712, 36.3405], [127.3703, 36.3405], [127.3703, 36.3396]]]
+            },
+            "properties": {
+              "pnu": "3017010800103580000",
+              "bub_cd": "3017010800",
+              "jibun": "358"
+            }
+          },
+          {
+            "type": "Feature",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [[[127.3712, 36.3396], [127.3721, 36.3396], [127.3721, 36.3405], [127.3712, 36.3405], [127.3712, 36.3396]]]
+            },
+            "properties": {
+              "pnu": "3017010800103590000",
+              "bub_cd": "3017010800",
+              "jibun": "359"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

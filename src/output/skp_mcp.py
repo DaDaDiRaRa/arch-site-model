@@ -14,34 +14,64 @@ from __future__ import annotations
 
 from src.config import M2I
 
-# §6.2 검증된 돌출 헬퍼: 미터 footprint → 인치 쿼드 솔리드 GeometryInput.
+# §6.2 검증된 돌출 헬퍼: 미터 footprint(+holes) → 인치 쿼드 솔리드 GeometryInput.
 _EXTRUDE_HELPER = f'''\
 M2I = {M2I}
 
-def extrude_solid(fp_m, base_z_m, height_m):
+def extrude_solid(fp_m, base_z_m, height_m, holes_m=None):
+    holes_m = holes_m or []
     fp = [(x * M2I, y * M2I) for (x, y) in fp_m]
+    holes = [[(x * M2I, y * M2I) for (x, y) in h] for h in holes_m]
     bz = base_z_m * M2I
     h = height_m * M2I
     n = len(fp)
-    g = GeometryInput()
-    g.set_vertices(
+    # 정점 배열: [outer_bottom, outer_top, hole0_bottom, hole0_top, ...]
+    verts = (
         [SUPoint3D(x, y, bz) for x, y in fp]
         + [SUPoint3D(x, y, bz + h) for x, y in fp]
     )
-    lp = LoopInput()                          # 바닥(하향)
+    hole_offsets = []
+    for hole in holes:
+        off = len(verts)
+        hole_offsets.append(off)
+        verts += [SUPoint3D(x, y, bz) for x, y in hole]
+        verts += [SUPoint3D(x, y, bz + h) for x, y in hole]
+    g = GeometryInput()
+    g.set_vertices(verts)
+    lp = LoopInput()                           # 바닥(외곽, 하향)
     for i in range(n - 1, -1, -1):
         lp.add_vertex_index(i)
-    _, g = g.add_face(lp)
-    lp = LoopInput()                          # 천장(상향)
+    floor_idx, g = g.add_face(lp)
+    for off, hole in zip(hole_offsets, holes): # 바닥 홀 inner loop
+        m = len(hole)
+        ilp = LoopInput()
+        for i in range(m):
+            ilp.add_vertex_index(off + i)
+        g.add_face_inner_loop(floor_idx, ilp)
+    lp = LoopInput()                           # 천장(외곽, 상향)
     for i in range(n):
         lp.add_vertex_index(n + i)
-    _, g = g.add_face(lp)
-    for i in range(n):                        # 옆면 = 쿼드
+    ceil_idx, g = g.add_face(lp)
+    for off, hole in zip(hole_offsets, holes): # 천장 홀 inner loop
+        m = len(hole)
+        ilp = LoopInput()
+        for i in range(m - 1, -1, -1):
+            ilp.add_vertex_index(off + m + i)
+        g.add_face_inner_loop(ceil_idx, ilp)
+    for i in range(n):                         # 외벽 쿼드
         j = (i + 1) % n
         lp = LoopInput()
         for vi in [i, j, n + j, n + i]:
             lp.add_vertex_index(vi)
         _, g = g.add_face(lp)
+    for off, hole in zip(hole_offsets, holes): # 중정 내벽 쿼드
+        m = len(hole)
+        for i in range(m):
+            j = (i + 1) % m
+            lp = LoopInput()
+            for vi in [off + i, off + j, off + m + j, off + m + i]:
+                lp.add_vertex_index(vi)
+            _, g = g.add_face(lp)
     return g
 '''
 
@@ -52,7 +82,7 @@ for s in SOLIDS:
         continue
     grp = Group()
     model.get_entities().add_group(grp)
-    g = extrude_solid(s["footprint_m"], s["base_z_m"], s["height_m"])
+    g = extrude_solid(s["footprint_m"], s["base_z_m"], s["height_m"], s.get("holes_m"))
     grp.get_entities().fill(g, weld_vertices=True)
     try:
         grp.set_name(s["name"])
@@ -111,6 +141,28 @@ if TERRAIN_VERTS:
         pass
 '''
 
+# Phase 5: 지적 경계 — Z=0 평면 폴리곤 (면 생성)
+_CADASTRAL_BUILD = '''\
+for p in CADASTRAL:
+    if len(p["footprint_m"]) < 3:
+        continue
+    fp = [(x * M2I, y * M2I) for (x, y) in p["footprint_m"]]
+    n = len(fp)
+    g = GeometryInput()
+    g.set_vertices([SUPoint3D(x, y, 0.0) for x, y in fp])
+    lp = LoopInput()
+    for i in range(n):
+        lp.add_vertex_index(i)
+    _, g = g.add_face(lp)
+    grp = Group()
+    model.get_entities().add_group(grp)
+    grp.get_entities().fill(g, weld_vertices=True)
+    try:
+        grp.set_name(p["pnu"])
+    except Exception:
+        pass
+'''
+
 
 def extrude_solid_snippet() -> str:
     """재사용 가능한 extrude_solid 헬퍼 텍스트(M2I 포함)."""
@@ -125,14 +177,24 @@ def _terrain_literal(mesh) -> str:
 
 
 def _solids_literal(solids) -> str:
-    """BuildingSolid 목록 → build_model 코드에 박을 Python 리터럴 문자열."""
+    """BuildingSolid 목록 → build_model 코드에 박을 Python 리터럴 문자열.
+
+    flagged=True 건물은 name 뒤에 ' [층수미확인]' 접미사를 붙인다.
+    holes_m 있으면 포함(중정 내부 링).
+    """
     items = []
     for s in solids:
         fp = ", ".join(f"({x!r}, {y!r})" for x, y in s.footprint_m)
+        name = s.name + (" [층수미확인]" if s.flagged else "")
+        holes = "[" + ", ".join(
+            "[" + ", ".join(f"({x!r}, {y!r})" for x, y in h) + "]"
+            for h in (s.holes_m or [])
+        ) + "]"
         items.append(
             "    {"
-            f'"name": {s.name!r}, '
+            f'"name": {name!r}, '
             f'"footprint_m": [{fp}], '
+            f'"holes_m": {holes}, '
             f'"base_z_m": {s.base_z_m!r}, '
             f'"height_m": {s.height_m!r}'
             "},"
@@ -140,22 +202,45 @@ def _solids_literal(solids) -> str:
     return "SOLIDS = [\n" + "\n".join(items) + "\n]\n"
 
 
-def build_skp_code(solids, terrain=None, camera: bool = True) -> str:
+def _cadastral_literal(parcels) -> str:
+    """CadastralParcel 목록 → build_model 코드에 박을 Python 리터럴."""
+    items = []
+    for p in parcels:
+        fp = ", ".join(f"({x!r}, {y!r})" for x, y in p.footprint_m)
+        items.append(f'    {{"pnu": {p.pnu!r}, "footprint_m": [{fp}]}},')
+    return "CADASTRAL = [\n" + "\n".join(items) + "\n]\n"
+
+
+def build_skp_code(solids, terrain=None, cadastral=None, camera: bool = True) -> str:
     """solids → SketchUp MCP build_model 에 넣을 완전한 Python 코드 문자열.
 
     terrain: TerrainMesh (Phase 3B). None 이면 건물만 출력(Phase 2 호환).
+    cadastral: list[CadastralParcel] (Phase 5). None 이면 지적 레이어 생략.
     camera=True 면 상공 시점 카메라를 설정한다.
     """
-    phase = "Phase 3B" if terrain is not None else "Phase 2"
+    has_terrain = terrain is not None
+    has_cadastral = cadastral is not None and len(cadastral) > 0
+    if has_terrain and has_cadastral:
+        phase = "Phase 5"
+    elif has_terrain:
+        phase = "Phase 3B"
+    elif has_cadastral:
+        phase = "Phase 5"
+    else:
+        phase = "Phase 2"
+
     parts = [
         f"# arch-site-model — generated building massing + terrain ({phase})",
         _EXTRUDE_HELPER,
         _solids_literal(solids),
         _BUILD_LOOP,
     ]
-    if terrain is not None:
+    if has_terrain:
         parts.append(_terrain_literal(terrain))
         parts.append(_TERRAIN_BUILD)
+    if has_cadastral:
+        parts.append(_cadastral_literal(cadastral))
+        parts.append(_CADASTRAL_BUILD)
     if camera:
         parts.append(_CAMERA)
     parts.append('result = {"buildings_built": built, "solids": len(SOLIDS)}')

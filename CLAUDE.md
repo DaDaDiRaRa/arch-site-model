@@ -58,11 +58,13 @@ src/
     crs.py               EPSG:4326 ↔ 5186 변환 + origin_offset
     vworld.py            VWorld data API 클라이언트 (페이지네이션 내장)
   geometry/
-    building.py          LT_C_SPBD features → BuildingSolid (쿼드 솔리드)
+    building.py          LT_C_SPBD features → BuildingSolid (쿼드 솔리드, 홀 포함)
     terrain_mesh.py      DEMPatch → TerrainMesh (TIN 삼각망, Phase 3B)
     seating.py           BuildingSolid + DEMPatch → base_z 앉힘 (Phase 3B)
+    cadastral.py         LP_PA_CBND_BUBUN features → CadastralParcel (Phase 5)
   output/
-    skp_mcp.py           BuildingSolid(+TerrainMesh) → SketchUp MCP 코드 문자열
+    skp_mcp.py           BuildingSolid(+TerrainMesh+CadastralParcel) → SketchUp MCP 코드 문자열
+    rhino.py             BuildingSolid(+TerrainMesh+CadastralParcel) → .3dm (Phase 4)
   terrain/
     store.py             manifest.json 조회 (find_tile)
     contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A)
@@ -79,6 +81,14 @@ tests/                   pytest 단위 테스트 (API 호출은 mock)
 
 ## MCP 도구 계약
 
+### `preview_site(address, radius_m=250, floor_height_m=3.0)`
+
+모델 생성 없이 건물 목록·층수·예상 규모 미리보기. "뭐가 들어갈까?" 사람 검토용.
+
+- 건물별 `name`, `floors`, `height_m`, `footprint_area_m2`, `has_courtyard` 반환
+- `summary`: 건물 수·층수 통계(max/avg)·중정 수·지적 수·지형 가용 여부
+- 실제 `.skp`/`.3dm` 생성 없음 — `generate_site_model` 실행 전 검토 단계
+
 ### `check_site_data(address, radius_m=250)`
 
 생성 전 선검사. "이 주소, 지금 만들 수 있나?" 답변.
@@ -86,7 +96,7 @@ tests/                   pytest 단위 테스트 (API 호출은 mock)
 - 주소→좌표, bbox → 건물(LT_C_SPBD) + 지적(LP_PA_CBND_BUBUN) + DEM 비축 여부 리포트
 - `ok: true` = 건물이 1개 이상 존재
 
-### `generate_site_model(address, radius_m, floor_height_m, outputs, layers, setback)`
+### `generate_site_model(address, radius_m, floor_height_m, outputs, layers, output_dir, missing_floors_policy, setback)`
 
 주소 → .skp 코드(build_model 입력) 생성.
 
@@ -100,6 +110,7 @@ tests/                   pytest 단위 테스트 (API 호출은 mock)
 | --- | --- |
 | `{"buildings": true}` | 건물 매싱만 (기본값, Phase 2) |
 | `{"buildings": true, "terrain": true}` | 지형 TIN + 건물 앉힘 (Phase 3B) |
+| `{"buildings": true, "cadastral": true}` | 건물 + 대지 경계 폴리곤 (Phase 5) |
 
 지형 활성화 시 추가 응답 필드:
 
@@ -201,17 +212,20 @@ result = generate_site_model(
 | 3A | 오프라인 DEM 굽기 (`contour_bake.py`, 등고선SHP→GeoTIFF) | ✅ 완료 |
 | 3B | 런타임 지형 (DEM 클립→TIN→드레이프, 건물 앉힘) | ✅ 완료 |
 | 4 | `.3dm` 이중 출력 + origin_offset 복원 | ✅ 완료 |
-| 5 | 지적 레이어 + 층수 누락 정책 + 출처표기(provenance) | 🔲 미구현 |
+| 5 | 지적 레이어 + 층수 누락 정책 + provenance 완성 | ✅ 완료 |
+| 확장1 | 홀(중정) 처리 — `holes_m` + `add_face_inner_loop` | ✅ 완료 |
+| 확장2 | `preview_site` — 건물 목록·규모 미리보기 (생성 없음) | ✅ 완료 |
 
 ---
 
 ## .3dm 출력 아키텍처 (Phase 4)
 
-`src/output/rhino.py` — `write_3dm(solids, terrain, path, offset)`:
+`src/output/rhino.py` — `write_3dm(solids, terrain, path, offset, cadastral=None)`:
 
 - **건물**: `rhino3dm.Extrusion` (닫힌 PolylineCurve → Z 돌출, 캡 포함)
 - **지형**: `rhino3dm.Mesh` (삼각망). TerrainMesh.vertices는 인치(SketchUp)→ `/M2I` 미터 환산
-- **레이어**: `buildings`(steel blue) / `terrain`(olive green)
+- **지적**: `rhino3dm.PolylineCurve` at Z=0
+- **레이어**: `buildings`(steel blue) / `buildings_unverified`(orange, policy=flag 시) / `terrain`(olive green) / `cadastral`(sandy yellow)
 - **좌표계**: 로컬 미터 (BuildingSolid.footprint_m / base_z_m / height_m 그대로)
 - **origin_offset**: 문서 `model.Strings["origin_offset_x/y"]` + 각 객체 `SetUserString` 이중 기록
 - `write_3dm` 반환값: 저장된 절대 경로 문자열
@@ -242,6 +256,42 @@ y_abs = y_local + origin_offset_y
 
 ---
 
+## Phase 5 추가 사항
+
+### 지적 레이어 (`src/geometry/cadastral.py`)
+
+`CadastralParcel(pnu, footprint_m)` — `features_to_parcels(features, offset)`.
+
+- MultiPolygon → 가장 큰 외곽 링만 취득
+- shapely 파싱 오류(꼭짓점 < 4 등) → 조용히 건너뜀
+- `.skp`: Z=0 평면 폴리곤 그룹 (`CADASTRAL` 리터럴 + `_CADASTRAL_BUILD` 템플릿)
+- `.3dm`: `cadastral` 레이어(황색) PolylineCurve at Z=0
+
+### 층수 누락 정책 (`missing_floors_policy`)
+
+`features_to_solids()` 의 `missing_policy` 파라미터 (`"default"` | `"skip"` | `"flag"`):
+
+- `"default"`: 기본 1층 적용, `BuildingSolid.flagged=False`
+- `"skip"`: `gro_flo_co` 누락 건물 solid 미생성
+- `"flag"`: 기본 1층 적용, `BuildingSolid.flagged=True` → `.3dm` `buildings_unverified` 레이어(주황), `.skp` 이름 `[층수미확인]` 접미사
+
+### provenance 완성
+
+`generate()` 반환의 `provenance` 필드 (항상 포함):
+
+- `building_src`, `floor_height_m`, `missing_floors_policy`, `radius_m`, `fetched_at`
+- `cadastral_src` — `layers.cadastral=True` 시 추가
+- `terrain_tile` — 지형 DEM 타일 파일명 (지형 활성화 시)
+- `setback_analysis: "stub"` — `setback=True` 시 추가
+
+### setback stub
+
+`generate()` / `generate_site_model()` 의 `setback: bool = False` 파라미터.
+`True` 시 `warnings`에 "arch-law-diagnose 연동 예정 [목표]" 추가 + provenance에 `"stub"` 표기.
+실제 분석 호출은 미구현 [목표].
+
+---
+
 ## SketchUp MCP 코드 생성 규칙
 
 `src/output/skp_mcp.py`가 생성하는 코드의 제약 (실측 검증):
@@ -251,6 +301,7 @@ y_abs = y_local + origin_offset_y
 - 좌표축: X=폭, Y=깊이, Z=높이 (Z=0 모델 원점 — 지형 없을 때 지면, 지형 있을 때 지형 아래)
 - 옆면 = 수직 쿼드 (변마다 1면)
 - 바닥면: 정점 역순 (하향), 천장면: 정순 (상향)
+- 중정(홀): `BuildingSolid.holes_m` → `extrude_solid(holes_m=...)` → 바닥/천장 `add_face_inner_loop` + 내벽 쿼드. `.3dm`은 홀 링마다 별도 내벽 Extrusion(`{name}_hole{i}`) 추가.
 
 ---
 
@@ -262,6 +313,8 @@ y_abs = y_local + origin_offset_y
 - `tests/test_dem.py`: 합성 GeoTIFF(경사면)
 - `tests/test_terrain_mesh.py`: 합성 DEMPatch(균일/경사/NaN 격자)
 - `tests/test_seating.py`: 합성 DEMPatch(평지/경사지)
+- `tests/test_rhino.py`: 합성 BuildingSolid/TerrainMesh → .3dm 검증 (Phase 4, 19개 테스트)
+- `tests/test_cadastral.py`: 합성 GeoJSON 피처 → CadastralParcel 변환 (Phase 5, 8개 테스트)
 
 ---
 
