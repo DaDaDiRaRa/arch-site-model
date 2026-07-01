@@ -1,4 +1,5 @@
-# 런타임 의존성 (pyproject.toml 과 동기). 도커/배포용 전체 목록.
+# 런타임 의존성 — 배포 이미지(Dockerfile)가 설치. 가볍게 유지(콜드스타트↓).
+# 개발/테스트/오프라인 도구(pytest, geopandas 등)는 requirements-dev.txt 참고.
 #   python -m pip install -r requirements.txt
 
 # --- 지오/좌표 ---
@@ -16,7 +17,3 @@ fastapi>=0.110        # 배포용 HTTP API (src/api.py)
 uvicorn>=0.27         # ASGI 서버 (Cloud Run 진입점)
 mcp>=1.2              # MCP 서버 (src/server.py, Claude 연동)
 python-dotenv>=1.0    # .env 로드 (로컬 개발)
-
-# --- 개발/테스트 ---
-pytest>=8.0
-httpx>=0.27           # FastAPI TestClient

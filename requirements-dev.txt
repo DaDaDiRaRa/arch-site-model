@@ -1,0 +1,10 @@
+# 개발/테스트/오프라인 의존성. CI 테스트 + 로컬 개발용.
+# 런타임 전체 포함 + 테스트 러너 + 오프라인 DEM 굽기(contour_bake) 도구.
+# 배포 이미지에는 넣지 않는다(런타임 불필요, 이미지 경량화).
+#   python -m pip install -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest>=8.0
+httpx>=0.27           # FastAPI TestClient (tests/test_api.py)
+geopandas>=1.0        # 오프라인 등고선 SHP → DEM 굽기 (src/terrain/contour_bake.py)
