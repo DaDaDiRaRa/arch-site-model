@@ -62,11 +62,12 @@ PR에서는 테스트만 돌고 배포는 안 됨.
 **최초 1회 GCP 셋업 (네가):**
 1. GitHub 레포 `arch-site-model` → Settings → Secrets → **`GCP_SA_KEY`** 추가
    (다른 앱과 동일한 서비스계정 JSON 키. 해당 SA에 Cloud Run 배포 권한 필요).
-2. 최초 배포 후 서비스에 **키 등록**(안 하면 앱은 뜨지만 VWorld 호출 실패):
+2. 최초 배포 후 서비스에 **키 연결**(안 하면 앱은 뜨지만 VWorld 호출 실패).
+   `VWORLD_KEY` 시크릿은 프로젝트 `arch-diagnose`에 **이미 존재** → 새로 만들 필요 없이 연결만:
    ```bash
    gcloud run services update arch-site-model --region asia-northeast3 \
      --set-env-vars ORTHO_SOURCE=vworld \
-     --set-secrets VWORLD_KEY=vworld-key:latest
+     --set-secrets VWORLD_KEY=VWORLD_KEY:latest
    ```
    이후 배포는 이 설정을 보존한다.
 
