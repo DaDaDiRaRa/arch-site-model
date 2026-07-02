@@ -15,6 +15,10 @@
       지오메트리 JSON 엔드포인트) 호출 → 데스크톱 SketchUp에서 조립 + 정사영상 드레이프
       (`Face#position_material`). 팀 대부분이 SketchUp이라 실사용 가치 큼. 데스크톱 GUI라
       사용자 테스트 루프 필요. 상세 `docs/orthophoto_texture_plan.md`.
+- [ ] **지형 계단현상 — 격자 솔버로 완전제거(선택)**: 1차 개선 완료(guarded CloughTocher,
+      quant 25.2→22.3%·flat 55.2→48.5%, 무인공물·봉우리 보존 — 2026-07-02 승격). 남은 건 **부분 개선**
+      한계 돌파: 라플라스 harmonic 인필 또는 ANUDEM류 반복 격자 솔버(등고선 셀 고정 → 최대원리로
+      오버슈트 없이 사이 매끔). 구현·런타임 비용 큼. 필요성 낮으면 skip 가능. `contour_bake.py`.
 - [ ] **NGII 정사영상 소스**(보류): 서버사이드 접근 막힘(브라우저 전용 키 정황) + EPSG:5179 타일
       구현 필요. 규격은 [[orthophoto-texture-blocker]] 메모리에 저장됨. 키 서버사이드 접근이
       풀리면 5179 `TileSource` 추가만 하면 됨.
@@ -45,18 +49,40 @@ Copy-Item .env.example .env
 # .env에 VWORLD_TEST_KEY / VWORLD_KEY / VWORLD_DOMAIN 채우기
 # VWorld 키 발급: https://www.vworld.kr
 
-# 3. MCP 서버 실행
+# 3. MCP 서버 실행 (Claude 연동)
 python -m src.server
 
 # 4. 테스트 실행
 python -m pytest tests/ -v
 ```
 
+**웹앱 실행 (배포용 FastAPI 백엔드 + React 프론트):**
+
+```powershell
+# 백엔드만 (API + Swagger 문서)
+uvicorn src.api:app --reload --port 8000       # http://localhost:8000/docs
+
+# 프론트엔드 개발 서버 (React, /api → :8000 프록시)
+cd frontend; npm install; npm run dev          # http://localhost:5173
+
+# 프론트 빌드 → 백엔드 통합 서빙 (프로덕션과 동일)
+cd frontend; npm run build; cd ..
+uvicorn src.api:app --port 8000                # http://localhost:8000 (프론트+API)
+```
+
+FastAPI는 `frontend/dist`가 있으면 루트에서 자동 서빙(없으면 API 전용). 도커/Cloud Run
+배포·인증·정사영상 소스(VWorld↔NGII) 전환은 **`docs/deploy.md`** 참조 — main push 시
+GitHub Actions(`.github/workflows/deploy.yml`)로 pytest 통과 후 자동 배포. 배포 아키텍처
+개요는 [[deployment-architecture]] 메모리.
+
 **`src/config.py` 주요 설정값:**
 
 - `VWORLD_KEY`: `VWORLD_TEST_KEY` 우선, 없으면 `VWORLD_KEY`
 - `M2I = 39.3701`: 미터→인치 (SketchUp MCP는 인치 단위)
 - `DEFAULT_FLOOR_H_M = 3.0`: 기본 층고
+- `ORTHO_SOURCE = "vworld"`: 정사영상 소스 (`"vworld"` 기본, `VWORLD_KEY` 재사용 | `"ngii"` 공공누리) — [[orthophoto-texture-blocker]]
+- `NGII_KEY = ""`: NGII 정사영상 키 (발급 후 `ORTHO_SOURCE=ngii`와 함께 사용)
+- `ORTHO_ZOOM = 18`: 정사영상 WMTS 줌 레벨
 - `GEO_STORE = Path("geo_store")`: DEM 비축 디렉터리
 
 ---
@@ -65,7 +91,8 @@ python -m pytest tests/ -v
 
 ```text
 src/
-  server.py              FastMCP 서버 진입점 (MCP 도구 4개 등록)
+  server.py              FastMCP 서버 진입점 (MCP 도구 4개 등록, Claude 연동)
+  api.py                 FastAPI 백엔드 (배포용 HTTP API — /api/generate, 파일 다운로드, frontend/dist 서빙)
   pipeline.py            generate_site_model 파이프라인
   tiles.py               generate_site_tiles — 대량건물 타일분할 (백로그5)
   site_check.py          check_site_data 핵심 로직
@@ -94,7 +121,18 @@ geo_store/
   manifest.json          비축 DEM 타일 목록
   dem_*.tif              GeoTIFF DEM 파일 (EPSG:5186)
 
-tests/                   pytest 단위 테스트 (API 호출은 mock)
+frontend/                React + Vite + Tailwind 웹 UI (주소 입력 → /api/generate 호출 → .3dm/정사영상 다운로드)
+  src/App.tsx            메인 폼·결과 화면
+  dist/                  빌드 산출물 (FastAPI가 루트에서 서빙)
+
+docs/
+  deploy.md              배포 가이드 (로컬 실행·도커·Cloud Run·인증·NGII 전환)
+  orthophoto_texture_plan.md  정사영상 텍스처 계획 (Tier 1 완료, Tier 2a .skp 드레이프)
+
+Dockerfile               프론트 빌드 + 파이썬 런타임 단일 이미지 (Cloud Run 배포)
+.github/workflows/deploy.yml  main push 시 pytest → Cloud Run 자동 배포
+
+tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.py·test_integration_api.py 포함)
 ```
 
 ---
@@ -210,6 +248,18 @@ tests/                   pytest 단위 테스트 (API 호출은 mock)
 
 **1:5,000 축척 선택 이유**: 전국 완전 커버리지(1:1,000은 도시 지역 미완전). 우리는 등고선+표고점만 사용하므로 다른 레이어 완전성 무관.
 
+**보간법 (계단현상 대응)** — `bake_dem(method=...)`:
+
+- `"clough"`(기본): **guarded CloughTocher**. CloughTocher C1 3차 보간(정점 gradient 추정)으로
+  세 정점이 같은 등고선 위여도 곡면이 휘어 계단현상을 줄인다. 단 급경사부/슬리버 삼각형에서
+  큰 오버슈트(스파이크·웅덩이)를 내므로, 안전한 `LinearNDInterpolator` 값에서 `±guard_m`(기본 3m)
+  밖으로 벗어난 셀을 그 범위로 클립("튜브 클램프")한다. Delaunay는 두 보간기가 공유.
+- `"linear"`: 평면 삼각보간만(과거 기본값). 오버슈트 없지만 등고선 사이가 평탄 삼각형이 돼 계단 발생.
+- 실측(대전 도엽): quant_frac(5m 배수 몰림) 25.2%→22.3%, flat_frac 55.2%→48.5%, 스파이크·봉우리
+  무손상(최고 190.4→190.5m). 완전 제거는 아닌 **부분 개선** — 더 강한 제거는 라플라스 harmonic
+  인필/ANUDEM류 격자 솔버 필요(미착수).
+- **진단**: `python scripts/dem_staircase.py <old.tif> <new.tif>` — quant_frac/flat_frac/봉우리 비교.
+
 **실행 방법:**
 
 ```powershell
@@ -217,8 +267,13 @@ python -m src.terrain.contour_bake <shp_dir> `
     --cell 5 `
     --out geo_store/dem_daejeon_36710065_66.tif `
     --region "대전 서구(36710065+66)" `
-    --sheets 36710065 36710066
+    --sheets 36710065 36710066 `
+    --method clough --guard 3
 ```
+
+**원본 SHP 위치**: `C:\Users\20260102\Downloads\새 폴더\(B010)수치지도_36710065_..._` 및 `..._36710066_..._`
+(각 폴더에 `N3L_F0010000.shp` 등고선 + `N3P_F0020000.shp` 표고점). `<shp_dir>`로 상위 "새 폴더"를
+주면 rglob으로 양 도엽을 함께 읽는다(`--sheets`는 manifest 메타용일 뿐 필터 아님).
 
 **현재 비축 파일:**
 
@@ -226,7 +281,7 @@ python -m src.terrain.contour_bake <shp_dir> `
 geo_store/dem_daejeon_36710065_66.tif
   - 560행×900열, 5m 해상도, EPSG:5186
   - bounds(5186): left=231419 bottom=414155 right=235919 top=416955
-  - 표고: 35.0~190.4m, NaN 0%
+  - 표고: 35.0~190.5m, NaN 0%, method=clough(guard 3m)
 ```
 
 **표고점 필수**: `F0020000` 없으면 봉우리가 평면으로 처리됨. 항상 함께 bake할 것.

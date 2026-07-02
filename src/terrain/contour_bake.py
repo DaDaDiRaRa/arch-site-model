@@ -24,7 +24,7 @@ import numpy as np
 import rasterio
 from affine import Affine
 from rasterio.crs import CRS
-from scipy.interpolate import LinearNDInterpolator
+from scipy.interpolate import CloughTocher2DInterpolator, LinearNDInterpolator
 
 log = logging.getLogger(__name__)
 
@@ -140,6 +140,8 @@ def bake_dem(
     zs: np.ndarray,
     cell_m: float = 5.0,
     bounds: tuple[float, float, float, float] | None = None,
+    method: str = "clough",
+    guard_m: float = 3.0,
 ) -> tuple[np.ndarray, Affine]:
     """등고선+표고점 좌표 → 정규 격자 DEM 보간.
 
@@ -147,6 +149,16 @@ def bake_dem(
         xs, ys, zs: read_contours() 반환값.
         cell_m: 격자 해상도(미터). 5.0=기본, 1.0=정밀.
         bounds: (minx, miny, maxx, maxy) EPSG:5186. None이면 데이터 범위.
+        method: 보간법.
+            - "clough"(기본): CloughTocher C1 3차 보간을 LinearND로 가드. clough는
+              정점 gradient를 추정해 곡면을 맞추므로 세 정점이 같은 등고선 위여도
+              평평해지지 않아 계단현상을 줄인다. 다만 급경사부/슬리버 삼각형에서
+              큰 오버슈트(스파이크·웅덩이)를 내므로, 안전한 평면보간(linear) 값에서
+              ±guard_m 밖으로 벗어난 셀을 그 범위로 클립한다("튜브 클램프").
+            - "linear": LinearNDInterpolator(평면 삼각보간)만. 오버슈트 없지만 등고선
+              사이가 평탄 삼각형이 돼 계단현상 발생(과거 기본값, 비교/폴백용).
+        guard_m: clough가 linear에서 벗어날 수 있는 최대 표고차(m). 등고선 간격(5m)보다
+            작게 잡아 정상적인 스무딩 차는 허용하되 오버슈트는 잘라낸다. method="linear"이면 무시.
 
     Returns:
         (grid, transform): grid[row, col] = 표고(m), transform = Affine(북→남 행 순서).
@@ -164,13 +176,25 @@ def bake_dem(
     grid_y = np.linspace(maxy, maxy - (nrows - 1) * cell_m, nrows)  # 북→남
     gx, gy = np.meshgrid(grid_x, grid_y)
 
-    log.info("보간 격자: %d×%d (cell_m=%.1f)", nrows, ncols, cell_m)
+    log.info("보간 격자: %d×%d (cell_m=%.1f, method=%s)", nrows, ncols, cell_m, method)
     log.info("입력 점 수: %d", len(xs))
 
-    interp = LinearNDInterpolator(list(zip(xs, ys)), zs)
-    grid = interp(gx, gy)
+    # Delaunay 삼각망은 두 보간기가 공유(중복 계산 방지).
+    from scipy.spatial import Delaunay
+    pts = np.column_stack([xs, ys])
+    tri = Delaunay(pts)
 
-    # 격자 밖(nan) 영역을 최근방 값으로 채움
+    grid_lin = LinearNDInterpolator(tri, zs)(gx, gy)
+    if method == "linear":
+        grid = grid_lin
+    elif method == "clough":
+        grid_ct = CloughTocher2DInterpolator(tri, zs)(gx, gy)
+        # 튜브 클램프: clough를 linear±guard_m 범위로 제한 → 오버슈트 스파이크/웅덩이 제거.
+        grid = np.clip(grid_ct, grid_lin - guard_m, grid_lin + guard_m)
+    else:
+        raise ValueError(f"알 수 없는 보간법: {method!r} (clough|linear)")
+
+    # 격자 밖(nan) 영역을 최근방 값으로 채움 (linear/clough 모두 동일 볼록껍질 → 같은 nan)
     nan_mask = np.isnan(grid)
     if nan_mask.any():
         from scipy.spatial import cKDTree
@@ -178,6 +202,9 @@ def bake_dem(
         tree = cKDTree(np.column_stack([gx[valid], gy[valid]]))
         _, idx = tree.query(np.column_stack([gx[nan_mask], gy[nan_mask]]))
         grid[nan_mask] = grid[valid][idx]
+
+    # 최종 안전 클램프 (입력 표고 범위 밖 값 제거).
+    np.clip(grid, float(zs.min()), float(zs.max()), out=grid)
 
     transform = Affine(cell_m, 0, minx, 0, -cell_m, maxy)
     return grid.astype(np.float32), transform
@@ -217,6 +244,8 @@ def update_manifest(
     cell_m: float,
     region: str,
     sheets: list[str] | None = None,
+    method: str | None = None,
+    guard_m: float | None = None,
 ) -> None:
     """manifest.json에 새 DEM 타일 항목을 추가/갱신."""
     from pyproj import Transformer
@@ -246,6 +275,10 @@ def update_manifest(
     }
     if sheets:
         entry["sheets"] = sheets
+    if method:
+        entry["method"] = method
+    if guard_m is not None and method == "clough":
+        entry["guard_m"] = guard_m
 
     tiles = [t for t in tiles if t.get("file") != entry["file"]]
     tiles.append(entry)
@@ -263,23 +296,28 @@ def bake(
     region: str = "",
     sheets: list[str] | None = None,
     update_manifest_flag: bool = True,
+    method: str = "clough",
+    guard_m: float = 3.0,
 ) -> None:
     """end-to-end: SHP 읽기 → 보간 → .tif 저장 → manifest 갱신."""
     shp_dir = Path(shp_dir)
     out_path = Path(out_path)
 
-    log.info("=== contour_bake 시작 === shp_dir=%s cell_m=%s", shp_dir, cell_m)
+    log.info("=== contour_bake 시작 === shp_dir=%s cell_m=%s method=%s", shp_dir, cell_m, method)
     xs, ys, zs = read_contours(shp_dir)
 
     if bounds is None:
         bounds = (xs.min(), ys.min(), xs.max(), ys.max())
 
-    grid, transform = bake_dem(xs, ys, zs, cell_m=cell_m, bounds=bounds)
+    grid, transform = bake_dem(xs, ys, zs, cell_m=cell_m, bounds=bounds, method=method, guard_m=guard_m)
     write_dem_tif(out_path, grid, transform)
 
     if update_manifest_flag:
         from src import config
-        update_manifest(config.GEO_STORE, out_path, bounds, cell_m, region or shp_dir.name, sheets)
+        update_manifest(
+            config.GEO_STORE, out_path, bounds, cell_m, region or shp_dir.name,
+            sheets, method=method, guard_m=guard_m,
+        )
 
     log.info("=== contour_bake 완료 === %s", out_path)
 
@@ -292,6 +330,14 @@ def _cli() -> None:
     parser.add_argument("--region", default="", help="manifest region 이름")
     parser.add_argument("--sheets", nargs="*", help="도엽 번호 목록")
     parser.add_argument("--no-manifest", action="store_true", help="manifest.json 갱신 안 함")
+    parser.add_argument(
+        "--method", default="clough", choices=["clough", "linear"],
+        help="보간법. clough=C1 3차 가드(계단제거, 기본) | linear=평면삼각(계단발생, 비교용)",
+    )
+    parser.add_argument(
+        "--guard", type=float, default=3.0,
+        help="clough 튜브 클램프 폭(m). linear에서 벗어날 최대 표고차. 기본 3.0",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -302,6 +348,8 @@ def _cli() -> None:
         region=args.region,
         sheets=args.sheets,
         update_manifest_flag=not args.no_manifest,
+        method=args.method,
+        guard_m=args.guard,
     )
 
 

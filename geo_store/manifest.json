@@ -11,10 +11,12 @@
     ],
     "source": "CONTOUR_BAKE",
     "cell_m": 5.0,
-    "updated": "2026-06-30",
+    "updated": "2026-07-02",
     "sheets": [
       "36710065",
       "36710066"
-    ]
+    ],
+    "method": "clough",
+    "guard_m": 3.0
   }
 ]

@@ -139,6 +139,43 @@ def test_bake_dem_spot_raises_peak(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# 보간법(method) — 계단현상 재굽기 (clough 가드 vs linear)
+# ---------------------------------------------------------------------------
+
+def test_bake_dem_linear_method_in_range(tmp_path):
+    """method='linear'도 여전히 동작하고 표고 범위 안(오버슈트 없음)."""
+    _make_synthetic_shp(tmp_path)
+    xs, ys, zs = read_contours(tmp_path)
+    grid, _ = bake_dem(xs, ys, zs, cell_m=10.0, method="linear")
+    assert np.isfinite(grid).all()
+    assert grid.min() >= zs.min() - 1e-3
+    assert grid.max() <= zs.max() + 1e-3
+
+
+def test_bake_dem_invalid_method_raises(tmp_path):
+    _make_synthetic_shp(tmp_path)
+    xs, ys, zs = read_contours(tmp_path)
+    with pytest.raises(ValueError, match="보간법"):
+        bake_dem(xs, ys, zs, cell_m=10.0, method="bogus")
+
+
+def test_bake_dem_clough_guarded_within_tube(tmp_path):
+    """clough(기본)는 linear에서 guard_m 이상 벗어나지 않아야 함(오버슈트 스파이크 차단)."""
+    _make_synthetic_shp(tmp_path)
+    xs, ys, zs = read_contours(tmp_path)
+    guard = 2.0
+    grid_lin, _ = bake_dem(xs, ys, zs, cell_m=5.0, method="linear")
+    grid_ct, _ = bake_dem(xs, ys, zs, cell_m=5.0, method="clough", guard_m=guard)
+
+    # 볼록껍질 밖은 두 방법 모두 동일 최근방 채움 → 차이는 껍질 안에서만.
+    # 어떤 셀도 linear에서 guard보다 더 벗어나지 않음(수치오차 여유 포함).
+    assert np.all(np.abs(grid_ct - grid_lin) <= guard + 1e-3)
+    # 표고 범위 클램프 유지
+    assert grid_ct.min() >= zs.min() - 1e-3
+    assert grid_ct.max() <= zs.max() + 1e-3
+
+
+# ---------------------------------------------------------------------------
 # write_dem_tif
 # ---------------------------------------------------------------------------
 
