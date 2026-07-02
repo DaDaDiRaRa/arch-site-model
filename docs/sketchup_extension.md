@@ -41,15 +41,18 @@ uvicorn src.api:app --port 8000
 # 또는 GEO_STORE를 절대경로로: GEO_STORE=<repo>/geo_store uvicorn src.api:app --port 8000
 ```
 
-배포 백엔드(Cloud Run)를 쓰면 확장 다이얼로그의 **백엔드 설정 > 백엔드 URL**에 그 URL을 넣는다
-(설정은 저장됨).
+백엔드 URL은 **패키징 시 박아넣는다**(런타임 입력칸 없음 — 혼동 방지). 개발자는 localhost로
+빌드한 .rbz로 로컬 테스트, 팀 배포는 Cloud Run URL로 빌드한 .rbz를 쓴다(§1의 `--backend-url`).
 
 ## 4. 사용
 
 1. **Extensions > 대지모델 생성…** 실행.
-2. 주소·반경 입력, 지형 체크, (필요 시) 백엔드 URL 확인.
-3. **모델 생성** → 백엔드 조회 + 조립(최대 ~30초) → 지형·건물이 현재 모델에 생성됨.
+2. 주소·반경 입력, 지형 체크.
+3. **모델 생성** → (박힌 백엔드로) 조회 + 조립(최대 ~30초) → 지형·건물이 현재 모델에 생성됨.
 4. 결과는 태그로 분리: `terrain` / `buildings` / `buildings_unverified`(층수 미확인). 되돌리기 1회로 제거.
+
+주소는 **지번(예: 괴정동 358)·도로명(예: 신반포로 45길71) 모두** 지원. 지형(DEM)은 현재 대전 서구
+도엽만 구워져 있어, 그 밖 지역은 **건물만** 생성되고 지형은 경고와 함께 생략된다(전국 건물 vs 대전 지형).
 
 ---
 
@@ -71,7 +74,7 @@ SketchUp 확장  ──HTTP POST /api/generate──▶  백엔드(FastAPI)
 - `arch_site_model/main.rb` — 메뉴·HtmlDialog·오케스트레이션
 - `arch_site_model/api_client.rb` — 백엔드 HTTP(Sketchup::Http, 비동기)
 - `arch_site_model/builder.rb` — geometry → 엔티티(지형/건물)
-- `arch_site_model/settings.rb` — 백엔드 URL 영구 저장
+- `arch_site_model/settings.rb` — 박아넣은 백엔드 URL(DEFAULT_BACKEND) 제공
 - `arch_site_model/dialog.html` — 입력 UI
 
 ---
@@ -79,7 +82,7 @@ SketchUp 확장  ──HTTP POST /api/generate──▶  백엔드(FastAPI)
 ## 6. 자동화 경계 / 한계
 
 - **자동(설치 후 매번)**: 주소 입력 → 버튼 1회 → 지형·건물 조립까지 완전 자동.
-- **수동/1회성**: `.rbz` 설치 + 백엔드 URL 설정, SketchUp 실행(헤드리스 없음).
+- **수동/1회성**: `.rbz` 설치(백엔드 URL은 이미 박혀 있어 입력 불필요), SketchUp 실행(헤드리스 없음).
 - **한계**:
   - 헤드리스 SketchUp이 없어 개발자가 무인 검증 불가 → 설치·실행은 사용자 테스트 루프.
   - 지형 삼각형이 많으면(큰 반경) SketchUp이 느려질 수 있음.

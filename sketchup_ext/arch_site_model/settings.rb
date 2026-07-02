@@ -1,22 +1,14 @@
-# 확장 설정 저장 (백엔드 URL). SketchUp 레지스트리(read/write_default)에 영구 저장.
+# 백엔드 URL 제공. 패키징 시 build_rbz.py 가 DEFAULT_BACKEND 한 줄에 URL을 박는다
+# (런타임 입력·저장 없음). 개발 빌드=localhost, 배포 빌드=Cloud Run URL.
 
 module ArchSiteModel
   module Settings
-    SECTION = "arch_site_model".freeze
-    # 개발 기본값 = localhost. 배포용 .rbz 는 `build_rbz.py --backend-url <URL>` 이
-    # 패키징 시 아래 한 줄을 그 URL로 치환한다(소스는 localhost 유지) → 팀원은 URL 입력 불필요.
+    # 백엔드 URL은 패키징 시 `build_rbz.py --backend-url <URL>` 이 아래 한 줄에 박는다
+    # (개발 빌드=localhost, 배포 빌드=Cloud Run URL). 런타임 입력·저장 없음 → 혼동 방지.
     DEFAULT_BACKEND = "http://localhost:8000".freeze
 
     def self.backend_url
-      url = Sketchup.read_default(SECTION, "backend_url", DEFAULT_BACKEND)
-      url = DEFAULT_BACKEND if url.nil? || url.strip.empty?
-      url.sub(%r{/+\z}, "") # 끝의 / 제거
-    end
-
-    def self.backend_url=(value)
-      return if value.nil?
-      v = value.to_s.strip
-      Sketchup.write_default(SECTION, "backend_url", v) unless v.empty?
+      DEFAULT_BACKEND.sub(%r{/+\z}, "") # 끝의 / 제거
     end
   end
 end

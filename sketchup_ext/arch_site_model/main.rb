@@ -33,20 +33,12 @@ module ArchSiteModel
         style: UI::HtmlDialog::STYLE_DIALOG,
       )
       dlg.set_file(DIALOG_HTML)
-      dlg.add_action_callback("ready") { |_ctx| push_config(dlg) }
       dlg.add_action_callback("generate") { |_ctx, payload| handle_generate(dlg, payload) }
       dlg
     end
 
-    # 다이얼로그가 뜨면 저장된 백엔드 URL을 폼에 채워준다.
-    def self.push_config(dlg)
-      cfg = { "backend_url" => Settings.backend_url }
-      dlg.execute_script("window.setConfig(#{JSON.generate(cfg)});")
-    end
-
     def self.handle_generate(dlg, payload)
       params = JSON.parse(payload)
-      Settings.backend_url = params["backend_url"]
       if params["address"].to_s.strip.empty?
         dlg.execute_script("window.showError(#{JSON.generate('주소를 입력하세요.')});")
         return

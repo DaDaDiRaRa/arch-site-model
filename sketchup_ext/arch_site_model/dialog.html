@@ -42,13 +42,6 @@
     <label class="chk"><input type="checkbox" id="terrain" checked /> 지형(TIN)</label>
   </div>
 
-  <details>
-    <summary>백엔드 설정</summary>
-    <label for="backend">백엔드 URL</label>
-    <input type="text" id="backend" placeholder="http://localhost:8000" />
-    <div class="hint">개발: http://localhost:8000 · 배포: Cloud Run URL</div>
-  </details>
-
   <button id="go">모델 생성</button>
 
   <div id="status"></div>
@@ -58,9 +51,6 @@
     function $(id) { return document.getElementById(id); }
 
     // Ruby → JS
-    window.setConfig = function (cfg) {
-      if (cfg && cfg.backend_url) $("backend").value = cfg.backend_url;
-    };
     window.showBusy = function () {
       $("warns").innerHTML = "";
       var s = $("status"); s.className = "busy"; s.textContent = "생성 중… (백엔드 조회 + 조립, 최대 30초)";
@@ -85,16 +75,10 @@
         address: $("address").value,
         radius_m: parseInt($("radius").value, 10) || 250,
         terrain: $("terrain").checked,
-        backend_url: $("backend").value.trim(),
       };
       if (window.sketchup && window.sketchup.generate) {
         window.sketchup.generate(JSON.stringify(payload));
       }
-    });
-
-    // JS → Ruby: 준비되면 설정 요청
-    window.addEventListener("DOMContentLoaded", function () {
-      if (window.sketchup && window.sketchup.ready) window.sketchup.ready();
     });
   </script>
 </body>
