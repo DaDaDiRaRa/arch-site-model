@@ -213,20 +213,21 @@ def generate(
     if layers.get("terrain"):
         from src.geometry.seating import seat_building
         from src.geometry.terrain_mesh import grid_to_tin
-        from src.terrain.dem import clip_dem
-        from src.terrain.store import find_tile
+        from src.terrain.dem import clip_dem_mosaic
+        from src.terrain.store import find_tiles
 
-        tile = find_tile(bbox)
-        if tile is None:
+        dem_tiles = find_tiles(bbox)
+        if not dem_tiles:
             warnings.append(
                 "DEM 타일 없음: 반경이 비축 DEM 밖입니다. "
                 "geo_store/manifest.json 확인 또는 contour_bake 재실행 필요."
             )
         else:
-            terrain_tile_file = tile["file"]
-            tile_path = config.GEO_STORE / terrain_tile_file
+            tile_files = [t["file"] for t in dem_tiles]
+            terrain_tile_file = ", ".join(tile_files)  # 경계 걸치면 여러 타일 병합
+            tile_paths = [config.GEO_STORE / f for f in tile_files]
             bbox_5186 = _bbox_4326_to_5186(bbox)
-            dem = clip_dem(tile_path, bbox_5186, offset)
+            dem = clip_dem_mosaic(tile_paths, bbox_5186, offset)
 
             zr = dem.z_range()
             if zr is None:

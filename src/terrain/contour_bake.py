@@ -252,9 +252,12 @@ def update_manifest(
 
     tr = Transformer.from_crs("EPSG:5186", "EPSG:4326", always_xy=True)
     minx5, miny5, maxx5, maxy5 = bounds_5186
-    min_lon, min_lat = tr.transform(minx5, miny5)
-    max_lon, max_lat = tr.transform(maxx5, maxy5)
-    bounds_4326 = [min_lon, min_lat, max_lon, max_lat]
+    # 네 모서리 모두 변환해 4326 축정렬 엔벨로프를 취한다. 좌하·우상 2점만 쓰면
+    # 투영 스큐 탓에 축정렬 bbox가 실제 타일보다 안쪽으로 잡혀 인접 타일 사이에
+    # 수십 m 빈 띠(find_tiles 미스)가 생긴다. 엔벨로프는 실제 quad보다 커서 이음새가 겹친다.
+    corners = [(minx5, miny5), (minx5, maxy5), (maxx5, miny5), (maxx5, maxy5)]
+    lons, lats = zip(*(tr.transform(x, y) for x, y in corners))
+    bounds_4326 = [min(lons), min(lats), max(lons), max(lats)]
 
     manifest_path = geo_store / "manifest.json"
     tiles = []
@@ -322,6 +325,86 @@ def bake(
     log.info("=== contour_bake 완료 === %s", out_path)
 
 
+def bake_tiled(
+    shp_dir: str | Path,
+    out_path: str | Path,
+    cell_m: float = 5.0,
+    tile_km: float = 10.0,
+    margin_m: float = 300.0,
+    region: str = "",
+    update_manifest_flag: bool = True,
+    method: str = "clough",
+    guard_m: float = 3.0,
+) -> list[Path]:
+    """대용량 지역용: 등고선/표고점을 1회 읽고 tile_km 격자로 나눠 타일별 DEM을 굽는다.
+
+    전역을 한 번에 굽지 않는 이유: 정점 수백만 개에 대한 CloughTocher + 거대 격자 평가가
+    메모리/시간을 폭발시킨다. 타일마다 (타일 bbox + margin_m 여유)에 드는 점만 골라
+    보간하므로 각 Delaunay/격자 비용이 유한하다. margin은 타일 경계 밖 등고선까지 포함해
+    가장자리 평탄화·이음새 불일치를 줄인다(서빙은 find_tiles + clip_dem_mosaic가 병합).
+
+    타일 원점은 전역 minx/maxy 격자에 정렬(tile_m가 cell_m의 정수배일 때)되어 인접
+    타일이 픽셀 정합한다. out_path는 파일명 접두사로 쓰여 `{stem}_r{r}c{c}{suffix}` 생성.
+    반환: 생성된 .tif 경로 목록.
+    """
+    shp_dir = Path(shp_dir)
+    out_path = Path(out_path)
+    xs, ys, zs = read_contours(shp_dir)
+
+    minx, miny = float(xs.min()), float(ys.min())
+    maxx, maxy = float(xs.max()), float(ys.max())
+    tile_m = tile_km * 1000.0
+    if tile_m % cell_m != 0:
+        log.warning("tile_km*1000(%.0f)이 cell_m(%.1f) 배수가 아님 → 타일 픽셀 정합 어긋날 수 있음",
+                    tile_m, cell_m)
+    ncols = max(1, int(np.ceil((maxx - minx) / tile_m)))
+    nrows = max(1, int(np.ceil((maxy - miny) / tile_m)))
+    log.info(
+        "=== tiled bake === 전역 %.1f×%.1f km → 최대 %d×%d 타일 (tile_km=%.1f, margin=%.0fm, 점 %d)",
+        (maxx - minx) / 1000, (maxy - miny) / 1000, nrows, ncols, tile_km, margin_m, len(xs),
+    )
+
+    made: list[Path] = []
+    for r in range(nrows):
+        ty1 = maxy - r * tile_m
+        ty0 = max(ty1 - tile_m, miny)
+        for c in range(ncols):
+            tx0 = minx + c * tile_m
+            tx1 = min(tx0 + tile_m, maxx)
+            sel = (
+                (xs >= tx0 - margin_m) & (xs <= tx1 + margin_m)
+                & (ys >= ty0 - margin_m) & (ys <= ty1 + margin_m)
+            )
+            n = int(sel.sum())
+            if n < 10:
+                continue  # 데이터 없는 타일(비정형 지역 경계) → 스킵
+            tb = (tx0, ty0, tx1, ty1)
+            try:
+                grid, transform = bake_dem(
+                    xs[sel], ys[sel], zs[sel],
+                    cell_m=cell_m, bounds=tb, method=method, guard_m=guard_m,
+                )
+            except Exception as e:  # 슬리버/특이 삼각화 등 → 타일만 스킵(전체 중단 방지)
+                log.warning("타일 r%dc%d 스킵: %s", r, c, e)
+                continue
+
+            tile_out = out_path.with_name(f"{out_path.stem}_r{r}c{c}{out_path.suffix}")
+            write_dem_tif(tile_out, grid, transform)
+            if update_manifest_flag:
+                from src import config
+                update_manifest(
+                    config.GEO_STORE, tile_out, tb, cell_m,
+                    region=f"{region or shp_dir.name} r{r}c{c}",
+                    method=method, guard_m=guard_m,
+                )
+            made.append(tile_out)
+            log.info("타일 저장 %s (점 %d, %.1f×%.1f km)",
+                     tile_out.name, n, (tx1 - tx0) / 1000, (ty1 - ty0) / 1000)
+
+    log.info("=== tiled bake 완료: %d개 타일 ===", len(made))
+    return made
+
+
 def _cli() -> None:
     parser = argparse.ArgumentParser(description="수치지형도 등고선+표고점 → DEM(.tif) 굽기")
     parser.add_argument("shp_dir", help="수치지형도 SHP 폴더 경로")
@@ -338,19 +421,41 @@ def _cli() -> None:
         "--guard", type=float, default=3.0,
         help="clough 튜브 클램프 폭(m). linear에서 벗어날 최대 표고차. 기본 3.0",
     )
+    parser.add_argument(
+        "--tile-km", type=float, default=0.0,
+        help="타일 격자 크기(km). >0이면 타일 분할 배치 베이크(대용량 지역). "
+             "--out은 파일명 접두사로 사용(→ {stem}_r{r}c{c}.tif).",
+    )
+    parser.add_argument(
+        "--margin-m", type=float, default=300.0,
+        help="타일 경계 밖 여유(m) — 이음새 연속성. --tile-km>0일 때만 적용. 기본 300",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    bake(
-        shp_dir=args.shp_dir,
-        out_path=args.out,
-        cell_m=args.cell,
-        region=args.region,
-        sheets=args.sheets,
-        update_manifest_flag=not args.no_manifest,
-        method=args.method,
-        guard_m=args.guard,
-    )
+    if args.tile_km and args.tile_km > 0:
+        bake_tiled(
+            shp_dir=args.shp_dir,
+            out_path=args.out,
+            cell_m=args.cell,
+            tile_km=args.tile_km,
+            margin_m=args.margin_m,
+            region=args.region,
+            update_manifest_flag=not args.no_manifest,
+            method=args.method,
+            guard_m=args.guard,
+        )
+    else:
+        bake(
+            shp_dir=args.shp_dir,
+            out_path=args.out,
+            cell_m=args.cell,
+            region=args.region,
+            sheets=args.sheets,
+            update_manifest_flag=not args.no_manifest,
+            method=args.method,
+            guard_m=args.guard,
+        )
 
 
 if __name__ == "__main__":

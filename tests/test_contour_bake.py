@@ -13,7 +13,13 @@ import pytest
 import rasterio
 from shapely.geometry import LineString, Point
 
-from src.terrain.contour_bake import _find_elev_field, bake_dem, read_contours, write_dem_tif
+from src.terrain.contour_bake import (
+    _find_elev_field,
+    bake_dem,
+    bake_tiled,
+    read_contours,
+    write_dem_tif,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -195,3 +201,34 @@ def test_write_dem_tif_readable(tmp_path):
         # 표고 범위 일치
         assert np.nanmin(data) >= zs.min() - 1.0
         assert np.nanmax(data) <= zs.max() + 1.0
+
+
+# ---------------------------------------------------------------------------
+# bake_tiled (대용량 지역 타일 분할 배치 베이크)
+# ---------------------------------------------------------------------------
+
+def test_bake_tiled_creates_multiple_aligned_tiles(tmp_path):
+    """합성 언덕(≈300m)을 작은 타일로 나누면 여러 타일이 생성되고, 인접 타일이
+    픽셀 정합(공통 minx/maxy 격자)한다. manifest는 건드리지 않는다."""
+    _make_synthetic_shp(tmp_path)
+    out = tmp_path / "dem_syn.tif"
+    made = bake_tiled(
+        tmp_path, out, cell_m=5.0, tile_km=0.1, margin_m=20.0,
+        update_manifest_flag=False,
+    )
+
+    assert len(made) >= 2
+    assert all(p.exists() for p in made)
+    assert all(("_r" in p.stem and "c" in p.stem) for p in made)
+
+    with rasterio.open(made[0]) as src:
+        assert src.crs.to_epsg() == 5186
+        assert abs(src.res[0] - 5.0) < 1e-6
+        ox, oy = src.transform.c, src.transform.f  # 원점(좌상단)
+
+    # 다른 타일의 원점도 같은 5m 격자에 정렬 → (원점 차)가 5m의 정수배.
+    with rasterio.open(made[-1]) as src2:
+        dx = abs(src2.transform.c - ox)
+        dy = abs(src2.transform.f - oy)
+    assert abs((dx / 5.0) - round(dx / 5.0)) < 1e-6
+    assert abs((dy / 5.0) - round(dy / 5.0)) < 1e-6

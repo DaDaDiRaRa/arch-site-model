@@ -43,17 +43,49 @@ def load_manifest(path: Path | None = None) -> list[dict]:
     return []
 
 
-def find_tile(bbox, manifest: list[dict] | None = None) -> dict | None:
-    """질의 bbox(EPSG:4326)를 포함하는 첫 DEM 타일을 반환. 없으면 None.
+def _tile_box(tile: dict):
+    """타일의 bounds_4326 → shapely box. 없거나 형식 오류면 None."""
+    bounds = tile.get("bounds_4326")
+    if not bounds or len(bounds) != 4:
+        return None
+    return box(*bounds)
 
-    타일의 bounds_4326 이 질의 bbox 를 완전히 포함하면 매칭.
+
+def _tile_cell_m(tile: dict) -> float:
+    """타일 격자 해상도(m). 없으면 inf(가장 거친 것으로 취급 → 정렬 후순위)."""
+    cell = tile.get("cell_m")
+    try:
+        return float(cell) if cell is not None else float("inf")
+    except (TypeError, ValueError):
+        return float("inf")
+
+
+def find_tiles(bbox, manifest: list[dict] | None = None) -> list[dict]:
+    """질의 bbox(EPSG:4326)와 겹치는 DEM 타일을 전부 반환.
+
+    정렬: 해상도 고운(cell_m 작은) 순 → 겹침 면적 큰 순. 여러 타일에 걸친 질의는
+    이 목록을 clip_dem_mosaic로 병합한다. '완전 포함'이 아니라 '겹침' 기준이라,
+    타일 경계를 걸친 주소가 조용히 지형 누락되던 문제를 해결한다.
     """
     tiles = manifest if manifest is not None else load_manifest()
     query = box(*bbox)
+    hits: list[tuple[dict, float]] = []
     for tile in tiles:
-        bounds = tile.get("bounds_4326")
-        if not bounds or len(bounds) != 4:
+        tb = _tile_box(tile)
+        if tb is None:
             continue
-        if box(*bounds).contains(query):
-            return tile
-    return None
+        overlap = tb.intersection(query).area
+        if overlap <= 0.0:
+            continue
+        hits.append((tile, overlap))
+    hits.sort(key=lambda h: (_tile_cell_m(h[0]), -h[1]))
+    return [tile for tile, _ in hits]
+
+
+def find_tile(bbox, manifest: list[dict] | None = None) -> dict | None:
+    """질의 bbox와 겹치는 대표 타일 1개(가장 고해상도·겹침 큰 것). 없으면 None.
+
+    지형 가용 여부 판단·단일 타일 클립용. 다중 타일 병합은 find_tiles + clip_dem_mosaic.
+    """
+    hits = find_tiles(bbox, manifest)
+    return hits[0] if hits else None

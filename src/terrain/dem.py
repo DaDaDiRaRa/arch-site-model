@@ -71,6 +71,48 @@ def clip_dem(
     return DEMPatch(grid=grid, transform=transform, offset=offset)
 
 
+def clip_dem_mosaic(
+    tile_paths,
+    bbox_5186: tuple[float, float, float, float],
+    offset: tuple[float, float],
+) -> DEMPatch:
+    """여러 DEM 타일(모두 EPSG:5186)을 bbox_5186 영역으로 병합 클립.
+
+    단일 타일이면 clip_dem에 위임(기존 경로·nodata 처리 보존). 여러 타일이면
+    rasterio.merge로 가장 고운 해상도 격자에 모자이크한다. tile_paths를 고해상도
+    우선 순서로 주면 겹침부에서 앞선(고해상도) 타일이 이긴다(method="first").
+
+    offset: origin_offset(건물과 동일 로컬 좌표 기준). 반환 DEMPatch는 clip_dem과 동일 계약.
+    """
+    paths = [Path(p) for p in tile_paths]
+    if not paths:
+        raise ValueError("clip_dem_mosaic: 타일 목록이 비었습니다")
+    if len(paths) == 1:
+        return clip_dem(paths[0], bbox_5186, offset)
+
+    from rasterio.merge import merge as _merge
+
+    # 목적지 nodata는 실수 센티넬(-9999)로 둔다. nan을 nodata로 쓰면 merge 내부의
+    # 'dest==nodata' 비교가 NaN 동등 실패로 깨질 수 있어서다. 병합 후 nan으로 되돌린다.
+    # (contour_bake 타일은 조밀 사각격자라 내부 nodata가 없고, 커버 안 된 bbox 영역만
+    #  센티넬로 채워진다.)
+    sentinel = -9999.0
+    srcs = [rasterio.open(p) for p in paths]
+    try:
+        res = min(min(abs(s.res[0]), abs(s.res[1])) for s in srcs)
+        mosaic, transform = _merge(
+            srcs, bounds=bbox_5186, res=res, nodata=sentinel, method="first"
+        )
+    finally:
+        for s in srcs:
+            s.close()
+
+    grid = mosaic[0].astype(np.float32)
+    grid[grid == sentinel] = np.nan
+    grid[~np.isfinite(grid)] = np.nan
+    return DEMPatch(grid=grid, transform=transform, offset=offset)
+
+
 def elev_at(x_local: float, y_local: float, dem: DEMPatch) -> float:
     """로컬 미터좌표 → bilinear 보간 표고(m).
 

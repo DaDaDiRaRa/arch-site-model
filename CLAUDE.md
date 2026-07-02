@@ -9,6 +9,18 @@
 
 > 완료하면 해당 줄을 삭제한다(항상 "남은 일"만 남게 유지).
 
+- [ ] **전국 5m DEM 확장**: 목표 = 전국 어디 주소든 지형+건물 자동 생성. **자동/API 취득은 불가 확인
+      (2026-07-02)** — 실시간 표고 API 없음(VWorld 3D Data API 2019 폐쇄), VWorld WFS 169레이어에
+      등고선·표고점 없음, 무료 공개DEM은 90m뿐(대지모델엔 거침, EPSG:5179). 따라서 5m는 여전히
+      **지역별 1:5,000 수치지형도 SHP 수동 다운로드 → `contour_bake`로 5m DEM(EPSG:5186) 굽기 →
+      `geo_store/`+manifest**가 현실적 경로(건물·지적은 VWorld 실시간이라 이미 전국). 다중 타일 경계
+      질의 대응 완료(`find_tiles`+`clip_dem_mosaic`, 2026-07-02). 배치 베이크 헬퍼 완성
+      (`contour_bake.bake_tiled` + CLI `--tile-km`/`--margin-m`: 등고선 1회 읽고 타일별 서브셋
+      보간, margin 여유·전역 격자 픽셀정합). **대전 전역 13타일(10km, ~115MB) 베이크·mosaic
+      연속성 검증 완료(2026-07-02).** **남은 것: (a) 저장 변곡점 — geo_store는 현재 git 추적
+      →Cloud Build 이미지 인데, 전국(~10GB)은 git/이미지 불가 → GCS COG + `/vsigs` 윈도우 읽기로
+      이전 필요(clip_dem 경로만 로컬→`/vsigs`; 사용자 PC엔 DEM 0바이트), (b) 추가 지역 SHP 확보
+      (사람 손 — 시·도 단위 연속수치지형도로 받으면 클릭 수 절감).** 상세 [[nationwide-dem-ngii-source]].
 - [ ] **Phase B — SketchUp 확장(.rbz)**: `sketchup_ext/`. **B1(지형+건물, 텍스처 없음) 코드 완성**
       — 확장이 `/api/generate`(geometry JSON) 호출 → 데스크톱 SketchUp에서 지형 mesh+건물 돌출 조립.
       백엔드 계약은 실요청으로 검증(2026-07-02). **남은 것: (a) 사용자 SketchUp 2021+ 설치·실행
@@ -122,9 +134,9 @@ src/
     skp_mcp.py           BuildingSolid(+TerrainMesh+CadastralParcel) → SketchUp MCP 코드 문자열
     rhino.py             BuildingSolid(+TerrainMesh+CadastralParcel) → .3dm (Phase 4)
   terrain/
-    store.py             manifest.json 조회 (find_tile)
+    store.py             manifest.json 조회 (find_tiles 겹치는 타일 전부·고해상도 우선 / find_tile 대표 1개)
     contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A)
-    dem.py               DEM 타일 클립 + 표고 보간 (Phase 3B)
+    dem.py               DEM 타일 클립 + 표고 보간 (Phase 3B) + clip_dem_mosaic(다중 타일 rasterio.merge 병합)
 
 geo_store/
   manifest.json          비축 DEM 타일 목록

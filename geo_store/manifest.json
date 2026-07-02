@@ -4,10 +4,10 @@
     "file": "dem_daejeon_36710065_66.tif",
     "crs": "EPSG:5186",
     "bounds_4326": [
-      127.3499119566466,
-      36.32500609864854,
-      127.40008209856155,
-      36.34999755693859
+      127.34991158075336,
+      36.32476480849278,
+      127.4001551107819,
+      36.35015466788569
     ],
     "source": "CONTOUR_BAKE",
     "cell_m": 5.0,
@@ -16,6 +16,214 @@
       "36710065",
       "36710066"
     ],
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "대전 r0c0",
+    "file": "dem_daejeon_r0c0.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.22539070917561,
+      36.43503363266357,
+      127.33736105177232,
+      36.52545690518217
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-07-02",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "대전 r0c1",
+    "file": "dem_daejeon_r0c1.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.33691468009768,
+      36.434666777034735,
+      127.44901255667838,
+      36.525193413278636
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-07-02",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "대전 r0c2",
+    "file": "dem_daejeon_r0c2.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.4484369207024,
+      36.434195755120065,
+      127.56066174773939,
+      36.524825407787006
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-07-02",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "대전 r1c0",
+    "file": "dem_daejeon_r1c0.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.22513072543407,
+      36.344917699969955,
+      127.33697063647219,
+      36.43534147939242
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-07-02",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "대전 r1c1",
+    "file": "dem_daejeon_r1c1.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.33652606059388,
+      36.344552043127884,
+      127.44849294052547,
+      36.43507884766055
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-07-02",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "대전 r1c2",
+    "file": "dem_daejeon_r1c2.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.44791967331126,
+      36.34408256037146,
+      127.5600129412899,
+      36.43471204351649
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-07-02",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "대전 r1c3",
+    "file": "dem_daejeon_r1c3.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.5593109935122,
+      36.344009083765904,
+      127.57551400674681,
+      36.43424107291283
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-07-02",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "대전 r2c0",
+    "file": "dem_daejeon_r2c0.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.22487189401204,
+      36.254800401690105,
+      127.33658195178894,
+      36.3452246886505
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-07-02",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "대전 r2c1",
+    "file": "dem_daejeon_r2c1.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.33613916354177,
+      36.25443594092021,
+      127.44797562767376,
+      36.34496291513579
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-07-02",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "대전 r2c2",
+    "file": "dem_daejeon_r2c2.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.44740471844875,
+      36.25396799383679,
+      127.55936701075193,
+      36.344597309609675
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-07-02",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "대전 r3c0",
+    "file": "dem_daejeon_r3c0.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.22464339930588,
+      36.1749102759473,
+      127.33619498984633,
+      36.25510653426636
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-07-02",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "대전 r3c1",
+    "file": "dem_daejeon_r3c1.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.33579761331113,
+      36.17454687323773,
+      127.44746060764098,
+      36.254845617025325
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-07-02",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "대전 r3c2",
+    "file": "dem_daejeon_r3c2.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.44695011958011,
+      36.174080284629916,
+      127.55872394303776,
+      36.25448120740292
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-07-02",
     "method": "clough",
     "guard_m": 3.0
   }

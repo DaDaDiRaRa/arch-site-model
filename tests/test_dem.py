@@ -12,7 +12,7 @@ import rasterio
 from affine import Affine
 from rasterio.crs import CRS
 
-from src.terrain.dem import DEMPatch, clip_dem, elev_at
+from src.terrain.dem import DEMPatch, clip_dem, clip_dem_mosaic, elev_at
 
 
 # ---------------------------------------------------------------------------
@@ -166,3 +166,65 @@ def test_elev_at_method_matches_function(synthetic_dem):
 
     x_local, y_local = 50.0, 50.0
     assert dem.elev_at(x_local, y_local) == elev_at(x_local, y_local, dem)
+
+
+# ---------------------------------------------------------------------------
+# clip_dem_mosaic (다중 타일 병합)
+# ---------------------------------------------------------------------------
+
+def _write_flat_tile(path, minx, maxy, nrows, ncols, cell, value):
+    """상수 표고 EPSG:5186 GeoTIFF 생성. bounds(minx,miny,maxx,maxy) 반환."""
+    transform = Affine(cell, 0, minx, 0, -cell, maxy)
+    grid = np.full((nrows, ncols), float(value), dtype=np.float32)
+    with rasterio.open(
+        path, "w", driver="GTiff", height=nrows, width=ncols, count=1,
+        dtype="float32", crs=CRS.from_epsg(5186), transform=transform, nodata=np.nan,
+    ) as dst:
+        dst.write(grid, 1)
+    return (minx, maxy - nrows * cell, minx + ncols * cell, maxy)
+
+
+def test_clip_dem_mosaic_single_delegates(synthetic_dem):
+    """타일 1개면 clip_dem과 동일 결과(위임)."""
+    path, _, bounds = synthetic_dem
+    offset = (bounds[0], bounds[1])
+    a = clip_dem(path, bounds, offset)
+    b = clip_dem_mosaic([path], bounds, offset)
+    assert np.array_equal(np.nan_to_num(a.grid), np.nan_to_num(b.grid))
+
+
+def test_clip_dem_mosaic_two_adjacent(tmp_path):
+    """가로로 인접한 두 타일을 걸친 bbox → 양쪽 값이 각자 자리에서 나옴."""
+    cell = 10.0
+    nrows, ncols = 20, 30  # 200m x 300m
+    maxy = 400_200.0
+    left = tmp_path / "left.tif"
+    right = tmp_path / "right.tif"
+    _write_flat_tile(left, 200_000.0, maxy, nrows, ncols, cell, 10.0)
+    _write_flat_tile(right, 200_300.0, maxy, nrows, ncols, cell, 20.0)
+
+    bbox = (200_100.0, 400_000.0, 200_500.0, 400_200.0)  # 두 타일에 걸침
+    dem = clip_dem_mosaic([left, right], bbox, (0.0, 0.0))
+
+    # offset (0,0) → local == abs. seam(200300)에서 충분히 떨어진 지점 샘플.
+    assert abs(dem.elev_at(200_150.0, 400_100.0) - 10.0) < 1e-3   # 왼쪽 타일
+    assert abs(dem.elev_at(200_450.0, 400_100.0) - 20.0) < 1e-3   # 오른쪽 타일
+    # 두 타일 합집합이 bbox를 전부 덮으므로 NaN 없음.
+    assert not np.isnan(dem.grid).any()
+
+
+def test_clip_dem_mosaic_fills_uncovered_with_nan(tmp_path):
+    """bbox가 타일 합집합을 벗어난 영역은 NaN으로 채움."""
+    cell = 10.0
+    nrows, ncols = 20, 30
+    maxy = 400_200.0
+    left = tmp_path / "left.tif"
+    right = tmp_path / "right.tif"
+    _write_flat_tile(left, 200_000.0, maxy, nrows, ncols, cell, 10.0)
+    _write_flat_tile(right, 200_300.0, maxy, nrows, ncols, cell, 20.0)
+
+    # bbox가 타일 좌/우/상/하로 넉넉히 더 넓다 → 가장자리는 미커버.
+    bbox = (199_800.0, 399_800.0, 200_800.0, 400_400.0)
+    dem = clip_dem_mosaic([left, right], bbox, (0.0, 0.0))
+    assert np.isnan(dem.grid).any()      # 미커버 영역 존재
+    assert np.isfinite(dem.grid).any()   # 커버 영역도 존재
