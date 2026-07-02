@@ -1,10 +1,12 @@
 import { useState } from "react";
+import Viewer3D, { type SiteGeometry } from "./Viewer3D";
 
 // 백엔드 /api/generate 응답 형태
 interface GenerateResult {
   ok: boolean;
   job_id: string;
   files: { "3dm"?: string; ortho_png?: string };
+  geometry: SiteGeometry | null;
   stats: {
     buildings: number;
     solids: number;
@@ -152,6 +154,12 @@ export default function App() {
               />
               <Stat label="지적" value={`${result.stats.cadastral_parcels}`} />
             </dl>
+
+            {result.geometry && (result.geometry.buildings.length > 0 || result.geometry.terrain) && (
+              <div className="mt-6">
+                <Viewer3D geometry={result.geometry} orthoUrl={result.files.ortho_png} />
+              </div>
+            )}
 
             <div className="mt-6 flex flex-wrap gap-3">
               {result.files["3dm"] && (

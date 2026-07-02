@@ -357,3 +357,44 @@ def test_orthophoto_skp_only_warns(monkeypatch):
     )
     assert out["ok"] is True
     assert any(".3dm" in w and "정사영상" in w for w in out["warnings"])
+
+
+# ---------------------------------------------------------------------------
+# 브라우저 3D 미리보기용 geometry JSON (F2)
+# ---------------------------------------------------------------------------
+
+def test_generate_include_geometry(monkeypatch):
+    """include_geometry=True → 건물+지형 지오메트리가 JSON 직렬화 가능한 형태로 포함."""
+    import json
+
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
+    )
+    out = generate(
+        "대전광역시 서구 괴정동 358",
+        client=FakeClient(_daejeon_features()),
+        layers={"buildings": True, "terrain": True},
+        include_geometry=True,
+    )
+    g = out["geometry"]
+    assert g is not None
+    # 건물: footprint/base_z/height/flagged
+    assert len(g["buildings"]) == 4
+    b0 = g["buildings"][0]
+    assert len(b0["footprint"]) >= 3
+    assert {"base_z", "height", "flagged"} <= b0.keys()
+    # 지형: vertices/triangles, 인덱스는 순수 int (numpy.int32 혼입 방지)
+    assert g["terrain"] is not None
+    assert g["terrain"]["vertices"] and g["terrain"]["triangles"]
+    assert all(type(i) is int for i in g["terrain"]["triangles"][0])
+    # 전체 직렬화 가능 — numpy 타입이 섞이면 여기서 TypeError (회귀 가드)
+    json.dumps(g)
+
+
+def test_generate_geometry_omitted_by_default(monkeypatch):
+    """기본(include_geometry=False)은 geometry=None — MCP 응답 비대화 방지."""
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
+    )
+    out = generate("대전광역시 서구 괴정동 358", client=FakeClient(_daejeon_features()))
+    assert out["geometry"] is None

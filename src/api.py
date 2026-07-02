@@ -85,6 +85,7 @@ def generate_endpoint(req: GenerateRequest) -> dict:
         layers=req.layers,
         output_dir=str(job_dir),
         missing_floors_policy=req.missing_floors_policy,
+        include_geometry=True,   # 브라우저 3D 미리보기용 지오메트리 JSON (F2)
     )
 
     if not result.get("ok"):
@@ -104,6 +105,7 @@ def generate_endpoint(req: GenerateRequest) -> dict:
         "ok": True,
         "job_id": job_id,
         "files": files,
+        "geometry": result.get("geometry"),  # 3D 미리보기용 (로컬 미터)
         "outputs": result.get("outputs"),
         "stats": result.get("stats"),
         "provenance": result.get("provenance"),

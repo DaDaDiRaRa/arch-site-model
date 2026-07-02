@@ -9,8 +9,6 @@
 
 > 완료하면 해당 줄을 삭제한다(항상 "남은 일"만 남게 유지).
 
-- [ ] **F2 — 브라우저 3D 미리보기**: `frontend/`에 rhino3dm.js(WASM)+three.js로 생성된 `.3dm`을
-      화면에서 바로 렌더(지형+건물+정사영상 텍스처). 다운로드 없이 결과 확인.
 - [ ] **Phase B — SketchUp 확장(.rbz)**: `.skp`용. 확장이 백엔드(`/api/generate` 또는 신규
       지오메트리 JSON 엔드포인트) 호출 → 데스크톱 SketchUp에서 조립 + 정사영상 드레이프
       (`Face#position_material`). 팀 대부분이 SketchUp이라 실사용 가치 큼. 데스크톱 GUI라
@@ -75,6 +73,12 @@ FastAPI는 `frontend/dist`가 있으면 루트에서 자동 서빙(없으면 API
 GitHub Actions(`.github/workflows/deploy.yml`)로 pytest 통과 후 자동 배포. 배포 아키텍처
 개요는 [[deployment-architecture]] 메모리.
 
+**브라우저 3D 미리보기(F2)**: `/api/generate` 응답에 `geometry`(로컬 미터: 건물 footprint/
+base_z/height/flagged + 지형 vertices/triangles + ortho_extent)가 포함되고, `Viewer3D.tsx`가
+three.js로 지형 mesh+건물 돌출을 렌더(+정사영상 평면 드레이프). `pipeline.generate(include_geometry=True)`
+일 때만 직렬화(MCP 응답 비대화 방지 — 기본 False). rhino3dm/WASM 미사용(생성 Extrusion에 렌더
+메시가 없어 3DMLoader가 건물을 못 그림 → geometry JSON 직접 렌더로 결정).
+
 **`src/config.py` 주요 설정값:**
 
 - `VWORLD_KEY`: `VWORLD_TEST_KEY` 우선, 없으면 `VWORLD_KEY`
@@ -123,6 +127,7 @@ geo_store/
 
 frontend/                React + Vite + Tailwind 웹 UI (주소 입력 → /api/generate 호출 → .3dm/정사영상 다운로드)
   src/App.tsx            메인 폼·결과 화면
+  src/Viewer3D.tsx       브라우저 3D 미리보기 (three.js — geometry JSON을 지형 mesh+건물 돌출로 렌더, 정사영상 드레이프) [F2]
   dist/                  빌드 산출물 (FastAPI가 루트에서 서빙)
 
 docs/

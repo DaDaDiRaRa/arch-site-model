@@ -65,6 +65,46 @@ def _resolve_ortho_source():
     return VWORLD_SATELLITE, config.VWORLD_KEY, "VWorld Satellite"
 
 
+def _build_geometry(solids, terrain_mesh, ortho_info) -> dict:
+    """브라우저 3D 미리보기용 경량 지오메트리 JSON (F2).
+
+    모두 로컬 미터 좌표. 건물 footprint는 이미 미터, 지형 vertices는 인치(SketchUp)
+    이므로 /M2I 로 미터 환산해 통일. 좌표는 cm 단위로 반올림해 응답 크기를 줄인다.
+    """
+    m = config.M2I
+
+    def _ring(pts):
+        return [[round(x, 2), round(y, 2)] for x, y in pts]
+
+    buildings = [
+        {
+            "footprint": _ring(s.footprint_m),
+            "holes": [_ring(h) for h in (s.holes_m or [])],
+            "base_z": round(s.base_z_m, 3),
+            "height": round(s.height_m, 3),
+            "flagged": bool(s.flagged),
+        }
+        for s in solids
+        if len(s.footprint_m) >= 3 and s.height_m > 0
+    ]
+
+    terrain = None
+    if terrain_mesh is not None and terrain_mesh.vertices and terrain_mesh.triangles:
+        terrain = {
+            "vertices": [
+                [round(x / m, 2), round(y / m, 2), round(z / m, 2)]
+                for x, y, z in terrain_mesh.vertices
+            ],
+            "triangles": [[int(a), int(b), int(c)] for a, b, c in terrain_mesh.triangles],
+        }
+
+    return {
+        "buildings": buildings,
+        "terrain": terrain,
+        "ortho_extent_m": list(ortho_info["extent_local_m"]) if ortho_info else None,
+    }
+
+
 def generate(
     address: str,
     radius_m: int = 250,
@@ -76,6 +116,7 @@ def generate(
     setback: bool = False,
     client: VWorldClient | None = None,
     ortho_fetch=None,
+    include_geometry: bool = False,
 ) -> dict:
     """건물 매싱(+ 선택적 지형/지적) 생성 결과를 반환.
 
@@ -334,12 +375,17 @@ def generate(
     if setback:
         prov["setback_analysis"] = "stub"
 
+    # 브라우저 3D 미리보기용 지오메트리 JSON (F2). 로컬 미터 좌표로 통일.
+    # MCP 응답 비대화 방지를 위해 include_geometry=True(웹 백엔드)일 때만 포함.
+    geometry = _build_geometry(solids, terrain_mesh, ortho_info) if include_geometry else None
+
     return {
         "ok": True,
         "address": cleaned,
         "coord": coord,
         "bbox": list(bbox),
         "outputs": out,
+        "geometry": geometry,
         "stats": {
             "buildings": len(features),
             "solids": len(solids),
