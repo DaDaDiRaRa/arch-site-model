@@ -1,9 +1,10 @@
 # arch-site-model
 
-> 대지 주소 입력만으로 주변 지형·건물 3D 대지모델을 자동 생성하는 MCP 서버.
+> 대지 주소 입력만으로 주변 지형·건물 3D 대지모델을 자동 생성. **MCP 서버 + 배포 웹앱 + SketchUp 확장**.
 
-**입력**: 대지 주소 + 반경(m)  
-**출력**: `.skp` (SketchUp MCP) · `.3dm` (Rhino 3D)  
+**입력**: 대지 주소(지번·도로명) + 반경(m)  
+**출력**: `.skp` (SketchUp) · `.3dm` (Rhino, 정사영상 텍스처 포함) · 브라우저 3D 미리보기  
+**소비 경로**: ① MCP 도구(Claude) · ② 웹앱(주소→다운로드 + 3D 미리보기) · ③ SketchUp 확장(.rbz) — 엔진·백엔드는 공유  
 **핵심**: `gro_flo_co`(실제 층수) 직접 사용 — AI 추정 0%, "재현이지 상상이 아님"
 
 ---
@@ -47,15 +48,17 @@ Copy-Item .env.example .env
 
 ---
 
-## 2. MCP 서버 실행
+## 2. 실행 방법
+
+세 가지 소비 경로가 있고 **엔진(`pipeline`)·백엔드는 공유**합니다.
+
+### (A) MCP 서버 — Claude 연동
 
 ```powershell
 python -m src.server
 ```
 
-서버가 stdio 모드로 기동됩니다. Claude Desktop에서 아래 MCP 설정으로 연결하세요.
-
-### Claude Desktop 연결 (`claude_desktop_config.json`)
+stdio 모드로 기동됩니다. Claude Desktop 설정(`claude_desktop_config.json`):
 
 ```json
 {
@@ -68,6 +71,32 @@ python -m src.server
   }
 }
 ```
+
+### (B) 웹앱 — 브라우저에서 주소 입력 → 3D 미리보기 + 다운로드
+
+```powershell
+# 백엔드 (반드시 저장소 루트에서 — 상대경로 geo_store 때문)
+uvicorn src.api:app --port 8000            # http://localhost:8000/docs
+
+# 프론트 개발 서버 (React, /api → :8000 프록시)
+cd frontend; npm install; npm run dev       # http://localhost:5173
+
+# 프로덕션: 프론트 빌드 → FastAPI가 dist를 루트에서 서빙
+cd frontend; npm run build; cd ..; uvicorn src.api:app --port 8000
+```
+
+`/api/generate` 는 `.3dm`/정사영상 다운로드 URL + `geometry` JSON(three.js **브라우저 3D 미리보기**)을 반환.
+도커/Cloud Run 배포·인증은 **`docs/deploy.md`**.
+
+### (C) SketchUp 확장 (.rbz) — 데스크톱에서 조립
+
+```powershell
+python sketchup_ext/build_rbz.py --backend-url <Cloud Run URL>   # 배포용(URL 박힘)
+python sketchup_ext/build_rbz.py                                  # 개발용(localhost)
+```
+
+SketchUp 확장 관리자에서 `sketchup_ext/dist/arch_site_model.rbz` 설치 → **Extensions > 대지모델 생성**.
+확장이 백엔드 `geometry`를 받아 지형·건물을 조립(B1). 상세 **`docs/sketchup_extension.md`**.
 
 ---
 
@@ -184,6 +213,20 @@ generate_site_model(
 }
 ```
 
+#### 정사영상 텍스처
+
+`layers`에 `orthophoto: true` + `outputs`에 `"3dm"` 포함 시, 지형 TIN에 정사영상을 위→아래 평면투영으로
+드레이프합니다(**`.3dm` 전용** — SketchUp MCP는 이미지 텍스처 미지원). 소스는 `ORTHO_SOURCE`(기본 `vworld`).
+키 없음/타일 실패 시 경고 후 건물·지형만 생성(조용한 fallback).
+
+```python
+generate_site_model(
+  "대전광역시 서구 괴정동 358",
+  outputs=["3dm"],
+  layers={"buildings": True, "terrain": True, "orthophoto": True},
+)
+```
+
 #### 층수 누락 정책
 
 | `missing_floors_policy` | 동작 |
@@ -250,8 +293,12 @@ python -m src.terrain.contour_bake <shp_dir> `
     --cell 5 `
     --out geo_store/dem_신지역.tif `
     --region "지역명" `
-    --sheets 도엽번호1 도엽번호2
+    --sheets 도엽번호1 도엽번호2 `
+    --method clough --guard 3
 ```
+
+> `--method clough`(기본) = guarded CloughTocher 보간(계단현상 완화, 오버슈트는 linear±`guard`m로 클램프).
+> `--method linear`로 옛 평면삼각 보간 폴백 가능. 계단 지표 진단: `python scripts/dem_staircase.py <tif>`.
 
 1. `geo_store/manifest.json` 업데이트 (`bounds`, `file` 항목 추가)
 
@@ -260,7 +307,7 @@ python -m src.terrain.contour_bake <shp_dir> `
 ## 6. 테스트 실행
 
 ```powershell
-# 전체 단위 테스트 (오프라인, API 미호출) — 145개
+# 단위 테스트 (오프라인, API mock) — 전체 약 200개
 python -m pytest tests/ --ignore=tests/test_integration_api.py -v
 
 # 실제 VWorld API 연동 테스트 (키 필요)
@@ -282,3 +329,10 @@ python -m pytest tests/test_integration_api.py -v
 | 5 | 지적 레이어 + 층수 누락 정책 + provenance | ✅ |
 | 확장1 | 홀(중정) 처리 — `holes_m` + 내벽 생성 | ✅ |
 | 확장2 | `preview_site` — 건물 목록·규모 미리보기 | ✅ |
+| 확장3 | 이격면(setback) 실연동 — arch-law-diagnose | 🚧 블로커 |
+| 확장4 | `generate_site_tiles` — 대량건물 타일분할 | ✅ |
+| 확장5 | 정사영상 텍스처 Tier 1 — 지형 드레이프 (.3dm) | ✅ |
+| 웹앱 | FastAPI 백엔드 + React UI + 브라우저 3D 미리보기(F2) + Cloud Run 배포 | ✅ |
+| 확장(Phase B) | SketchUp `.rbz` — 지형+건물 조립(B1) | ✅ (B2 정사영상 텍스처 예정) |
+| 지형 개선 | 계단현상 완화 — guarded CloughTocher 재bake | ✅ |
+| geocode | 지번+도로명(PARCEL→ROAD) 지원 | ✅ |

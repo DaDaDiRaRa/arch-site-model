@@ -235,9 +235,10 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 
 **VWorld API 공통 주의사항:**
 
-- `INCORRECT_KEY` → `.env` 키 확인
+- `INCORRECT_KEY` → `.env` 키 확인 (+ `VWORLD_DOMAIN`이 키 등록 도메인과 일치해야 함 — 배포 시 Cloud Run URL로 설정)
 - `NOT_FOUND` → 정상 응답 (결과 없음), 예외 아님
 - `gro_flo_co` 0/null 건물 존재 가능 → `floors_of()`가 `None` 반환, `default_floors=1` 적용
+- **주소→좌표는 지번+도로명 모두 지원**: `geocode()`가 지번(PARCEL) 먼저 조회, `NOT_FOUND`면 도로명(ROAD)으로 재시도 (`src/geo/geocode.py::_ADDR_TYPES`)
 
 ---
 
