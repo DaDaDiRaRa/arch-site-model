@@ -9,10 +9,15 @@
 
 > 완료하면 해당 줄을 삭제한다(항상 "남은 일"만 남게 유지).
 
-- [ ] **Phase B — SketchUp 확장(.rbz)**: `.skp`용. 확장이 백엔드(`/api/generate` 또는 신규
-      지오메트리 JSON 엔드포인트) 호출 → 데스크톱 SketchUp에서 조립 + 정사영상 드레이프
-      (`Face#position_material`). 팀 대부분이 SketchUp이라 실사용 가치 큼. 데스크톱 GUI라
-      사용자 테스트 루프 필요. 상세 `docs/orthophoto_texture_plan.md`.
+- [ ] **Phase B — SketchUp 확장(.rbz)**: `sketchup_ext/`. **B1(지형+건물, 텍스처 없음) 코드 완성**
+      — 확장이 `/api/generate`(geometry JSON) 호출 → 데스크톱 SketchUp에서 지형 mesh+건물 돌출 조립.
+      백엔드 계약은 실요청으로 검증(2026-07-02). **남은 것: (a) 사용자 SketchUp 2021+ 설치·실행
+      테스트**(데스크톱 GUI라 무인검증 불가 — 작성→테스트 루프), **(b) B2 정사영상 텍스처 드레이프**
+      (`layers.orthophoto=true`+`outputs=["3dm"]`→PNG 다운로드→`Face#position_material` 평면투영).
+      상세 `docs/sketchup_extension.md`, 텍스처 설계 `docs/orthophoto_texture_plan.md` §5.
+- [ ] **F2 뷰어 색상·표현 개선(폴리시)**: 현재 `Viewer3D.tsx`는 건물=단색 steel blue(미확인=주황),
+      지형=정사영상/올리브. 기능은 동작 — 표현만 개선 여지: 층수별 색/높이 그라디언트, 반투명·와이어,
+      건물 외곽선(edges), 그림자·AO, 지적 경계 표시, 배경/조명 튜닝 등. 우선순위 낮음(동작 우선).
 - [ ] **지형 계단현상 — 격자 솔버로 완전제거(선택)**: 1차 개선 완료(guarded CloughTocher,
       quant 25.2→22.3%·flat 55.2→48.5%, 무인공물·봉우리 보존 — 2026-07-02 승격). 남은 건 **부분 개선**
       한계 돌파: 라플라스 harmonic 인필 또는 ANUDEM류 반복 격자 솔버(등고선 셀 고정 → 최대원리로
@@ -130,9 +135,15 @@ frontend/                React + Vite + Tailwind 웹 UI (주소 입력 → /api/
   src/Viewer3D.tsx       브라우저 3D 미리보기 (three.js — geometry JSON을 지형 mesh+건물 돌출로 렌더, 정사영상 드레이프) [F2]
   dist/                  빌드 산출물 (FastAPI가 루트에서 서빙)
 
+sketchup_ext/            SketchUp 확장(.rbz) — 주소→백엔드 geometry JSON→SketchUp 조립 (Phase B) [B1: 지형+건물]
+  arch_site_model.rb     로더(SketchupExtension 등록)
+  arch_site_model/       main(메뉴·HtmlDialog)·api_client(Sketchup::Http)·builder(지형mesh+건물돌출)·settings·dialog.html
+  build_rbz.py           확장 폴더 → dist/arch_site_model.rbz 패키징
+
 docs/
   deploy.md              배포 가이드 (로컬 실행·도커·Cloud Run·인증·NGII 전환)
   orthophoto_texture_plan.md  정사영상 텍스처 계획 (Tier 1 완료, Tier 2a .skp 드레이프)
+  sketchup_extension.md  SketchUp 확장 설치·사용·개발 가이드 (Phase B)
 
 Dockerfile               프론트 빌드 + 파이썬 런타임 단일 이미지 (Cloud Run 배포)
 .github/workflows/deploy.yml  main push 시 pytest → Cloud Run 자동 배포

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>대지모델 생성</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { font-family: "Malgun Gothic", system-ui, sans-serif; margin: 0; padding: 16px; color: #1f2937; background: #f8fafc; }
+    h1 { font-size: 16px; margin: 0 0 12px; }
+    label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin: 12px 0 4px; }
+    input[type=text], input[type=number] { width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; }
+    input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 1px #10b981; }
+    .row { display: flex; gap: 12px; align-items: flex-end; }
+    .row > div { flex: 0 0 auto; }
+    .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; margin-top: 8px; font-weight: 500; }
+    .chk input { width: auto; }
+    button { margin-top: 16px; width: 100%; padding: 10px; border: 0; border-radius: 8px; background: #059669; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
+    button:disabled { background: #cbd5e1; cursor: not-allowed; }
+    .hint { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+    #status { margin-top: 14px; font-size: 13px; padding: 10px; border-radius: 8px; display: none; }
+    #status.busy { display: block; background: #eff6ff; color: #1d4ed8; }
+    #status.done { display: block; background: #ecfdf5; color: #047857; }
+    #status.error { display: block; background: #fef2f2; color: #b91c1c; }
+    #warns { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: #92400e; }
+    details { margin-top: 12px; }
+    summary { font-size: 12px; color: #64748b; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>대지모델 생성</h1>
+
+  <label for="address">대지 주소</label>
+  <input type="text" id="address" placeholder="예: 대전광역시 서구 괴정동 358" value="대전광역시 서구 괴정동 358" />
+
+  <div class="row">
+    <div>
+      <label for="radius">반경(m)</label>
+      <input type="number" id="radius" min="10" max="2000" value="250" style="width:110px" />
+    </div>
+    <label class="chk"><input type="checkbox" id="terrain" checked /> 지형(TIN)</label>
+  </div>
+
+  <details>
+    <summary>백엔드 설정</summary>
+    <label for="backend">백엔드 URL</label>
+    <input type="text" id="backend" placeholder="http://localhost:8000" />
+    <div class="hint">개발: http://localhost:8000 · 배포: Cloud Run URL</div>
+  </details>
+
+  <button id="go">모델 생성</button>
+
+  <div id="status"></div>
+  <ul id="warns"></ul>
+
+  <script>
+    function $(id) { return document.getElementById(id); }
+
+    // Ruby → JS
+    window.setConfig = function (cfg) {
+      if (cfg && cfg.backend_url) $("backend").value = cfg.backend_url;
+    };
+    window.showBusy = function () {
+      $("warns").innerHTML = "";
+      var s = $("status"); s.className = "busy"; s.textContent = "생성 중… (백엔드 조회 + 조립, 최대 30초)";
+      $("go").disabled = true;
+    };
+    window.showDone = function (info) {
+      var s = $("status"); s.className = "done";
+      s.textContent = "완료 — 건물 " + (info.count || 0) + "동 생성됨.";
+      var ul = $("warns"); ul.innerHTML = "";
+      (info.warnings || []).forEach(function (w) {
+        var li = document.createElement("li"); li.textContent = w; ul.appendChild(li);
+      });
+      $("go").disabled = false;
+    };
+    window.showError = function (msg) {
+      var s = $("status"); s.className = "error"; s.textContent = String(msg);
+      $("go").disabled = false;
+    };
+
+    $("go").addEventListener("click", function () {
+      var payload = {
+        address: $("address").value,
+        radius_m: parseInt($("radius").value, 10) || 250,
+        terrain: $("terrain").checked,
+        backend_url: $("backend").value.trim(),
+      };
+      if (window.sketchup && window.sketchup.generate) {
+        window.sketchup.generate(JSON.stringify(payload));
+      }
+    });
+
+    // JS → Ruby: 준비되면 설정 요청
+    window.addEventListener("DOMContentLoaded", function () {
+      if (window.sketchup && window.sketchup.ready) window.sketchup.ready();
+    });
+  </script>
+</body>
+</html>
