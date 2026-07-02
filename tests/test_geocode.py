@@ -36,6 +36,19 @@ def test_geocode_not_found_raises(monkeypatch):
         geocode("없는 주소", key="DUMMY")
 
 
+def test_geocode_road_fallback(monkeypatch):
+    """지번(PARCEL) NOT_FOUND → 도로명(ROAD)으로 재시도해 성공."""
+    not_found = {"response": {"status": "NOT_FOUND", "error": {"text": "no result"}}}
+    ok = load_fixture("geocode_daejeon.json")
+    fake = make_fake_get([not_found, ok])   # 1st=PARCEL(miss), 2nd=ROAD(hit)
+    monkeypatch.setattr(geo.requests, "get", fake)
+
+    out = geocode("서울특별시 서초구 신반포로 45길 71", key="DUMMY")
+    assert out["lon"] == pytest.approx(127.37098)
+    assert fake.calls[0]["params"]["type"] == "PARCEL"
+    assert fake.calls[1]["params"]["type"] == "ROAD"
+
+
 def test_geocode_missing_key_raises():
     with pytest.raises(GeocodeError):
         geocode("아무주소", key="")
