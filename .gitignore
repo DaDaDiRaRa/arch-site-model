@@ -1,12 +1,11 @@
 # 환경변수 (비밀 키)
 .env
 
-# 지형 비축 스토어(DEM) — 배포 빌드(Cloud Build)에 필요하므로 추적함.
-# 지역 확장으로 용량이 커지면 GCS 버킷 마운트로 전환하고 다시 무시할 것.
-# geo_store/
-# 단, 타일 분할 배치 베이크(bake_tiled) 산출물(_r{r}c{c})은 대용량(대전만 ~115MB)이라
-# git·이미지에 넣지 않는다 — 전국 확장 시 GCS COG+/vsigs로 서빙 예정. 소규모 baseline만 추적.
-geo_store/*_r*c*.tif
+# 지형 비축 스토어(DEM). manifest.json만 git 추적(작은 index).
+# DEM 타일은 GCS 버킷(gs://arch-site-model-dem)에서 /vsicurl 윈도우 읽기로 서빙하므로
+# git·이미지에 넣지 않는다(2026-07-03 GCS 전환 완료). 로컬 개발은 geo_store/의 로컬 tif
+# 또는 DEM_TILE_BASE=/vsicurl/… 로.
+geo_store/*.tif
 
 # 출력물 (런타임 생성물 — API 잡 폴더·데모 등)
 # 주의: 앞에 / 필수 — 없으면 모든 깊이에서 매치돼 src/output/(코드!)까지 제외되는 사고가
