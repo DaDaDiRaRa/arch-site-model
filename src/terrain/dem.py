@@ -6,12 +6,15 @@ elev_at : EPSG:5186 로컬 좌표 → bilinear 보간 표고(m).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import rasterio
 from rasterio.windows import from_bounds
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -82,9 +85,13 @@ def clip_dem_mosaic(
     rasterio.merge로 가장 고운 해상도 격자에 모자이크한다. tile_paths를 고해상도
     우선 순서로 주면 겹침부에서 앞선(고해상도) 타일이 이긴다(method="first").
 
+    tile_paths는 로컬 경로 또는 원격 URI(config.dem_tile_path 산출: /vsigs/…)를 문자열로
+    받는다. Path로 감싸지 않는다 — Windows에서 /vsigs URI가 역슬래시로 뭉개지기 때문.
+    열리지 않는 타일(로컬 누락·GCS 미도달·객체 없음)은 건너뛰고, 하나도 못 열면 예외.
+
     offset: origin_offset(건물과 동일 로컬 좌표 기준). 반환 DEMPatch는 clip_dem과 동일 계약.
     """
-    paths = [Path(p) for p in tile_paths]
+    paths = [str(p) for p in tile_paths]
     if not paths:
         raise ValueError("clip_dem_mosaic: 타일 목록이 비었습니다")
     if len(paths) == 1:
@@ -97,7 +104,14 @@ def clip_dem_mosaic(
     # (contour_bake 타일은 조밀 사각격자라 내부 nodata가 없고, 커버 안 된 bbox 영역만
     #  센티넬로 채워진다.)
     sentinel = -9999.0
-    srcs = [rasterio.open(p) for p in paths]
+    srcs = []
+    for p in paths:
+        try:
+            srcs.append(rasterio.open(p))
+        except Exception as e:  # noqa: BLE001 — 누락 타일은 건너뛰고 나머지로 진행
+            log.warning("DEM 타일 열기 실패, 건너뜀: %s (%s)", p, e)
+    if not srcs:
+        raise FileNotFoundError("DEM 타일을 하나도 열 수 없습니다: " + ", ".join(paths))
     try:
         res = min(min(abs(s.res[0]), abs(s.res[1])) for s in srcs)
         mosaic, transform = _merge(

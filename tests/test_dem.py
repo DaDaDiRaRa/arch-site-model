@@ -228,3 +228,26 @@ def test_clip_dem_mosaic_fills_uncovered_with_nan(tmp_path):
     dem = clip_dem_mosaic([left, right], bbox, (0.0, 0.0))
     assert np.isnan(dem.grid).any()      # 미커버 영역 존재
     assert np.isfinite(dem.grid).any()   # 커버 영역도 존재
+
+
+def test_clip_dem_mosaic_skips_missing_tile(tmp_path):
+    """존재하는 타일 + 없는 타일 → 없는 건 건너뛰고 있는 것으로 병합(로컬 누락·GCS 미도달)."""
+    cell = 10.0
+    nrows, ncols = 20, 30
+    maxy = 400_200.0
+    left = tmp_path / "left.tif"
+    _write_flat_tile(left, 200_000.0, maxy, nrows, ncols, cell, 10.0)
+    missing = tmp_path / "does_not_exist.tif"
+
+    bbox = (200_050.0, 400_000.0, 200_250.0, 400_200.0)  # left 타일 내부
+    dem = clip_dem_mosaic([str(missing), str(left)], bbox, (0.0, 0.0))
+    assert abs(dem.elev_at(200_150.0, 400_100.0) - 10.0) < 1e-3
+
+
+def test_clip_dem_mosaic_all_missing_raises(tmp_path):
+    """타일을 하나도 못 열면 FileNotFoundError(상위에서 지형 생략 처리)."""
+    with pytest.raises(FileNotFoundError):
+        clip_dem_mosaic(
+            [str(tmp_path / "a.tif"), str(tmp_path / "b.tif")],
+            (0.0, 0.0, 100.0, 100.0), (0.0, 0.0),
+        )

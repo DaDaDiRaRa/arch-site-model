@@ -33,5 +33,26 @@ except ValueError:
     ORTHO_ZOOM = 18
 
 # --- 지형 비축 스토어 (B안) ---
-# 프로젝트 루트 기준 geo_store/ — DEM/등고선 비축 + manifest.json
+# 프로젝트 루트 기준 geo_store/ — manifest.json + 로컬 베이크 산출물.
+# manifest는 작은 index라 항상 로컬(GEO_STORE)에 둔다. DEM 타일(대용량)만 아래
+# DEM_TILE_BASE로 위치를 해석한다(로컬 디렉터리 ↔ GCS COG /vsigs 윈도우 읽기).
 GEO_STORE = Path(os.environ.get("GEO_STORE", "geo_store"))
+
+# DEM 타일 읽기 베이스. 기본은 로컬 GEO_STORE. 전국 확장 시 GCS로 두고
+#   DEM_TILE_BASE=/vsigs/<버킷>/<프리픽스>  (또는 gs://<버킷>/<프리픽스>)
+# 로 바꾸면 clip_dem 경로만 원격이 되고 나머지 코드는 그대로다. (사용자 PC엔 DEM 0바이트)
+DEM_TILE_BASE = os.environ.get("DEM_TILE_BASE", str(GEO_STORE))
+
+
+def dem_tile_path(filename: str) -> str:
+    """manifest의 타일 파일명 → 실제 읽기 경로(rasterio.open용 문자열).
+
+    로컬이면 OS 경로, 원격(gs://·/vsigs/·기타 URI)이면 슬래시로 결합한다.
+    gs://는 GDAL 가상 파일시스템 /vsigs/로 변환한다.
+    """
+    base = DEM_TILE_BASE
+    if base.startswith("gs://"):
+        base = "/vsigs/" + base[len("gs://"):]
+    if base.startswith("/vsi") or "://" in base:
+        return base.rstrip("/") + "/" + filename
+    return str(Path(base) / filename)

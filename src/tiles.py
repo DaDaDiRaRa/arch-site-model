@@ -155,10 +155,16 @@ def generate_tiles(
                 "geo_store/manifest.json 확인 또는 contour_bake 재실행 필요."
             )
         else:
-            tile_paths = [config.GEO_STORE / t["file"] for t in dem_tiles]
+            tile_paths = [config.dem_tile_path(t["file"]) for t in dem_tiles]
             bbox_5186 = _bbox_4326_to_5186(bbox)
-            dem = clip_dem_mosaic(tile_paths, bbox_5186, offset)
-            zr = dem.z_range()
+
+            dem = None
+            try:
+                dem = clip_dem_mosaic(tile_paths, bbox_5186, offset)
+            except Exception as e:  # 타일 열기 실패(로컬 누락·GCS 미도달 등) → 건물만
+                warnings.append(f"DEM 타일 열기 실패 (지형 생략): {e}")
+
+            zr = dem.z_range() if dem is not None else None
             if zr is None:
                 warnings.append(
                     "클립 DEM에 유효 표고 없음: 사이트가 DEM 범위 밖일 수 있습니다. "

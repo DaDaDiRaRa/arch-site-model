@@ -225,23 +225,29 @@ def generate(
         else:
             tile_files = [t["file"] for t in dem_tiles]
             terrain_tile_file = ", ".join(tile_files)  # 경계 걸치면 여러 타일 병합
-            tile_paths = [config.GEO_STORE / f for f in tile_files]
+            tile_paths = [config.dem_tile_path(f) for f in tile_files]
             bbox_5186 = _bbox_4326_to_5186(bbox)
-            dem = clip_dem_mosaic(tile_paths, bbox_5186, offset)
 
-            zr = dem.z_range()
-            if zr is None:
-                warnings.append(
-                    "클립 DEM에 유효 표고 없음: 사이트가 DEM 범위 밖일 수 있습니다. "
-                    "인접 도엽 SHP 추가 후 contour_bake 재실행 필요."
-                )
-            else:
-                elev_range = list(zr)
-                solids = [
-                    replace(s, base_z_m=seat_building(s, dem))
-                    for s in solids
-                ]
-                terrain_mesh = grid_to_tin(dem)
+            dem = None
+            try:
+                dem = clip_dem_mosaic(tile_paths, bbox_5186, offset)
+            except Exception as e:  # 타일 열기 실패(로컬 누락·GCS 미도달 등) → 건물만
+                warnings.append(f"DEM 타일 열기 실패 (지형 생략): {e}")
+
+            if dem is not None:
+                zr = dem.z_range()
+                if zr is None:
+                    warnings.append(
+                        "클립 DEM에 유효 표고 없음: 사이트가 DEM 범위 밖일 수 있습니다. "
+                        "인접 도엽 SHP 추가 후 contour_bake 재실행 필요."
+                    )
+                else:
+                    elev_range = list(zr)
+                    solids = [
+                        replace(s, base_z_m=seat_building(s, dem))
+                        for s in solids
+                    ]
+                    terrain_mesh = grid_to_tin(dem)
 
     # 7. 지적 레이어 (Phase 5)
     cadastral_parcels: list | None = None
