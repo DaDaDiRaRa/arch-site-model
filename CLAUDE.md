@@ -9,21 +9,20 @@
 
 > 완료하면 해당 줄을 삭제한다(항상 "남은 일"만 남게 유지).
 
-- [ ] **전국 5m DEM 확장**: 목표 = 전국 어디 주소든 지형+건물 자동 생성. **자동/API 취득은 불가 확인
-      (2026-07-02)** — 실시간 표고 API 없음(VWorld 3D Data API 2019 폐쇄), VWorld WFS 169레이어에
-      등고선·표고점 없음, 무료 공개DEM은 90m뿐(대지모델엔 거침, EPSG:5179). 따라서 5m는 여전히
-      **지역별 1:5,000 수치지형도 SHP 수동 다운로드 → `contour_bake`로 5m DEM(EPSG:5186) 굽기 →
-      `geo_store/`+manifest**가 현실적 경로(건물·지적은 VWorld 실시간이라 이미 전국). 다중 타일 경계
-      질의 대응 완료(`find_tiles`+`clip_dem_mosaic`, 2026-07-02). 배치 베이크 헬퍼 완성
-      (`contour_bake.bake_tiled` + CLI `--tile-km`/`--margin-m`: 등고선 1회 읽고 타일별 서브셋
-      보간, margin 여유·전역 격자 픽셀정합). **대전 전역 13타일(10km, ~115MB) 베이크·mosaic
-      연속성 검증 완료(2026-07-02).** GCS 이전 **코드 완성**(2026-07-03): `DEM_TILE_BASE`로
-      타일만 로컬↔`/vsigs`(gs://자동변환) 전환(`config.dem_tile_path`), 타일 열기 실패 시 조용히
-      건물만(manifest↔버킷 불일치·미도달 안전), `scripts/dem_to_cog.py` COG 변환·업로드 안내.
-      **남은 것(=GCP 프로비저닝, 사람 손): (a) 버킷 생성 → `dem_to_cog`로 COG 변환 → 업로드 →
-      Cloud Run 서비스계정 읽기권한 + `DEM_TILE_BASE=/vsigs/…` 설정, (b) 대전 13타일(115MB)이
-      221a1b0에 이미 커밋·푸시됨 → GCS 이전 시 filter-repo/BFG로 히스토리 purge(강제푸시, 조율),
-      (c) 추가 지역 SHP 확보(시·도 단위 연속수치지형도).** 상세 [[nationwide-dem-ngii-source]].
+- [ ] **전국 5m DEM 확장**: 목표 = 전국 어디 주소든 지형+건물 자동 생성. **파이프라인 완성·프로덕션
+      GCS 서빙 실증(2026-07-03) — 이제 지역 추가는 반복 작업.** 건물·지적은 VWorld 실시간이라 이미
+      전국; 남은 건 지형(DEM)뿐. **자동/API 취득 불가 확인**: 실시간 표고 API 없음(VWorld 3D Data API
+      2019 폐쇄), VWorld WFS 169레이어에 등고선·표고점 없음, 무료 공개DEM은 90m뿐(EPSG:5179) → 지역별
+      1:5,000 수치지형도 SHP **수동 다운로드**가 유일 경로.
+      **완료**: 다중 타일 mosaic(`find_tiles`+`clip_dem_mosaic`), 배치 베이크(`contour_bake.bake_tiled`
+      + `--tile-km`/`--margin-m`: 등고선 1회 읽고 타일별 서브셋 보간·margin 여유·픽셀정합), manifest
+      4모서리 엔벨로프(이음새 갭 제거), 대전 전역 13타일 베이크, **GCS 라이브**(공개버킷
+      `gs://arch-site-model-dem` + Cloud Run env `DEM_TILE_BASE=/vsicurl/…`로 COG 윈도우 읽기, 실주소
+      검증 완료), 타일 git 추적 해제(`geo_store/*.tif` gitignore — GCS가 서빙).
+      **남은 것**: (a) 추가 지역 SHP 확보(사람 손 — 시·도 단위 연속수치지형도) → 폴더 경로 주면
+      bake→`dem_to_cog`(COG)→`gcloud storage cp … gs://arch-site-model-dem/dem/`는 반복, **manifest만
+      커밋·푸시하면 라이브**(타일은 GCS), (b) 과거 115MB 히스토리 purge(filter-repo+force-push, 보류 —
+      동작 무관). 상세 [[nationwide-dem-ngii-source]].
 - [ ] **Phase B — SketchUp 확장(.rbz)**: `sketchup_ext/`. **B1(지형+건물, 텍스처 없음) 코드 완성**
       — 확장이 `/api/generate`(geometry JSON) 호출 → 데스크톱 SketchUp에서 지형 mesh+건물 돌출 조립.
       백엔드 계약은 실요청으로 검증(2026-07-02). **남은 것: (a) 사용자 SketchUp 2021+ 설치·실행
@@ -124,7 +123,7 @@ src/
   tiles.py               generate_site_tiles — 대량건물 타일분할 (백로그5)
   site_check.py          check_site_data 핵심 로직
   preview.py             preview_site 핵심 로직
-  config.py              전역 설정·환경변수
+  config.py              전역 설정·환경변수 (+ dem_tile_path: DEM 타일 로컬↔GCS /vsicurl 경로 해석)
   geo/
     geocode.py           주소 → 좌표 (VWorld address API)
     bbox.py              반경 → bbox (EPSG:4326)
@@ -141,7 +140,7 @@ src/
     rhino.py             BuildingSolid(+TerrainMesh+CadastralParcel) → .3dm (Phase 4)
   terrain/
     store.py             manifest.json 조회 (find_tiles 겹치는 타일 전부·고해상도 우선 / find_tile 대표 1개)
-    contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A)
+    contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A) + bake_tiled(대용량 지역 타일 배치, --tile-km/--margin-m)
     dem.py               DEM 타일 클립 + 표고 보간 (Phase 3B) + clip_dem_mosaic(다중 타일 rasterio.merge 병합)
 
 geo_store/
@@ -249,7 +248,7 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 | 주소→좌표 | `api.vworld.kr/req/address` | `response.result.point.{x,y}` |
 | 건물 footprint+층수 | `req/data?data=LT_C_SPBD` | `gro_flo_co`(층수), `geometry`(MultiPolygon) |
 | 대지 경계(지적) | `req/data?data=LP_PA_CBND_BUBUN` | `pnu`(19자리), `geometry` |
-| 지형 DEM | `geo_store/dem_*.tif` (오프라인 비축) | EPSG:5186, GeoTIFF float32 |
+| 지형 DEM | `geo_store/manifest.json`(로컬) + GCS COG `gs://arch-site-model-dem`(/vsicurl) | EPSG:5186, float32, 다중타일 mosaic |
 
 **VWorld API 공통 주의사항:**
 
@@ -306,18 +305,19 @@ python -m src.terrain.contour_bake <shp_dir> `
     --method clough --guard 3
 ```
 
+**대용량 지역(전국 확장 기본 경로)**: `--tile-km 10 --margin-m 300` 추가 시 `bake_tiled`가 등고선을
+1회 읽고 타일 배치로 굽는다(`dem_<지역>_r{r}c{c}.tif` 여러 개 + manifest 자동 갱신). 이후
+`scripts/dem_to_cog.py`로 COG 변환 → `gcloud storage cp … gs://arch-site-model-dem/dem/` 업로드.
+
 **원본 SHP 위치**: `C:\Users\20260102\Downloads\새 폴더\(B010)수치지도_36710065_..._` 및 `..._36710066_..._`
 (각 폴더에 `N3L_F0010000.shp` 등고선 + `N3P_F0020000.shp` 표고점). `<shp_dir>`로 상위 "새 폴더"를
 주면 rglob으로 양 도엽을 함께 읽는다(`--sheets`는 manifest 메타용일 뿐 필터 아님).
 
-**현재 비축 파일:**
-
-```text
-geo_store/dem_daejeon_36710065_66.tif
-  - 560행×900열, 5m 해상도, EPSG:5186
-  - bounds(5186): left=231419 bottom=414155 right=235919 top=416955
-  - 표고: 35.0~190.5m, NaN 0%, method=clough(guard 3m)
-```
+**현재 비축 (대전 전역):** `dem_daejeon_r{r}c{c}.tif` 13타일 (10km 격자, 5m, EPSG:5186,
+method=clough guard 3m) — 경위도 약 127.22~127.58 / 36.17~36.53. **git 미추적**
+(`geo_store/*.tif` gitignore) → 공개 GCS `gs://arch-site-model-dem/dem/`에 COG로 업로드돼
+`/vsicurl`로 서빙, `manifest.json`만 git 추적. (과거 단일 도엽 `dem_daejeon_36710065_66.tif`
+560×900도 manifest·GCS에 잔존.)
 
 **표고점 필수**: `F0020000` 없으면 봉우리가 평면으로 처리됨. 항상 함께 bake할 것.
 
@@ -336,9 +336,14 @@ result = generate_site_model(
 # result["stats"]["elev_range_m"]  → [35.2, 112.7] (클립 DEM 표고 범위)
 ```
 
-**지형 갱신 방법**: `dem_*.tif` 파일 교체 + `manifest.json` 해당 항목 수정 → 엔진 코드 무수정.
+**지형 갱신/추가 방법** (전국 확장 루프): 지역 SHP → `contour_bake … --tile-km 10 --margin-m 300`
+(대용량은 `bake_tiled` 타일 배치) → `scripts/dem_to_cog.py`로 COG 변환 →
+`gcloud storage cp … gs://arch-site-model-dem/dem/` 업로드 → `manifest.json` 커밋·푸시(엔진 무수정).
+**타일은 GCS, manifest만 git.** 질의가 여러 타일에 걸치면 `find_tiles`+`clip_dem_mosaic`가 병합.
 
-**DEM 범위 부족 시**: 인접 도엽 SHP 추가 후 `contour_bake` 재실행 (bounds 확장) → manifest 갱신.
+**저장/서빙**: 배포는 `DEM_TILE_BASE=/vsicurl/…`로 Cloud Run이 GCS COG를 윈도우 읽기(이미지에 타일 없음).
+로컬 개발은 `DEM_TILE_BASE` 미설정(로컬 `geo_store`) 또는 `/vsicurl/…`로 GCS 직접. 타일 열기 실패 시
+지형 생략(조용한 fallback) → `warnings` 확인.
 
 ---
 
@@ -358,6 +363,7 @@ result = generate_site_model(
 | 확장3 | 이격면(setback) 실연동 — arch-law-diagnose | 🚧 블로커 (아래 참고) |
 | 확장4 | `generate_site_tiles` — 대량건물 타일분할 | ✅ 완료 |
 | 확장5 | 정사영상 텍스처 Tier 1 — 지형 TIN 드레이프 (.3dm) | ✅ 완료 (Tier 2a `.skp` 미착수) |
+| 확장6 | 전국 DEM 확장 — 다중 타일 mosaic(`find_tiles`/`clip_dem_mosaic`) + 배치 베이크(`bake_tiled`) + GCS COG 서빙(`/vsicurl`) | ✅ 프로덕션 (지역 추가는 반복) |
 
 ---
 

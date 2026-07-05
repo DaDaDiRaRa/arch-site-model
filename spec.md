@@ -103,15 +103,20 @@ data=LP_PA_CBND_BUBUN  (나머지 파라미터 동일)
 
 ### 2.4 지형 DEM (오프라인 비축)
 
-NGII 수치지형도Ver2.0 SHP → 오프라인 굽기 → `geo_store/dem_*.tif`.
+NGII 수치지형도Ver2.0 SHP → 오프라인 굽기 → COG GeoTIFF. 타일은 공개 GCS 버킷에서 GDAL
+`/vsicurl` 윈도우 range-read로 서빙(이미지에 타일 미포함) — 경로는 `config.DEM_TILE_BASE`가 로컬
+`geo_store` ↔ 원격 GCS를 결정. `manifest.json`은 항상 로컬(git 추적)이고 타일만 원격 base로 해석.
 
 ```
 geo_store/
-  manifest.json       비축 타일 목록 (region/file/bounds/cell_m/updated)
-  dem_*.tif           GeoTIFF, EPSG:5186, float32
+  manifest.json       비축 타일 목록 (region/file/bounds/cell_m/updated) — 로컬/git
+  dem_*.tif           GeoTIFF, EPSG:5186, float32 — git 미추적(.gitignore), GCS에서 서빙
 ```
 
-현재 비축: `dem_daejeon_36710065_66.tif` (대전 서구, 5m 해상도, 560행×900열).
+한 질의가 여러 타일에 걸치면 겹치는 타일을 전부 병합(mosaic)해 사용한다(§7).
+
+현재 비축: 대전 전역 13타일(10km, 5m 해상도) — GCS `gs://arch-site-model-dem`
+(asia-northeast3, `/vsicurl` 서빙).
 
 ---
 
@@ -382,7 +387,8 @@ generate(address, radius_m, floor_h_m, outputs, layers, output_dir,
 1. 주소 → 좌표 (VWorld geocode)
 2. 좌표 + radius → BBOX (4326) / 5186 변환 + origin_offset 산출
 3. 건물 취득   LT_C_SPBD → features_to_solids (missing_policy 적용)
-4. 지형 취득   manifest → find_tile → clip_dem → grid_to_tin (layers.terrain 시)
+4. 지형 취득   manifest → find_tiles(겹치는 타일 전부) → clip_dem_mosaic(다중 타일 병합,
+              DEM_TILE_BASE로 로컬/GCS) → grid_to_tin (layers.terrain 시)
 5. 건물 앉힘   seat_building (min-vertex, 지형 활성 시)
 6. 지적 취득   LP_PA_CBND_BUBUN → features_to_parcels (layers.cadastral 시)
 6.5 정사영상   ortho.build_mosaic (layers.orthophoto + outputs=3dm 시) → PNG + 로컬 범위
@@ -392,8 +398,9 @@ generate(address, radius_m, floor_h_m, outputs, layers, output_dir,
 10. provenance + origin_offset 기록
 ```
 
-DEM 범위 밖 → `ok: true` + `warnings` 추가 + 건물만 생성 (조용한 fallback). 정사영상도 키 없음/타일
-실패/지형 미생성 시 경고 후 생략(조용한 fallback).
+DEM 범위 밖 → `ok: true` + `warnings` 추가 + 건물만 생성 (조용한 fallback). DEM 타일을 열 수 없어도
+(로컬 파일 없음/GCS 미도달) 마찬가지로 건물만 생성 + 경고. 정사영상도 키 없음/타일 실패/지형 미생성
+시 경고 후 생략(조용한 fallback).
 
 ---
 
@@ -409,6 +416,7 @@ src/
   site_check.py          check_site_data 핵심 로직
   preview.py             preview_site 핵심 로직
   config.py              환경변수 (VWORLD_KEY, M2I=39.3701, DEFAULT_FLOOR_H_M=3.0)
+                          + DEM_TILE_BASE + dem_tile_path(로컬↔GCS /vsigs 타일 경로)
   geo/
     geocode.py           주소 → 좌표
     bbox.py              반경 → BBOX (4326)
@@ -424,13 +432,15 @@ src/
     skp_mcp.py           build_skp_code → SketchUp MCP Python 코드 문자열
     rhino.py             write_3dm → .3dm 파일
   terrain/
-    store.py             load_manifest + find_tile
+    store.py             load_manifest + find_tiles(겹치는 타일 전부·고해상도 우선) / find_tile(대표 1개)
     contour_bake.py      등고선 SHP → DEM(.tif) 오프라인 굽기 (CLI)
-    dem.py               clip_dem + DEMPatch (표고 보간)
+                          + bake_tiled(대용량 지역 타일 배치 베이크, --tile-km/--margin-m)
+    dem.py               clip_dem + clip_dem_mosaic(다중 타일 rasterio.merge 병합, 로컬/vsigs) + DEMPatch (표고 보간)
 ```
 
 그 외: `frontend/`(React 웹앱 + three.js 브라우저 미리보기), `sketchup_ext/`(SketchUp `.rbz` 확장 + `build_rbz.py`),
-`scripts/dem_staircase.py`(지형 계단현상 진단), `docs/`(`deploy.md`·`sketchup_extension.md`·`orthophoto_texture_plan.md`).
+`scripts/dem_staircase.py`(지형 계단현상 진단), `scripts/dem_to_cog.py`(DEM→COG 변환·GCS 업로드),
+`docs/`(`deploy.md`·`sketchup_extension.md`·`orthophoto_texture_plan.md`).
 
 ---
 
@@ -454,6 +464,7 @@ src/
 | 확장(Phase B) | SketchUp `.rbz` — 지형+건물 조립(B1) | ✅ (B2 정사영상 드레이프 예정) |
 | 지형 개선 | 계단현상 완화 — guarded CloughTocher 재bake | ✅ |
 | geocode | 지번+도로명(PARCEL→ROAD) 지원 | ✅ |
+| 전국 DEM 확장 | 다중 타일 mosaic + 배치 베이크(bake_tiled) + GCS COG 서빙(/vsicurl) | ✅ 프로덕션 |
 
 ---
 
@@ -482,6 +493,8 @@ src/
 10. **DEM fallback**: DEM 타일 없거나 범위 밖이면 지형 생략 + `warnings` 추가. 반드시 확인.
 11. **타일별 origin_offset 오해 금지**: `generate_site_tiles`의 `stats.origin_offset`은 전체 반경
     기준 단일 값 — 타일마다 다른 원점을 쓰지 않는다. 타일별로 재계산하면 좌표가 어긋난다.
+12. **DEM 타일은 GCS 서빙**: 타일은 `DEM_TILE_BASE=/vsicurl/…`(원격)에서 읽고 `manifest.json`은
+    로컬(git). 타일 열기 실패 시 지형 생략(조용한 fallback)이므로 `warnings` 확인.
 
 ---
 

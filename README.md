@@ -43,6 +43,7 @@ Copy-Item .env.example .env
 | `VWORLD_TEST_KEY` | VWorld 개발(테스트) 키 — **운영 키보다 우선** |
 | `VWORLD_KEY` | VWorld 운영 키 |
 | `VWORLD_DOMAIN` | 키 발급 시 등록 도메인 (기타 개발자 키는 불필요) |
+| `DEM_TILE_BASE` | (선택) DEM 타일 읽기 위치. 기본=로컬 `geo_store`. GCS 서빙 시 `/vsicurl/https://storage.googleapis.com/<버킷>/<프리픽스>` — 로컬 개발엔 불필요 |
 
 > **키 발급**: [VWorld 공간정보 오픈플랫폼](https://www.vworld.kr) → 개발자 → 인증키 발급
 
@@ -281,26 +282,44 @@ y_abs = y_local + origin_offset[1]   # → EPSG:5186 Y (m)
 
 ## 5. 지형 DEM 추가/갱신
 
-**현재 비축**: `geo_store/dem_daejeon_36710065_66.tif` (대전 서구 일부, 5m 해상도)
+**현재 비축**: **대전 전역** 커버 — 10km 격자 13타일, 5m 해상도(EPSG:5186). 타일은 공개 GCS 버킷
+`gs://arch-site-model-dem`(asia-northeast3)에 있고, 배포된 Cloud Run 앱이 GDAL `/vsicurl` 윈도우
+범위읽기로 **요청 시점에** 읽습니다(컨테이너 이미지에 타일 미포함). `manifest.json`만 로컬/깃에
+남고 큰 타일은 `DEM_TILE_BASE`로 원격 해석됩니다. 타일을 못 열면(로컬 부재/GCS 불가) 파이프라인은
+경고와 함께 건물만 생성으로 조용히 폴백합니다.
 
-새 지역 추가:
+새 지역 추가(반복 루프):
 
-1. [국토지리정보원](https://map.ngii.go.kr) 수치지형도Ver2.0 SHP 다운로드 (1:5,000 도엽)
-2. `N3L_F0010000.shp`(등고선) + `N3P_F0020000.shp`(표고점) 준비
+1. [국토지리정보원](https://map.ngii.go.kr)에서 대상 지역 수치지형도Ver2.0 SHP(1:5,000)를 아무 로컬
+   폴더에 다운로드 — `N3L_F0010000.shp`(등고선) + `N3P_F0020000.shp`(표고점), EPSG:5186.
+1. 배치 베이크 — `--tile-km`로 지역을 격자 타일로 굽습니다(등고선·표고점 1회 읽고 타일별 서브셋
+   보간, `--margin-m` 여유로 이음새 연속, 전역 격자 픽셀정합). `dem_<지역>_r{r}c{c}.tif` 타일이
+   생성되고 `manifest.json`이 타일별로 자동 갱신됩니다.
 
 ```powershell
-python -m src.terrain.contour_bake <shp_dir> `
-    --cell 5 `
-    --out geo_store/dem_신지역.tif `
-    --region "지역명" `
-    --sheets 도엽번호1 도엽번호2 `
+python -m src.terrain.contour_bake "<지역 폴더>" `
+    --out geo_store/dem_<지역>.tif `
+    --tile-km 10 --margin-m 300 `
     --method clough --guard 3
 ```
 
 > `--method clough`(기본) = guarded CloughTocher 보간(계단현상 완화, 오버슈트는 linear±`guard`m로 클램프).
 > `--method linear`로 옛 평면삼각 보간 폴백 가능. 계단 지표 진단: `python scripts/dem_staircase.py <tif>`.
 
-1. `geo_store/manifest.json` 업데이트 (`bounds`, `file` 항목 추가)
+1. COG 변환 — 베이크된 GeoTIFF를 Cloud-Optimized GeoTIFF(내부 타일링)로:
+
+```powershell
+python scripts/dem_to_cog.py geo_store --out cog_out --glob "dem_<지역>*.tif"
+```
+
+1. GCS 업로드:
+
+```powershell
+gcloud storage cp cog_out/dem_<지역>*.tif gs://arch-site-model-dem/dem/
+```
+
+1. 갱신된 `geo_store/manifest.json`을 commit + push → GitHub Actions가 재배포 → 새 지역이 GCS에서
+   라이브 서빙됩니다. **깃에는 `manifest.json`만 들어갑니다(타일은 GCS로).**
 
 ---
 
@@ -336,3 +355,4 @@ python -m pytest tests/test_integration_api.py -v
 | 확장(Phase B) | SketchUp `.rbz` — 지형+건물 조립(B1) | ✅ (B2 정사영상 텍스처 예정) |
 | 지형 개선 | 계단현상 완화 — guarded CloughTocher 재bake | ✅ |
 | geocode | 지번+도로명(PARCEL→ROAD) 지원 | ✅ |
+| 전국 DEM 확장 | 다중 타일 mosaic(find_tiles/clip_dem_mosaic) + 배치 베이크(bake_tiled) + GCS COG 서빙(/vsicurl) | ✅ 프로덕션 |

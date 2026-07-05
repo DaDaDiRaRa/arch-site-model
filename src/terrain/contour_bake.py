@@ -32,6 +32,9 @@ log = logging.getLogger(__name__)
 _CONTOUR_PAT = re.compile(r"F0010000", re.IGNORECASE)
 # 표고점 레이어 파일명 패턴 (F0020000)
 _SPOT_PAT = re.compile(r"F0020000", re.IGNORECASE)
+# 도엽 폴더 패턴 (예: "(B010)수치지도_37608048_2025_...") — 시·도 단위 다운로드 시
+# 경계 도엽이 여러 구 폴더에 중복되므로, 도엽 번호로 중복 제거한다.
+_SHEET_PAT = re.compile(r"수치지도_(\d+)")
 
 # 표고 속성 후보 필드명 (우선순위 순, 영문 + 수치지형도 한국어 표준)
 _ELEV_FIELDS = [
@@ -70,12 +73,51 @@ def _find_elev_field(gdf: gpd.GeoDataFrame) -> str:
     raise ValueError(f"표고 필드를 찾을 수 없습니다. 컬럼 목록: {cols}")
 
 
+def _sheet_key(p: Path) -> str:
+    """중복제거 키. 도엽 폴더(예: `(B010)수치지도_37608048_...`)면 도엽 번호,
+    아니면 전체 경로(=중복제거 안 함)."""
+    m = _SHEET_PAT.search(p.parent.name)
+    return m.group(1) if m else str(p)
+
+
 def _find_shp(shp_dir: Path, pattern: re.Pattern) -> list[Path]:
-    """shp_dir(재귀 포함)에서 패턴과 일치하는 .shp 파일 목록."""
-    return [p for p in shp_dir.rglob("*.shp") if pattern.search(p.stem)]
+    """shp_dir(재귀 포함)에서 패턴과 일치하는 .shp 파일 목록 (도엽 중복 제거).
+
+    시·도 단위 다운로드는 경계 도엽을 걸치는 구마다 **같은 도엽 파일을 그대로 복사**한다
+    (바이트 동일 확인됨). 도엽 번호로 하나만 취해 낭비·Delaunay 중복점을 막는다. 도엽
+    폴더 구조가 아니면(평면 덤프) 경로가 키라 중복제거 없음(무영향).
+    """
+    matched = sorted(
+        (p for p in shp_dir.rglob("*.shp") if pattern.search(p.stem)),
+        key=str,
+    )
+    seen: set[str] = set()
+    out: list[Path] = []
+    for p in matched:
+        key = _sheet_key(p)
+        if key not in seen:
+            seen.add(key)
+            out.append(p)
+    return out
 
 
-def read_contours(shp_dir: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def _to_target_crs(gdf, target_crs: str):
+    """gdf를 target_crs로 재투영(좌표대가 다르면). 부산·대구 등 동부원점(EPSG:5187)
+    SHP를 파이프라인 기준 5186으로 통일한다(안 하면 지형이 ~2° 어긋남). z(표고)는
+    수평 재투영에 영향 없음. crs 미상이면 그대로(이미 target 가정)."""
+    try:
+        epsg = gdf.crs.to_epsg() if gdf.crs is not None else None
+    except Exception:  # noqa: BLE001
+        epsg = None
+    tgt = int(str(target_crs).split(":")[-1])
+    if epsg is not None and epsg != tgt:
+        return gdf.to_crs(target_crs)
+    return gdf
+
+
+def read_contours(
+    shp_dir: str | Path, target_crs: str = "EPSG:5186"
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """수치지형도 SHP에서 (등고선 + 표고점) 좌표+표고를 추출한다.
 
     Returns:
@@ -96,7 +138,7 @@ def read_contours(shp_dir: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarr
 
     # 등고선 — LineString 정점마다 표고 복사
     for p in contour_files:
-        gdf = gpd.read_file(p)
+        gdf = _to_target_crs(gpd.read_file(p), target_crs)
         elev_field = _find_elev_field(gdf)
         for _, row in gdf.iterrows():
             geom = row.geometry
@@ -115,7 +157,7 @@ def read_contours(shp_dir: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarr
 
     # 표고점 — Point 1개당 표고 1개
     for p in spot_files:
-        gdf = gpd.read_file(p)
+        gdf = _to_target_crs(gpd.read_file(p), target_crs)
         elev_field = _find_elev_field(gdf)
         cnt_before = len(xs)
         for _, row in gdf.iterrows():
@@ -142,6 +184,7 @@ def bake_dem(
     bounds: tuple[float, float, float, float] | None = None,
     method: str = "clough",
     guard_m: float = 3.0,
+    fill_dist_m: float = 200.0,
 ) -> tuple[np.ndarray, Affine]:
     """등고선+표고점 좌표 → 정규 격자 DEM 보간.
 
@@ -194,14 +237,20 @@ def bake_dem(
     else:
         raise ValueError(f"알 수 없는 보간법: {method!r} (clough|linear)")
 
-    # 격자 밖(nan) 영역을 최근방 값으로 채움 (linear/clough 모두 동일 볼록껍질 → 같은 nan)
+    # 볼록껍질 밖(nan) 셀을 최근방 값으로 채우되, 실데이터에서 fill_dist_m 넘게 떨어진 셀은
+    # nodata(nan) 유지한다. 무제한 외삽하면 타일 사각형 전체가 채워져, 지역 경계에서 한 지역의
+    # 외삽값이 이웃 지역 실데이터 위로 겹치며 mosaic을 오염시킨다(예: 대전 타일이 세종까지
+    # 140m 상수로 뻗침). 거리 제한 시 먼 셀은 nan → mosaic이 이웃 타일의 실데이터를 쓴다.
     nan_mask = np.isnan(grid)
     if nan_mask.any():
         from scipy.spatial import cKDTree
         valid = ~nan_mask
         tree = cKDTree(np.column_stack([gx[valid], gy[valid]]))
-        _, idx = tree.query(np.column_stack([gx[nan_mask], gy[nan_mask]]))
-        grid[nan_mask] = grid[valid][idx]
+        dist, idx = tree.query(np.column_stack([gx[nan_mask], gy[nan_mask]]))
+        near = dist <= fill_dist_m
+        fill_vals = np.full(idx.shape, np.nan, dtype=float)
+        fill_vals[near] = grid[valid][idx[near]]
+        grid[nan_mask] = fill_vals
 
     # 최종 안전 클램프 (입력 표고 범위 밖 값 제거).
     np.clip(grid, float(zs.min()), float(zs.max()), out=grid)

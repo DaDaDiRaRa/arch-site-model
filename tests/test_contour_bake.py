@@ -14,7 +14,10 @@ import rasterio
 from shapely.geometry import LineString, Point
 
 from src.terrain.contour_bake import (
+    _CONTOUR_PAT,
+    _SHEET_PAT,
     _find_elev_field,
+    _find_shp,
     bake_dem,
     bake_tiled,
     read_contours,
@@ -128,6 +131,21 @@ def test_bake_dem_no_nan(tmp_path):
     assert np.isfinite(grid).all()
 
 
+def test_bake_dem_limits_fill_distance(tmp_path):
+    """실데이터에서 fill_dist_m 넘게 떨어진 셀은 nan 유지(무제한 외삽 금지).
+
+    지역 경계에서 한 타일의 외삽값이 이웃 지역을 오염시키지 않도록 하는 핵심.
+    """
+    _make_synthetic_shp(tmp_path)   # 반경 150m 언덕, 중심 (200000, 400000)
+    xs, ys, zs = read_contours(tmp_path)
+    # bounds를 데이터(중앙 ~300m)보다 훨씬 크게 → 먼 구석은 실데이터에서 멀어 nan
+    bounds = (199_000, 399_000, 201_000, 401_000)   # 2×2km
+    grid, _ = bake_dem(xs, ys, zs, cell_m=10.0, bounds=bounds, fill_dist_m=200.0)
+    assert np.isnan(grid).any()          # 먼 구석은 nan
+    assert np.isfinite(grid).any()       # 데이터 근처는 값
+    assert np.isnan(grid[0, 0])          # 좌상단(199000,401000) ~1.4km → nan
+
+
 def test_bake_dem_spot_raises_peak(tmp_path):
     """표고점 빼면 봉우리가 낮아지는지 — 표고점 포함 시 더 높아야 함."""
     _, spot_path = _make_synthetic_shp(tmp_path)
@@ -232,3 +250,53 @@ def test_bake_tiled_creates_multiple_aligned_tiles(tmp_path):
         dy = abs(src2.transform.f - oy)
     assert abs((dx / 5.0) - round(dx / 5.0)) < 1e-6
     assert abs((dy / 5.0) - round(dy / 5.0)) < 1e-6
+
+
+# ---------------------------------------------------------------------------
+# _find_shp — 도엽 중복 제거 (시·도 단위 다운로드)
+# ---------------------------------------------------------------------------
+
+def test_find_shp_dedups_sheet_across_folders(tmp_path):
+    """같은 도엽이 여러 구 폴더에 중복 복사돼 있으면 하나만 취한다(바이트 동일)."""
+    for gu in ("강북구", "종로구"):
+        d = tmp_path / gu / "(B010)수치지도_37608048_2025_x"
+        d.mkdir(parents=True)
+        (d / "N3L_F0010000.shp").write_bytes(b"")
+    d2 = tmp_path / "강북구" / "(B010)수치지도_37608049_2025_y"  # 다른 도엽
+    d2.mkdir(parents=True)
+    (d2 / "N3L_F0010000.shp").write_bytes(b"")
+
+    found = _find_shp(tmp_path, _CONTOUR_PAT)
+    sheets = sorted(_SHEET_PAT.search(p.parent.name).group(1) for p in found)
+    assert len(found) == 2                    # 37608048(중복→1) + 37608049
+    assert sheets == ["37608048", "37608049"]
+
+
+def test_find_shp_flat_dump_no_dedup(tmp_path):
+    """평면 덤프(도엽 폴더 아님)는 중복제거 없이 파일마다 유지."""
+    for suf in ("(1)", "(2)"):
+        (tmp_path / f"N3L_F0010000 {suf}.shp").write_bytes(b"")
+    found = _find_shp(tmp_path, _CONTOUR_PAT)
+    assert len(found) == 2
+
+
+def test_read_contours_reprojects_5187_to_5186(tmp_path):
+    """동부원점(5187) SHP는 읽을 때 5186으로 재투영된다(부산·대구 대응)."""
+    from pyproj import Transformer
+
+    lon, lat = 129.05, 35.15   # 부산 근처
+    x87, y87 = Transformer.from_crs("EPSG:4326", "EPSG:5187", always_xy=True).transform(lon, lat)
+    x86, y86 = Transformer.from_crs("EPSG:4326", "EPSG:5186", always_xy=True).transform(lon, lat)
+    assert abs(x86 - x87) > 1000   # 두 좌표대는 수십 km 차이
+
+    gpd.GeoDataFrame(
+        {"ELEV": [10.0], "geometry": [LineString([(x87, y87), (x87 + 10, y87 + 10)])]},
+        crs="EPSG:5187",
+    ).to_file(tmp_path / "F0010000_test.shp")
+    gpd.GeoDataFrame(
+        {"ELEV": [20.0], "geometry": [Point(x87, y87)]}, crs="EPSG:5187",
+    ).to_file(tmp_path / "F0020000_test.shp")
+
+    xs, ys, zs = read_contours(tmp_path)
+    assert abs(xs.min() - x86) < 5.0    # 5186으로 재투영됨(5187 원본 아님)
+    assert abs(ys.min() - y86) < 5.0
