@@ -134,6 +134,68 @@ def _patch_synth_dem_tile(monkeypatch):
     monkeypatch.setattr(dem_mod, "clip_dem_mosaic", _fake)
 
 
+def _tiny_png():
+    """8×8 단색 PNG 바이트(정사영상 fetch 대역)."""
+    import struct
+    import zlib
+
+    w = h = 8
+    raw = bytearray()
+    for _ in range(h):
+        raw.append(0)
+        raw += bytes((80, 120, 60)) * w
+
+    def _chunk(typ, data):
+        return (
+            struct.pack(">I", len(data)) + typ + data
+            + struct.pack(">I", zlib.crc32(typ + data) & 0xFFFFFFFF)
+        )
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+        + _chunk(b"IDAT", zlib.compress(bytes(raw), 6))
+        + _chunk(b"IEND", b"")
+    )
+
+
+def test_generate_tile_orthophoto(monkeypatch):
+    """layers.orthophoto=True + 지형 → 타일별 정사영상(base64 + 로컬 extent)."""
+    import base64
+
+    import src.pipeline as pl
+    from src.geo.ortho import TileSource
+
+    _patch_synth_dem_tile(monkeypatch)  # 지형 있어야 정사영상 생성
+    small = TileSource(name="t", url_template="http://t/{z}/{x}/{y}.png", tile_size=8)
+    monkeypatch.setattr(pl, "_resolve_ortho_source", lambda: (small, "KEY", "TestOrtho"))
+    monkeypatch.setattr(pl.config, "ORTHO_ZOOM", 16)
+
+    b4326, b5186, offset = _tile_bbox_around(127.3700, 36.3400)
+    out = generate_tile(
+        b4326, b5186, offset,
+        layers={"buildings": True, "terrain": True, "orthophoto": True},
+        client=FakeClient([_feature(0, 127.3700, 36.3400)]),
+        ortho_fetch=lambda url: _tiny_png(),
+    )
+    assert out["ok"] is True
+    o = out["ortho"]
+    assert o is not None
+    assert len(o["extent_local_m"]) == 4
+    raw = base64.b64decode(o["image_b64"])
+    assert raw[:8] == b"\x89PNG\r\n\x1a\n"  # 유효 PNG
+
+
+def test_generate_tile_no_ortho_without_terrain():
+    """지형 미요청이면 정사영상도 없음(정사영상은 지형에 드레이프)."""
+    b4326, b5186, offset = _tile_bbox_around(127.3700, 36.3400)
+    out = generate_tile(
+        b4326, b5186, offset, layers={"buildings": True, "orthophoto": True},
+        client=FakeClient([_feature(0, 127.3700, 36.3400)]),
+    )
+    assert out["ortho"] is None
+
+
 def test_generate_tile_terrain(monkeypatch):
     _patch_synth_dem_tile(monkeypatch)
     b4326, b5186, offset = _tile_bbox_around(127.3700, 36.3400)

@@ -124,6 +124,7 @@ module ArchSiteModel
         geometry: geom,
         solids: data["solids"] || 0,
         terrain_triangles: data["terrain_triangles"] || 0,
+        ortho: data["ortho"],  # {extent_local_m, image_b64}|nil — 타일별 정사영상
       }
     rescue JSON::ParserError => e
       { error: "타일 파싱 실패: #{e.message}" }

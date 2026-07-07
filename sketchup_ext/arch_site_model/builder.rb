@@ -50,7 +50,7 @@ module ArchSiteModel
     # 자동 삭제해 다음 호출에서 "reference to deleted Group"이 나기 때문(내용과 함께
     # 태어나야 살아남는다). deleted? 가드로 만약 비어서 purge됐으면 재생성한다.
     # zoom_extents는 main이 마지막에 1회. 반환: 이 타일의 건물 수.
-    def self.build_tile(model, root_holder, geometry, tile_label)
+    def self.build_tile(model, root_holder, geometry, tile_label, ortho_png = nil, ortho_extent = nil)
       count = 0
       model.start_operation("타일 #{tile_label}", true)
       begin
@@ -62,7 +62,8 @@ module ArchSiteModel
         end
         tile_grp = root.entities.add_group
         tile_grp.name = "tile #{tile_label}"
-        count = build_into(model, tile_grp.entities, geometry)
+        # 전역 정사영상(모든 타일 동일 png+extent) → 타일 지형마다 같은 전역 UV로 드레이프.
+        count = build_into(model, tile_grp.entities, geometry, ortho_png, ortho_extent)
         model.commit_operation
       rescue StandardError
         model.abort_operation
@@ -113,13 +114,16 @@ module ArchSiteModel
       x0, y0, x1, y1 = extent.map(&:to_f)
       dx = x1 - x0
       dy = y1 - y0
-      sz = (File.size(png_path) rescue "?")
-      puts "[ortho] drape 시작: #{png_path} (#{sz}B), extent=#{extent.inspect}"
       return if dx.abs < 1e-6 || dy.abs < 1e-6
 
-      mat = model.materials.add("asm_ortho")
-      mat.texture = png_path
-      puts "[ortho] material.texture=#{mat.texture ? mat.texture.filename : 'nil(텍스처 로드 실패)'}"
+      # PNG 파일명 기준 머티리얼(세대별 유일) — 타일들은 같은 png_path라 재사용(전역 1장),
+      # 재실행 시 png가 바뀌면 새 머티리얼(이전 이미지 재사용 방지).
+      mname = "asm_ortho_#{File.basename(png_path.to_s)}"
+      mat = model.materials[mname]
+      unless mat
+        mat = model.materials.add(mname)
+        mat.texture = png_path
+      end
 
       faces = terrain_grp.entities.grep(Sketchup::Face)
       applied = 0
@@ -145,7 +149,7 @@ module ArchSiteModel
           puts "[ortho] position_material 예외(첫 1건): #{e.message}" if failed == 1
         end
       end
-      puts "[ortho] 완료: 면 #{faces.length}, 적용 #{applied}, 실패 #{failed}"
+      puts "[ortho] 드레이프 실패 면 #{failed}/#{faces.length}" if failed > 0
       # "텍스처가 표시된 음영"으로 전환 → 위성사진이 뷰포트에 보이게(안 하면 재질
       # 평균색만 보여 초록으로 보임). 텍스처를 실제로 입힌 경우에만 켠다.
       begin

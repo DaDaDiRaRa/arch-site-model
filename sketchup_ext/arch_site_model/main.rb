@@ -114,11 +114,25 @@ module ArchSiteModel
           next
         end
         model = Sketchup.active_model
-        layers = { "buildings" => true, "terrain" => params["terrain"] != false }
+        layers = {
+          "buildings"  => true,
+          "terrain"    => params["terrain"] != false,
+          "orthophoto" => params["orthophoto"] == true, # 타일별 풀해상도 정사영상
+        }
         root_holder = { group: nil } # root는 첫 타일과 함께 생성(빈 그룹 purge 방지)
         state = { total: tiles.length, built: 0, errors: 0 }
         build_next_tile(dlg, model, root_holder, plan, tiles, layers, 0, state)
       end
+    end
+
+    # base64 정사영상 → 임시 PNG 파일 경로. 실패 시 nil.
+    def self.write_b64_png(b64)
+      require "base64"
+      path = File.join(Sketchup.temp_dir, "asm_tiled_ortho_#{b64.hash & 0xffffff}.png")
+      File.open(path, "wb") { |f| f.write(Base64.decode64(b64)) }
+      path
+    rescue StandardError
+      nil
     end
 
     # 타일 하나 fetch+조립 후 다음으로 재귀(Sketchup::Http 콜백 체이닝 = 타일 사이
@@ -144,7 +158,12 @@ module ArchSiteModel
           log_tile_error(tile["tile_id"], result[:error])
         else
           begin
-            n = Builder.build_tile(model, root_holder, result[:geometry], tile["tile_id"])
+            # 타일별 정사영상(있으면) → temp PNG → 이 타일 지형에 드레이프.
+            o = result[:ortho]
+            opng = o && o["image_b64"] ? write_b64_png(o["image_b64"]) : nil
+            oext = o ? o["extent_local_m"] : nil
+            n = Builder.build_tile(model, root_holder, result[:geometry], tile["tile_id"],
+                                   opng, oext)
             state[:built] += n
           rescue StandardError => e
             state[:errors] += 1

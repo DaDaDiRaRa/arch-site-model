@@ -68,7 +68,7 @@ def _tile_grid(
 def tile_plan(
     address: str, radius_m: int = 1000, tile_size_m: float = 250.0
 ) -> dict:
-    """주소 + 반경 → 고정 origin_offset + 타일 격자 목록(지오메트리 없음).
+    """주소 + 반경 → 고정 origin_offset + 타일 격자 목록(지오메트리·정사영상 없음).
 
     반환:
       {"ok": True, "origin_offset": [ox, oy], "tile_size_m", "coord",
@@ -103,6 +103,45 @@ def tile_plan(
     }
 
 
+def _ortho_b64(bbox_4326, offset, zoom, ortho_fetch=None) -> dict | None:
+    """bbox 정사영상(주어진 zoom) → base64 PNG + 로컬 extent. 실패 시 None(지형/건물 계속).
+
+    타일별 풀해상도(zoom 18)용 — 각 타일이 자기 영역만 만들어 단발과 같은 선명도를 낸다.
+    """
+    import base64
+    import os
+    import tempfile
+
+    from src.geo.ortho import build_mosaic
+    from src.pipeline import _resolve_ortho_source
+
+    source, key, _attr = _resolve_ortho_source()
+    if not key:
+        return None
+
+    fd, tmp = tempfile.mkstemp(suffix=".png", prefix="asm_ortho_")
+    os.close(fd)
+    try:
+        mosaic = build_mosaic(bbox_4326, zoom, source, key, tmp, fetch=ortho_fetch)
+        bx0, by0, bx1, by1 = mosaic.bounds
+        ox, oy = offset
+        with open(mosaic.image_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        return {
+            "extent_local_m": [bx0 - ox, by0 - oy, bx1 - ox, by1 - oy],
+            "image_b64": b64,
+            "missing_tiles": mosaic.missing_tiles,
+            "zoom": zoom,
+        }
+    except Exception:  # noqa: BLE001 — 정사영상 실패는 치명 아님
+        return None
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
 def generate_tile(
     bbox_4326: tuple[float, float, float, float],
     bbox_5186: tuple[float, float, float, float],
@@ -111,11 +150,14 @@ def generate_tile(
     floor_h_m: float = config.DEFAULT_FLOOR_H_M,
     missing_floors_policy: str = "default",
     client: VWorldClient | None = None,
+    ortho_fetch=None,
 ) -> dict:
     """한 타일의 geometry JSON. 중심점이 이 타일에 속하는 건물만(경계 중복 제거).
 
     offset은 tile_plan이 준 전체 기준을 그대로 사용해야 타일들이 정렬된다.
-    반환: {"ok": True, "geometry": {...}, "solids": n, "terrain_triangles": n}.
+    layers.orthophoto=True면 이 타일 영역만 풀해상도(zoom 18) 정사영상을 만들어 `ortho`에
+    담는다(base64) — 확장이 이 타일 지형에 드레이프. 타일마다 자기 이미지라 단발과 같은 선명도.
+    반환: {"ok": True, "geometry": {...}, "solids": n, "terrain_triangles": n, "ortho": {..}|없음}.
     """
     layers = layers or {"buildings": True}
     offset = (float(offset[0]), float(offset[1]))
@@ -182,10 +224,18 @@ def generate_tile(
                 solids = [replace(s, base_z_m=seat_building(s, dem)) for s in solids]
                 terrain_mesh = build_tin(dem, config.TERRAIN_MAX_ERROR_M)
 
+    # 정사영상: 이 타일 영역(지형 겹침 margin 포함)만 풀해상도(zoom 18)로 → 타일 지형에 드레이프.
+    ortho = None
+    if layers.get("orthophoto") and terrain_mesh is not None:
+        m = 15.0  # 지형 겹침(10m)을 덮도록 약간 더 넓게
+        pad = (bbox_5186[0] - m, bbox_5186[1] - m, bbox_5186[2] + m, bbox_5186[3] + m)
+        ortho = _ortho_b64(_bbox_5186_to_4326(pad), offset, config.ORTHO_ZOOM, ortho_fetch)
+
     geometry = _build_geometry(solids, terrain_mesh, None)
     return {
         "ok": True,
         "geometry": geometry,
         "solids": len(solids),
         "terrain_triangles": len(terrain_mesh.triangles) if terrain_mesh else 0,
+        "ortho": ortho,
     }
