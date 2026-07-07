@@ -14,8 +14,8 @@ module ArchSiteModel
     C_FLAGGED  = [210, 120, 60].freeze  # orange (층수 미확인)
     C_TERRAIN  = [120, 150, 90].freeze  # olive green
 
+    # 단일 조립(소반경): root 그룹 생성 + 전체 조립 + zoom. 반환: 생성된 건물 수.
     # geometry: {"buildings"=>[...], "terrain"=>{...}|nil}
-    # 반환: 생성된 건물 수
     def self.build(geometry, _warnings = [])
       model = Sketchup.active_model
       count = 0
@@ -23,18 +23,50 @@ module ArchSiteModel
       begin
         root = model.active_entities.add_group
         root.name = "arch-site-model"
-        ents = root.entities
-
-        if geometry["terrain"]
-          build_terrain(model, ents, geometry["terrain"])
-        end
-        count = build_buildings(model, ents, geometry["buildings"] || [])
-
+        count = build_into(model, root.entities, geometry)
         model.commit_operation
         model.active_view.zoom_extents
       rescue StandardError => e
         model.abort_operation
         UI.messagebox("모델 조립 오류: #{e.message}")
+        raise
+      end
+      count
+    end
+
+    # 지형 + 건물을 주어진 entities에 조립(단일/타일 공통). 반환: 건물 수.
+    def self.build_into(model, parent_ents, geometry)
+      build_terrain(model, parent_ents, geometry["terrain"]) if geometry["terrain"]
+      build_buildings(model, parent_ents, geometry["buildings"] || [])
+    end
+
+    # 대반경 순차조립용 root 그룹 1개 생성(main이 루프 전에 1회 호출).
+    def self.new_root(model)
+      root = nil
+      model.start_operation("대지모델(타일) 시작", true)
+      begin
+        root = model.active_entities.add_group
+        root.name = "arch-site-model"
+        model.commit_operation
+      rescue StandardError
+        model.abort_operation
+        raise
+      end
+      root
+    end
+
+    # 타일 1개를 root 아래 서브그룹에 조립(자체 operation, zoom 없음).
+    # zoom_extents는 main이 마지막에 1회. 반환: 이 타일의 건물 수.
+    def self.build_tile(model, root_group, geometry, tile_label)
+      count = 0
+      model.start_operation("타일 #{tile_label}", true)
+      begin
+        tile_grp = root_group.entities.add_group
+        tile_grp.name = "tile #{tile_label}"
+        count = build_into(model, tile_grp.entities, geometry)
+        model.commit_operation
+      rescue StandardError
+        model.abort_operation
         raise
       end
       count

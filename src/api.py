@@ -56,6 +56,24 @@ class GenerateRequest(BaseModel):
     )
 
 
+class TilePlanRequest(BaseModel):
+    address: str = Field(..., description="대지 주소")
+    radius_m: int = Field(1000, ge=10, le=3000, description="반경(m)")
+    tile_size_m: float = Field(250.0, gt=0, le=1000, description="타일 한 변(m)")
+
+
+class GenerateTileRequest(BaseModel):
+    bbox_4326: list[float] = Field(..., description="타일 bbox [minlon,minlat,maxlon,maxlat]")
+    bbox_5186: list[float] = Field(..., description="타일 bbox EPSG:5186 [minx,miny,maxx,maxy]")
+    origin_offset: list[float] = Field(..., description="tile_plan이 준 고정 offset [ox,oy]")
+    layers: dict = Field(
+        default_factory=lambda: {"buildings": True, "terrain": True},
+        description="레이어 토글(타일 조립은 buildings/terrain만)",
+    )
+    floor_height_m: float = Field(config.DEFAULT_FLOOR_H_M, gt=0, description="기본 층고(m)")
+    missing_floors_policy: str = Field("default", description='층수 누락: "default"|"skip"|"flag"')
+
+
 def _safe_component(s: str) -> bool:
     """경로 조각이 안전한지(디렉터리 탈출 방지)."""
     return bool(re.fullmatch(r"[A-Za-z0-9._가-힣-]+", s)) and s not in (".", "..")
@@ -111,6 +129,41 @@ def generate_endpoint(req: GenerateRequest) -> dict:
         "provenance": result.get("provenance"),
         "warnings": result.get("warnings"),
     }
+
+
+@app.post("/api/tile_plan")
+def tile_plan_endpoint(req: TilePlanRequest) -> dict:
+    """대반경 순차조립용 계획: 주소 → 고정 origin_offset + 타일 격자 목록(지오메트리 없음).
+
+    SketchUp 확장이 이 목록을 받아 타일마다 /api/generate_tile을 순차 호출한다.
+    """
+    from src.geo.geocode import GeocodeError
+    from src.tiles_stream import tile_plan
+
+    try:
+        return tile_plan(req.address, radius_m=req.radius_m, tile_size_m=req.tile_size_m)
+    except GeocodeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/generate_tile")
+def generate_tile_endpoint(req: GenerateTileRequest) -> dict:
+    """한 타일의 geometry JSON. tile_plan의 bbox·offset을 그대로 전달받아 처리한다."""
+    from src.tiles_stream import generate_tile
+
+    if len(req.bbox_4326) != 4 or len(req.bbox_5186) != 4 or len(req.origin_offset) != 2:
+        raise HTTPException(
+            status_code=400,
+            detail="bbox_4326/bbox_5186는 4개, origin_offset은 2개여야 합니다",
+        )
+    result = generate_tile(
+        tuple(req.bbox_4326), tuple(req.bbox_5186), tuple(req.origin_offset),
+        layers=req.layers, floor_h_m=req.floor_height_m,
+        missing_floors_policy=req.missing_floors_policy,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "타일 생성 실패"))
+    return result
 
 
 @app.get("/api/files/{job_id}/{kind}")

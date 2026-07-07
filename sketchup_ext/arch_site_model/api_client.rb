@@ -45,6 +45,71 @@ module ArchSiteModel
       { error: "응답 처리 오류: #{e.message}" }
     end
 
+    # --- 대반경 순차조립 (타일) -------------------------------------------
+
+    # 계획: 주소 → 고정 offset + 타일 목록. yield {plan:} 또는 {error:}.
+    def self.tile_plan(base_url, params, &callback)
+      url = "#{base_url}/api/tile_plan"
+      body = {
+        "address"     => params["address"].to_s,
+        "radius_m"    => (params["radius_m"] || 1000).to_i,
+        "tile_size_m" => (params["tile_size_m"] || 250).to_f,
+      }
+      request = Sketchup::Http::Request.new(url, Sketchup::Http::POST)
+      request.headers = { "Content-Type" => "application/json" }
+      request.body = JSON.generate(body)
+      request.start do |_req, response|
+        callback.call(parse_plan(response))
+      end
+    rescue StandardError => e
+      callback.call({ error: "계획 요청 실패: #{e.message}" })
+    end
+
+    def self.parse_plan(response)
+      code = response.status_code
+      unless code == 200
+        detail = safe_detail(response.body)
+        return { error: "계획 실패 (HTTP #{code})#{detail ? ": #{detail}" : ""}" }
+      end
+      data = JSON.parse(response.body)
+      return { error: "계획 응답에 tiles가 없습니다." } if data["tiles"].nil?
+      { plan: data }
+    rescue JSON::ParserError => e
+      { error: "계획 파싱 실패: #{e.message}" }
+    end
+
+    # 타일 1개 geometry. tile: {"bbox_4326","bbox_5186","origin_offset","layers"}.
+    # yield {geometry:, solids:, terrain_triangles:} 또는 {error:}.
+    def self.generate_tile(base_url, tile, &callback)
+      url = "#{base_url}/api/generate_tile"
+      request = Sketchup::Http::Request.new(url, Sketchup::Http::POST)
+      request.headers = { "Content-Type" => "application/json" }
+      request.body = JSON.generate(tile)
+      request.start do |_req, response|
+        callback.call(parse_tile(response))
+      end
+    rescue StandardError => e
+      callback.call({ error: "타일 요청 실패: #{e.message}" })
+    end
+
+    def self.parse_tile(response)
+      code = response.status_code
+      unless code == 200
+        detail = safe_detail(response.body)
+        return { error: "타일 실패 (HTTP #{code})#{detail ? ": #{detail}" : ""}" }
+      end
+      data = JSON.parse(response.body)
+      geom = data["geometry"]
+      return { error: "타일 응답에 geometry가 없습니다." } if geom.nil?
+      {
+        geometry: geom,
+        solids: data["solids"] || 0,
+        terrain_triangles: data["terrain_triangles"] || 0,
+      }
+    rescue JSON::ParserError => e
+      { error: "타일 파싱 실패: #{e.message}" }
+    end
+
     # 에러 응답 본문에서 detail 메시지만 뽑아본다(있으면).
     def self.safe_detail(body)
       d = JSON.parse(body)

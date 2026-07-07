@@ -1,0 +1,145 @@
+"""타일 순차조립 백엔드 — tile_plan(격자 계획) + generate_tile(타일별 geometry)."""
+
+import numpy as np
+
+import src.tiles_stream as ts
+from src.pipeline import _bbox_4326_to_5186
+from src.tiles_stream import generate_tile, tile_plan
+
+
+class FakeClient:
+    def __init__(self, features):
+        self._features = features
+
+    def get_features(self, dataset, bbox, size=1000, page=1, geometry=True):
+        return self._features
+
+    def count(self, dataset, bbox):
+        return len(self._features)
+
+
+def _square(lon0, lat0, side_deg=0.0002):
+    return [[
+        [lon0, lat0],
+        [lon0 + side_deg, lat0],
+        [lon0 + side_deg, lat0 + side_deg],
+        [lon0, lat0 + side_deg],
+        [lon0, lat0],
+    ]]
+
+
+def _feature(idx, lon0, lat0, floors=3):
+    return {
+        "type": "Feature",
+        "properties": {"gro_flo_co": str(floors), "buld_nm": f"BLDG{idx}"},
+        "geometry": {"type": "MultiPolygon", "coordinates": [_square(lon0, lat0)]},
+    }
+
+
+# --------------------------------------------------------------------------
+# tile_plan
+# --------------------------------------------------------------------------
+
+def test_tile_plan_grid_and_offset(monkeypatch):
+    monkeypatch.setattr(
+        ts, "geocode", lambda a: {"lon": 127.3705, "lat": 36.3400, "crs": "EPSG:4326"}
+    )
+    plan = tile_plan("대전 어딘가", radius_m=500, tile_size_m=250.0)
+
+    assert plan["ok"] is True
+    # 반경 500m → bbox 한 변 ~1000m → 250m 타일이면 4×4 = 16개(경계 반올림 포함).
+    assert len(plan["tiles"]) >= 9
+    # offset = 전체 bbox의 5186 좌하단.
+    full5186 = _bbox_4326_to_5186(tuple(plan["full_bbox_4326"]))
+    assert plan["origin_offset"][0] == full5186[0]
+    assert plan["origin_offset"][1] == full5186[1]
+    # 각 타일은 4326/5186 bbox를 온전히 갖는다.
+    for t in plan["tiles"]:
+        assert len(t["bbox_4326"]) == 4
+        assert len(t["bbox_5186"]) == 4
+        assert "tile_id" in t
+
+
+def test_tile_plan_tiles_cover_full_bbox(monkeypatch):
+    monkeypatch.setattr(
+        ts, "geocode", lambda a: {"lon": 127.3705, "lat": 36.3400, "crs": "EPSG:4326"}
+    )
+    plan = tile_plan("대전", radius_m=300, tile_size_m=200.0)
+    full = _bbox_4326_to_5186(tuple(plan["full_bbox_4326"]))
+    xs0 = min(t["bbox_5186"][0] for t in plan["tiles"])
+    ys0 = min(t["bbox_5186"][1] for t in plan["tiles"])
+    xs1 = max(t["bbox_5186"][2] for t in plan["tiles"])
+    ys1 = max(t["bbox_5186"][3] for t in plan["tiles"])
+    assert xs0 == full[0] and ys0 == full[1]
+    assert xs1 == full[2] and ys1 == full[3]
+
+
+# --------------------------------------------------------------------------
+# generate_tile
+# --------------------------------------------------------------------------
+
+def _tile_bbox_around(lon0, lat0, half_deg=0.0015):
+    b4326 = (lon0 - half_deg, lat0 - half_deg, lon0 + half_deg, lat0 + half_deg)
+    b5186 = _bbox_4326_to_5186(b4326)
+    offset = (b5186[0], b5186[1])
+    return b4326, b5186, offset
+
+
+def test_generate_tile_buildings_only():
+    b4326, b5186, offset = _tile_bbox_around(127.3700, 36.3400)
+    feat = _feature(0, 127.3700, 36.3400, floors=5)
+    out = generate_tile(
+        b4326, b5186, offset, layers={"buildings": True},
+        client=FakeClient([feat]),
+    )
+    assert out["ok"] is True
+    assert out["solids"] == 1
+    assert len(out["geometry"]["buildings"]) == 1
+    assert out["geometry"]["terrain"] is None  # 지형 미요청
+
+
+def test_generate_tile_centroid_dedup_excludes_outside():
+    """중심점이 타일 밖인 건물은 제외된다(경계 중복 제거)."""
+    b4326, b5186, offset = _tile_bbox_around(127.3700, 36.3400)
+    inside = _feature(0, 127.3700, 36.3400)          # 타일 중앙
+    outside = _feature(1, 127.4000, 36.3400)         # 타일 동쪽 밖(~2.7km)
+    out = generate_tile(
+        b4326, b5186, offset, layers={"buildings": True},
+        client=FakeClient([inside, outside]),
+    )
+    assert out["solids"] == 1  # inside만
+
+
+def _patch_synth_dem_tile(monkeypatch):
+    """실 DEM 없이 합성 지형 주입(generate_tile의 함수-로컬 import 대상 패치)."""
+    from rasterio.transform import from_bounds as _tf
+
+    import src.terrain.dem as dem_mod
+    import src.terrain.store as store_mod
+    from src.terrain.dem import DEMPatch
+
+    monkeypatch.setattr(
+        store_mod, "find_tiles",
+        lambda bbox, manifest=None: [{"file": "synthetic.tif", "cell_m": 5.0}],
+    )
+
+    def _fake(paths, bbox_5186, offset):
+        minx, miny, maxx, maxy = bbox_5186
+        tf = _tf(minx, miny, maxx, maxy, 16, 16)
+        grid = np.full((16, 16), 55.0, dtype=np.float32)
+        return DEMPatch(grid=grid, transform=tf, offset=offset)
+
+    monkeypatch.setattr(dem_mod, "clip_dem_mosaic", _fake)
+
+
+def test_generate_tile_terrain(monkeypatch):
+    _patch_synth_dem_tile(monkeypatch)
+    b4326, b5186, offset = _tile_bbox_around(127.3700, 36.3400)
+    out = generate_tile(
+        b4326, b5186, offset, layers={"buildings": True, "terrain": True},
+        client=FakeClient([_feature(0, 127.3700, 36.3400)]),
+    )
+    assert out["ok"] is True
+    assert out["terrain_triangles"] > 0
+    assert out["geometry"]["terrain"] is not None
+    assert out["geometry"]["terrain"]["vertices"]

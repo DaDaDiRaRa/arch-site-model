@@ -34,8 +34,12 @@ module ArchSiteModel
       )
       dlg.set_file(DIALOG_HTML)
       dlg.add_action_callback("generate") { |_ctx, payload| handle_generate(dlg, payload) }
+      dlg.add_action_callback("cancel") { |_ctx, _p| @cancel = true }
       dlg
     end
+
+    # 이 반경(m) 초과면 타일 순차조립(대반경). 이하는 단일 조립.
+    TILE_THRESHOLD_M = 500
 
     def self.handle_generate(dlg, payload)
       params = JSON.parse(payload)
@@ -43,7 +47,19 @@ module ArchSiteModel
         dlg.execute_script("window.showError(#{JSON.generate('주소를 입력하세요.')});")
         return
       end
+      @cancel = false
+      radius = (params["radius_m"] || 250).to_i
+      if radius > TILE_THRESHOLD_M
+        start_tiled(dlg, params)
+      else
+        start_single(dlg, params)
+      end
+    rescue StandardError => e
+      dlg.execute_script("window.showError(#{JSON.generate("오류: #{e.message}")});")
+    end
 
+    # 단일 조립(소반경): /api/generate 1회 → 전체 조립.
+    def self.start_single(dlg, params)
       dlg.execute_script("window.showBusy();")
       ApiClient.generate(Settings.backend_url, params) do |result|
         if result[:error]
@@ -58,8 +74,81 @@ module ArchSiteModel
           end
         end
       end
-    rescue StandardError => e
-      dlg.execute_script("window.showError(#{JSON.generate("오류: #{e.message}")});")
+    end
+
+    # 대반경 타일 순차조립: 계획 → 타일별 fetch+조립(진행바/취소).
+    def self.start_tiled(dlg, params)
+      dlg.execute_script("window.showBusy();")
+      ApiClient.tile_plan(Settings.backend_url, params) do |result|
+        if result[:error]
+          dlg.execute_script("window.showError(#{JSON.generate(result[:error])});")
+          next
+        end
+        plan = result[:plan]
+        tiles = plan["tiles"] || []
+        if tiles.empty?
+          dlg.execute_script("window.showError(#{JSON.generate('생성할 타일이 없습니다.')});")
+          next
+        end
+        model = Sketchup.active_model
+        begin
+          root = Builder.new_root(model)
+        rescue StandardError => e
+          dlg.execute_script("window.showError(#{JSON.generate("root 생성 실패: #{e.message}")});")
+          next
+        end
+        layers = { "buildings" => true, "terrain" => params["terrain"] != false }
+        state = { total: tiles.length, built: 0, errors: 0 }
+        build_next_tile(dlg, model, root, plan, tiles, layers, 0, state)
+      end
+    end
+
+    # 타일 하나 fetch+조립 후 다음으로 재귀(Sketchup::Http 콜백 체이닝 = 타일 사이
+    # UI 갱신·취소 확인이 자연히 가능). 취소되거나 끝나면 finalize.
+    def self.build_next_tile(dlg, model, root, plan, tiles, layers, idx, state)
+      if @cancel || idx >= tiles.length
+        finalize_tiled(dlg, model, idx, state)
+        return
+      end
+      tile = tiles[idx]
+      progress = { "i" => idx + 1, "n" => state[:total], "buildings" => state[:built] }
+      dlg.execute_script("window.showTileProgress(#{JSON.generate(progress)});")
+      req = {
+        "bbox_4326"     => tile["bbox_4326"],
+        "bbox_5186"     => tile["bbox_5186"],
+        "origin_offset" => plan["origin_offset"],
+        "layers"        => layers,
+      }
+      ApiClient.generate_tile(Settings.backend_url, req) do |result|
+        if result[:error]
+          state[:errors] += 1 # 한 타일 실패는 건너뛰고 계속
+        else
+          begin
+            n = Builder.build_tile(model, root, result[:geometry], tile["tile_id"])
+            state[:built] += n
+          rescue StandardError
+            state[:errors] += 1
+          end
+        end
+        build_next_tile(dlg, model, root, plan, tiles, layers, idx + 1, state)
+      end
+    end
+
+    def self.finalize_tiled(dlg, model, done_idx, state)
+      begin
+        model.active_view.zoom_extents
+      rescue StandardError
+        nil
+      end
+      done = {
+        "count"       => state[:built],
+        "warnings"    => [],
+        "cancelled"   => @cancel,
+        "errors"      => state[:errors],
+        "tiles_done"  => done_idx,
+        "tiles_total" => state[:total],
+      }
+      dlg.execute_script("window.showDone(#{JSON.generate(done)});")
     end
 
     unless file_loaded?(__FILE__)

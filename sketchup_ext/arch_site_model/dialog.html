@@ -45,20 +45,46 @@
   <button id="go">모델 생성</button>
 
   <div id="status"></div>
+  <div id="progress-wrap" style="display:none; margin-top:8px; height:6px; background:#e5e7eb; border-radius:3px;">
+    <div id="progress-bar" style="height:6px; background:#059669; border-radius:3px; width:0%;"></div>
+  </div>
+  <button id="cancel" style="display:none; background:#b91c1c;">취소</button>
   <ul id="warns"></ul>
 
   <script>
     function $(id) { return document.getElementById(id); }
 
+    function hideProgress() {
+      $("progress-wrap").style.display = "none";
+      $("cancel").style.display = "none";
+    }
+
     // Ruby → JS
     window.showBusy = function () {
       $("warns").innerHTML = "";
-      var s = $("status"); s.className = "busy"; s.textContent = "생성 중… (백엔드 조회 + 조립, 최대 30초)";
+      hideProgress();
+      var s = $("status"); s.className = "busy"; s.textContent = "생성 중… (백엔드 조회 + 조립)";
+      $("go").disabled = true;
+    };
+    // 대반경 타일 순차조립 진행상황.
+    window.showTileProgress = function (info) {
+      var s = $("status"); s.className = "busy";
+      s.textContent = "타일 " + info.i + "/" + info.n + " 조립 중 · 건물 누적 " + (info.buildings || 0) + "동";
+      var pct = info.n ? Math.round((info.i / info.n) * 100) : 0;
+      $("progress-wrap").style.display = "block";
+      $("progress-bar").style.width = pct + "%";
+      $("cancel").style.display = "block";
+      $("cancel").disabled = false;
+      $("cancel").textContent = "취소";
       $("go").disabled = true;
     };
     window.showDone = function (info) {
+      hideProgress();
       var s = $("status"); s.className = "done";
-      s.textContent = "완료 — 건물 " + (info.count || 0) + "동 생성됨.";
+      var msg = (info.cancelled ? "취소됨" : "완료") + " — 건물 " + (info.count || 0) + "동";
+      if (info.tiles_total) msg += " (타일 " + (info.tiles_done || 0) + "/" + info.tiles_total + ")";
+      if (info.errors) msg += " · 실패 타일 " + info.errors;
+      s.textContent = msg;
       var ul = $("warns"); ul.innerHTML = "";
       (info.warnings || []).forEach(function (w) {
         var li = document.createElement("li"); li.textContent = w; ul.appendChild(li);
@@ -66,9 +92,18 @@
       $("go").disabled = false;
     };
     window.showError = function (msg) {
+      hideProgress();
       var s = $("status"); s.className = "error"; s.textContent = String(msg);
       $("go").disabled = false;
     };
+
+    $("cancel").addEventListener("click", function () {
+      if (window.sketchup && typeof window.sketchup.cancel === "function") {
+        window.sketchup.cancel();
+        $("cancel").disabled = true;
+        $("cancel").textContent = "취소 중… (현재 타일 후 정지)";
+      }
+    });
 
     $("go").addEventListener("click", function () {
       try {
