@@ -28,6 +28,11 @@ from src.geometry.building import features_to_solids
 from src.pipeline import _bbox_4326_to_5186, _build_geometry
 
 
+# 지형 타일 겹침(이음매 제거): 각 타일 DEM 클립을 이 셀 수만큼 사방으로 넓힌다.
+# 인접 타일이 2×(이 값)셀만큼 겹쳐 경계 틈이 사라진다(같은 DEM 값이라 정확히 포개짐).
+_TERRAIN_OVERLAP_CELLS = 2.0
+
+
 def _bbox_5186_to_4326(
     bbox_5186: tuple[float, float, float, float],
 ) -> tuple[float, float, float, float]:
@@ -144,7 +149,12 @@ def generate_tile(
 
     solids = [s for s in solids if _in_tile(s)]
 
-    # 지형: 이 타일 bbox만 DEM 클립 → 앉힘 → TIN (작은 조각).
+    # 지형: 이 타일 bbox를 margin만큼 넓혀 DEM 클립 → 앉힘 → TIN.
+    #
+    # margin(=DEM 셀 몇 칸)만큼 넓히면 인접 타일 지형이 경계에서 서로 겹친다. 같은
+    # DEM 값이라 겹침부가 정확히 포개져 "이음매(gap)"가 사라진다(타일이 각자 자기
+    # bbox만 클립하면 경계에서 ~1셀씩 벌어져 틈이 보임). 건물은 위에서 이미 중심점
+    # 기준으로 걸러 중복이 없다 — **지형만** 겹치므로 건물 중복은 없다.
     terrain_mesh = None
     if layers.get("terrain"):
         from src.geometry.seating import seat_building
@@ -152,12 +162,20 @@ def generate_tile(
         from src.terrain.dem import clip_dem_mosaic
         from src.terrain.store import find_tiles
 
-        dem_tiles = find_tiles(bbox_4326)
-        if dem_tiles:
+        probe = find_tiles(bbox_4326)
+        if probe:
+            cell = float(probe[0].get("cell_m") or 5.0)
+            margin = cell * _TERRAIN_OVERLAP_CELLS
+            clip_5186 = (
+                bbox_5186[0] - margin, bbox_5186[1] - margin,
+                bbox_5186[2] + margin, bbox_5186[3] + margin,
+            )
+            # 넓힌 영역이 이웃 DEM 타일에 걸칠 수 있으니 find_tiles도 넓혀 다시.
+            dem_tiles = find_tiles(_bbox_5186_to_4326(clip_5186))
             paths = [config.dem_tile_path(t["file"]) for t in dem_tiles]
             dem = None
             try:
-                dem = clip_dem_mosaic(paths, bbox_5186, offset)
+                dem = clip_dem_mosaic(paths, clip_5186, offset)
             except Exception:  # noqa: BLE001 — 타일 열기 실패 시 지형 생략
                 dem = None
             if dem is not None and dem.z_range() is not None:

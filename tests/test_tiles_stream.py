@@ -125,8 +125,10 @@ def _patch_synth_dem_tile(monkeypatch):
 
     def _fake(paths, bbox_5186, offset):
         minx, miny, maxx, maxy = bbox_5186
-        tf = _tf(minx, miny, maxx, maxy, 16, 16)
-        grid = np.full((16, 16), 55.0, dtype=np.float32)
+        # 촘촘한 격자(≈5m 셀)로 마지막 행/열이 클립 가장자리에 근접하게 한다.
+        n = 64
+        tf = _tf(minx, miny, maxx, maxy, n, n)
+        grid = np.full((n, n), 55.0, dtype=np.float32)
         return DEMPatch(grid=grid, transform=tf, offset=offset)
 
     monkeypatch.setattr(dem_mod, "clip_dem_mosaic", _fake)
@@ -142,4 +144,9 @@ def test_generate_tile_terrain(monkeypatch):
     assert out["ok"] is True
     assert out["terrain_triangles"] > 0
     assert out["geometry"]["terrain"] is not None
-    assert out["geometry"]["terrain"]["vertices"]
+    verts = out["geometry"]["terrain"]["vertices"]
+    assert verts
+    # 이음매 제거용 margin 겹침 검증: 지형이 타일 원점(offset) 이전까지 뻗는다
+    # (인접 타일과 겹쳐 gap이 없어짐). 로컬 x가 음수인 정점이 존재해야 한다.
+    assert min(v[0] for v in verts) < 0
+    assert min(v[1] for v in verts) < 0
