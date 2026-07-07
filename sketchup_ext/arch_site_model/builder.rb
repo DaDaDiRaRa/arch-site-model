@@ -135,8 +135,11 @@ module ArchSiteModel
           pts_uvs << p << Geom::Point3d.new(u, w, 0)
         end
         begin
-          r = face.position_material(mat, pts_uvs, true)
-          r ? (applied += 1) : (failed += 1)
+          # 양면 모두 입힌다 — 지형 삼각형 앞면이 아래를 향할 수 있어(적응형 TIN의
+          # Delaunay 방향 제각각), 한쪽만 입히면 위에서 뒷면(무텍스처)이 보인다.
+          f1 = face.position_material(mat, pts_uvs, true)
+          f2 = face.position_material(mat, pts_uvs, false)
+          (f1 || f2) ? (applied += 1) : (failed += 1)
         rescue StandardError => e
           failed += 1
           puts "[ortho] position_material 예외(첫 1건): #{e.message}" if failed == 1
