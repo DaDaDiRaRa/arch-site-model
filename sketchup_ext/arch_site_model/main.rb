@@ -122,16 +122,27 @@ module ArchSiteModel
       ApiClient.generate_tile(Settings.backend_url, req) do |result|
         if result[:error]
           state[:errors] += 1 # 한 타일 실패는 건너뛰고 계속
+          state[:first_error] ||= result[:error]
+          log_tile_error(tile["tile_id"], result[:error])
         else
           begin
             n = Builder.build_tile(model, root, result[:geometry], tile["tile_id"])
             state[:built] += n
-          rescue StandardError
+          rescue StandardError => e
             state[:errors] += 1
+            state[:first_error] ||= "조립: #{e.message}"
+            log_tile_error(tile["tile_id"], "조립 #{e.message}")
           end
         end
         build_next_tile(dlg, model, root, plan, tiles, layers, idx + 1, state)
       end
+    end
+
+    # 타일 오류를 Ruby Console에 남긴다(Window ▸ Ruby Console에서 확인).
+    def self.log_tile_error(tile_id, msg)
+      puts "[arch-site-model] 타일 #{tile_id} 실패: #{msg}"
+    rescue StandardError
+      nil
     end
 
     def self.finalize_tiled(dlg, model, done_idx, state)
@@ -140,13 +151,16 @@ module ArchSiteModel
       rescue StandardError
         nil
       end
+      warns = []
+      warns << "첫 실패 사유: #{state[:first_error]}" if state[:first_error]
       done = {
         "count"       => state[:built],
-        "warnings"    => [],
+        "warnings"    => warns,
         "cancelled"   => @cancel,
         "errors"      => state[:errors],
         "tiles_done"  => done_idx,
         "tiles_total" => state[:total],
+        "first_error" => state[:first_error],
       }
       dlg.execute_script("window.showDone(#{JSON.generate(done)});")
     end
