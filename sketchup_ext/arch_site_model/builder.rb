@@ -1,8 +1,9 @@
 # geometry JSON(로컬 미터) → SketchUp 엔티티 조립 (B1: 지형 + 건물).
 #   - 지형: Geom::PolygonMesh → add_faces_from_mesh (대량 면 일괄 생성 + 소프트 엣지)
-#   - 건물: 바닥면(홀 포함) + 벽·윗면을 PolygonMesh로 일괄 생성(add_faces_from_mesh).
-#           pushpull을 쓰지 않는다 — 밀집지(수백 동)에서 pushpull 반복이 렉·크래시를
-#           내던 문제를 지형과 동일한 대량 메쉬 방식으로 대체(수십~수백배 빠름).
+#   - 건물: 바닥면(홀 포함) + 벽(수직 쿼드) + 윗면(n각형)을 실제 면(add_face)으로 직접 생성.
+#           pushpull을 쓰지 않는다 — 밀집지(수백 동)에서 pushpull 반복이 렉·크래시를 내던
+#           문제 회피. 삼각 메쉬(add_faces_from_mesh)가 아니라 진짜 면이라 대각선 없이 깨끗하다.
+#           (각 건물이 독립 그룹이라 add_face 교차 비용은 그 건물 면들에만 국한 → 빠름.)
 # 단위: 백엔드는 미터, SketchUp 내부는 인치 → ×M2I. 좌표축 X=동, Y=북, Z=높이.
 
 module ArchSiteModel
@@ -80,7 +81,7 @@ module ArchSiteModel
       built
     end
 
-    # 건물 1동: 바닥면(홀 포함) + 벽·윗면 메쉬. 생성 성공 시 true.
+    # 건물 1동: 바닥면(홀 포함) + 벽(수직 쿼드) + 윗면(n각형)을 실제 면으로. 성공 시 true.
     def self.build_one_building(parent_ents, b, mat_n, mat_f, tag_n, tag_f)
       fp = b["footprint"] || []
       height = b["height"].to_f
@@ -95,7 +96,7 @@ module ArchSiteModel
       base = b["base_z"].to_f * M2I
       h = height * M2I
 
-      # 1) 바닥 면(구멍 포함) — add_face가 오목/홀을 네이티브로 처리(pushpull 불필요).
+      # 1) 바닥 면(구멍 포함) — add_face가 오목/홀을 네이티브 n각형으로 처리.
       pts = fp.map { |p| Geom::Point3d.new(p[0] * M2I, p[1] * M2I, base) }
       base_face = safe_add_face(ents, pts)
       return false if base_face.nil?
@@ -109,12 +110,10 @@ module ArchSiteModel
       return false if base_face.nil?
       base_face.reverse! if base_face.normal.z > 0 # 바닥은 아래로
 
-      # 지오메트리 추가 전에 삼각분할·루프를 좌표값으로 확보.
-      cap_tris = face_triangles(base_face)               # 윗면용(홀 반영 삼각형)
+      # 지오메트리 추가 전에 루프(외곽+홀)를 좌표값으로 확보.
       loops = base_face.loops.map { |lp| lp.vertices.map { |v| v.position } }
 
-      # 2) 벽 + 윗면을 하나의 PolygonMesh로 일괄 생성(pushpull 대체).
-      box = Geom::PolygonMesh.new
+      # 2) 벽: 각 루프 변마다 수직 쿼드 1면(삼각화 없음 = 깨끗한 사각면).
       loops.each do |vs|
         n = vs.length
         n.times do |k|
@@ -122,25 +121,21 @@ module ArchSiteModel
           c = vs[(k + 1) % n]
           a_t = Geom::Point3d.new(a.x, a.y, a.z + h)
           c_t = Geom::Point3d.new(c.x, c.y, c.z + h)
-          box.add_polygon(box.add_point(a), box.add_point(c),
-                          box.add_point(c_t), box.add_point(a_t))
+          safe_add_face(ents, [a, c, c_t, a_t])
         end
       end
-      cap_tris.each do |tri|
-        t = tri.map { |p| Geom::Point3d.new(p.x, p.y, p.z + h) }
-        box.add_polygon(box.add_point(t[2]), box.add_point(t[1]), box.add_point(t[0]))
+
+      # 3) 윗면: 외곽(+홀)을 상단 높이에 실제 면으로(n각형, 삼각화 없음).
+      safe_add_face(ents, loops[0].map { |p| Geom::Point3d.new(p.x, p.y, p.z + h) })
+      loops[1..-1].to_a.each do |vs|
+        htop = vs.map { |p| Geom::Point3d.new(p.x, p.y, p.z + h) }
+        hf = safe_add_face(ents, htop)
+        hf.erase! if hf && !hf.deleted?
       end
-      ents.add_faces_from_mesh(box, 0, mat, mat) # 0=하드 엣지, 앞뒤 동일 재질
 
-      base_face.material = mat
-      base_face.back_material = mat
+      # 4) 재질(이 건물 그룹 면들에만 — 소규모라 저렴).
+      ents.grep(Sketchup::Face).each { |f| f.material = mat; f.back_material = mat }
       true
-    end
-
-    # 면(홀 포함)의 삼각분할 → Point3d 삼각형 목록. add_faces_from_mesh 입력용.
-    def self.face_triangles(face)
-      pm = face.mesh
-      pm.polygons.map { |poly| poly.map { |i| pm.point_at(i.abs) } }
     end
 
     # add_face는 퇴화 폴리곤 등에서 예외 → 조용히 건너뛴다.
