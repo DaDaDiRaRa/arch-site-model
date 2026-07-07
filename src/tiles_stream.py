@@ -200,7 +200,7 @@ def generate_tile(
     terrain_mesh = None
     if layers.get("terrain"):
         from src.geometry.seating import seat_building
-        from src.geometry.terrain_mesh import build_tin
+        from src.geometry.terrain_mesh import grid_to_tin
         from src.terrain.dem import clip_dem_mosaic
         from src.terrain.store import find_tiles
 
@@ -222,7 +222,10 @@ def generate_tile(
                 dem = None
             if dem is not None and dem.z_range() is not None:
                 solids = [replace(s, base_z_m=seat_building(s, dem)) for s in solids]
-                terrain_mesh = build_tin(dem, config.TERRAIN_MAX_ERROR_M)
+                # 타일 경로는 **균일 격자** — 인접 타일이 같은 픽셀 격자를 공유해 겹침부에서
+                # 표면이 정확히 포개진다(이음매 없음). 적응형 TIN은 타일마다 삼각화가 달라
+                # 겹침부에 미세 단차→검은 선이 생기므로 타일에는 쓰지 않는다(단발은 적응형).
+                terrain_mesh = grid_to_tin(dem)
 
     # 정사영상: 이 타일 영역(지형 겹침 margin 포함)만 풀해상도(zoom 18)로 → 타일 지형에 드레이프.
     ortho = None
