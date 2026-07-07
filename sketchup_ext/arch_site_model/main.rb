@@ -91,21 +91,16 @@ module ArchSiteModel
           next
         end
         model = Sketchup.active_model
-        begin
-          root = Builder.new_root(model)
-        rescue StandardError => e
-          dlg.execute_script("window.showError(#{JSON.generate("root 생성 실패: #{e.message}")});")
-          next
-        end
         layers = { "buildings" => true, "terrain" => params["terrain"] != false }
+        root_holder = { group: nil } # root는 첫 타일과 함께 생성(빈 그룹 purge 방지)
         state = { total: tiles.length, built: 0, errors: 0 }
-        build_next_tile(dlg, model, root, plan, tiles, layers, 0, state)
+        build_next_tile(dlg, model, root_holder, plan, tiles, layers, 0, state)
       end
     end
 
     # 타일 하나 fetch+조립 후 다음으로 재귀(Sketchup::Http 콜백 체이닝 = 타일 사이
     # UI 갱신·취소 확인이 자연히 가능). 취소되거나 끝나면 finalize.
-    def self.build_next_tile(dlg, model, root, plan, tiles, layers, idx, state)
+    def self.build_next_tile(dlg, model, root_holder, plan, tiles, layers, idx, state)
       if @cancel || idx >= tiles.length
         finalize_tiled(dlg, model, idx, state)
         return
@@ -126,7 +121,7 @@ module ArchSiteModel
           log_tile_error(tile["tile_id"], result[:error])
         else
           begin
-            n = Builder.build_tile(model, root, result[:geometry], tile["tile_id"])
+            n = Builder.build_tile(model, root_holder, result[:geometry], tile["tile_id"])
             state[:built] += n
           rescue StandardError => e
             state[:errors] += 1
@@ -134,7 +129,7 @@ module ArchSiteModel
             log_tile_error(tile["tile_id"], "조립 #{e.message}")
           end
         end
-        build_next_tile(dlg, model, root, plan, tiles, layers, idx + 1, state)
+        build_next_tile(dlg, model, root_holder, plan, tiles, layers, idx + 1, state)
       end
     end
 

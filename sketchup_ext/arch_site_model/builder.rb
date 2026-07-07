@@ -40,28 +40,24 @@ module ArchSiteModel
       build_buildings(model, parent_ents, geometry["buildings"] || [])
     end
 
-    # 대반경 순차조립용 root 그룹 1개 생성(main이 루프 전에 1회 호출).
-    def self.new_root(model)
-      root = nil
-      model.start_operation("대지모델(타일) 시작", true)
-      begin
-        root = model.active_entities.add_group
-        root.name = "arch-site-model"
-        model.commit_operation
-      rescue StandardError
-        model.abort_operation
-        raise
-      end
-      root
-    end
-
     # 타일 1개를 root 아래 서브그룹에 조립(자체 operation, zoom 없음).
+    #
+    # root_holder = {group: Group|nil} (호출 간 공유되는 가변 홀더). root는 **첫 타일
+    # 내용과 같은 operation에서** 생성한다 — 빈 그룹을 미리 만들어 commit하면 SketchUp이
+    # 자동 삭제해 다음 호출에서 "reference to deleted Group"이 나기 때문(내용과 함께
+    # 태어나야 살아남는다). deleted? 가드로 만약 비어서 purge됐으면 재생성한다.
     # zoom_extents는 main이 마지막에 1회. 반환: 이 타일의 건물 수.
-    def self.build_tile(model, root_group, geometry, tile_label)
+    def self.build_tile(model, root_holder, geometry, tile_label)
       count = 0
       model.start_operation("타일 #{tile_label}", true)
       begin
-        tile_grp = root_group.entities.add_group
+        root = root_holder[:group]
+        if root.nil? || root.deleted?
+          root = model.active_entities.add_group
+          root.name = "arch-site-model"
+          root_holder[:group] = root
+        end
+        tile_grp = root.entities.add_group
         tile_grp.name = "tile #{tile_label}"
         count = build_into(model, tile_grp.entities, geometry)
         model.commit_operation
