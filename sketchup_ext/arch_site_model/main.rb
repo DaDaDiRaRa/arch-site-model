@@ -58,22 +58,42 @@ module ArchSiteModel
       dlg.execute_script("window.showError(#{JSON.generate("오류: #{e.message}")});")
     end
 
-    # 단일 조립(소반경): /api/generate 1회 → 전체 조립.
+    # 단일 조립(소반경): /api/generate 1회 → (정사영상 다운로드) → 전체 조립.
     def self.start_single(dlg, params)
       dlg.execute_script("window.showBusy();")
       ApiClient.generate(Settings.backend_url, params) do |result|
         if result[:error]
           dlg.execute_script("window.showError(#{JSON.generate(result[:error])});")
-        else
-          begin
-            n = Builder.build(result[:geometry], result[:warnings])
-            done = { "count" => n, "warnings" => result[:warnings] || [] }
-            dlg.execute_script("window.showDone(#{JSON.generate(done)});")
-          rescue StandardError => e
-            dlg.execute_script("window.showError(#{JSON.generate("조립 실패: #{e.message}")});")
+          next
+        end
+        ortho = result[:ortho]
+        if ortho && ortho[:url]
+          full = "#{Settings.backend_url}#{ortho[:url]}"
+          ApiClient.download_binary(full) do |bytes|
+            png = bytes ? write_temp_png(bytes) : nil
+            finish_single(dlg, result, png, ortho[:extent])
           end
+        else
+          finish_single(dlg, result, nil, nil)
         end
       end
+    end
+
+    def self.finish_single(dlg, result, ortho_png, ortho_extent)
+      n = Builder.build(result[:geometry], result[:warnings], ortho_png, ortho_extent)
+      done = { "count" => n, "warnings" => result[:warnings] || [] }
+      dlg.execute_script("window.showDone(#{JSON.generate(done)});")
+    rescue StandardError => e
+      dlg.execute_script("window.showError(#{JSON.generate("조립 실패: #{e.message}")});")
+    end
+
+    # 정사영상 바이트 → 임시 PNG 파일 경로(머티리얼 텍스처용). 실패 시 nil.
+    def self.write_temp_png(bytes)
+      path = File.join(Sketchup.temp_dir, "asm_ortho_#{bytes.hash & 0xffffff}.png")
+      File.open(path, "wb") { |f| f.write(bytes) }
+      path
+    rescue StandardError
+      nil
     end
 
     # 대반경 타일 순차조립: 계획 → 타일별 fetch+조립(진행바/취소).

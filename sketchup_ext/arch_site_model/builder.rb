@@ -16,14 +16,15 @@ module ArchSiteModel
 
     # 단일 조립(소반경): root 그룹 생성 + 전체 조립 + zoom. 반환: 생성된 건물 수.
     # geometry: {"buildings"=>[...], "terrain"=>{...}|nil}
-    def self.build(geometry, _warnings = [])
+    # ortho_png/ortho_extent: 정사영상 PNG 경로 + 로컬미터 extent[x0,y0,x1,y1](선택)
+    def self.build(geometry, _warnings = [], ortho_png = nil, ortho_extent = nil)
       model = Sketchup.active_model
       count = 0
       model.start_operation("대지모델 생성", true)
       begin
         root = model.active_entities.add_group
         root.name = "arch-site-model"
-        count = build_into(model, root.entities, geometry)
+        count = build_into(model, root.entities, geometry, ortho_png, ortho_extent)
         model.commit_operation
         model.active_view.zoom_extents
       rescue StandardError => e
@@ -35,8 +36,10 @@ module ArchSiteModel
     end
 
     # 지형 + 건물을 주어진 entities에 조립(단일/타일 공통). 반환: 건물 수.
-    def self.build_into(model, parent_ents, geometry)
-      build_terrain(model, parent_ents, geometry["terrain"]) if geometry["terrain"]
+    def self.build_into(model, parent_ents, geometry, ortho_png = nil, ortho_extent = nil)
+      if geometry["terrain"]
+        build_terrain(model, parent_ents, geometry["terrain"], ortho_png, ortho_extent)
+      end
       build_buildings(model, parent_ents, geometry["buildings"] || [])
     end
 
@@ -68,7 +71,7 @@ module ArchSiteModel
       count
     end
 
-    def self.build_terrain(model, parent_ents, terrain)
+    def self.build_terrain(model, parent_ents, terrain, ortho_png = nil, ortho_extent = nil)
       verts = terrain["vertices"] || []
       tris = terrain["triangles"] || []
       return if verts.empty? || tris.empty?
@@ -93,6 +96,41 @@ module ArchSiteModel
       # 타일 경계·테두리에 남는 하드 엣지(지형에 보이는 격자선)를 숨긴다: 지형 그룹의
       # 모든 엣지를 soft+smooth → 선이 안 보이고 매끈하게 셰이딩(겹친 타일도 선 없이 blend).
       grp.entities.grep(Sketchup::Edge).each { |e| e.soft = true; e.smooth = true }
+
+      drape_ortho(model, grp, ortho_png, ortho_extent) if ortho_png && ortho_extent
+    end
+
+    # 정사영상 PNG를 지형에 위→아래 평면투영으로 드레이프(B2).
+    # extent = [x0,y0,x1,y1] 로컬 미터(지형 정점과 동일 좌표계). 각 삼각형 정점의
+    # (x,y)를 이미지 UV[0,1]로 매핑 → position_material로 텍스처 투영. Z는 UV 무영향
+    # (정사영상 특성과 정확히 일치). 실패한 면은 조용히 건너뛴다.
+    def self.drape_ortho(model, terrain_grp, png_path, extent)
+      return unless png_path && extent && extent.length == 4
+      x0, y0, x1, y1 = extent.map(&:to_f)
+      dx = x1 - x0
+      dy = y1 - y0
+      return if dx.abs < 1e-6 || dy.abs < 1e-6
+
+      mat = model.materials.add("asm_ortho")
+      mat.texture = png_path
+      terrain_grp.entities.grep(Sketchup::Face).each do |face|
+        vs = face.outer_loop.vertices
+        next if vs.length < 3
+        pts_uvs = []
+        vs.first(4).each do |v|
+          p = v.position
+          u = (p.x / M2I - x0) / dx
+          w = (p.y / M2I - y0) / dy
+          pts_uvs << p << Geom::Point3d.new(u, w, 0)
+        end
+        begin
+          face.position_material(mat, pts_uvs, true)
+        rescue StandardError
+          next
+        end
+      end
+    rescue StandardError
+      nil
     end
 
     def self.build_buildings(model, parent_ents, buildings)

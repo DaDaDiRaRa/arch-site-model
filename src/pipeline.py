@@ -278,16 +278,13 @@ def generate(
 
     odir = Path(output_dir) if output_dir else Path("output")
 
-    # 7.5 정사영상 텍스처 (Tier 1) — 지형 TIN에 위→아래 평면투영으로 드레이프.
-    #     .3dm 전용(클라우드 MCP `.skp`는 이미지 반입 불가). terrain 필요.
+    # 7.5 정사영상 텍스처 — 지형 TIN에 위→아래 평면투영으로 드레이프. terrain 필요.
+    #     .3dm은 write_3dm이 텍스처 입힘. .skp는 데스크톱 확장이 PNG를 받아 드레이프
+    #     (B2) — 그래서 출력 포맷과 무관하게 mosaic PNG + extent를 만들어 둔다
+    #     (extent는 geometry.ortho_extent_m, PNG는 job 폴더 → 확장이 다운로드).
     ortho_info: dict | None = None
     if layers.get("orthophoto"):
-        if "3dm" not in outputs:
-            warnings.append(
-                "정사영상(orthophoto)은 .3dm 출력에만 적용됩니다 "
-                "(SketchUp MCP는 이미지 텍스처 미지원) — 생략"
-            )
-        elif terrain_mesh is None:
+        if terrain_mesh is None:
             warnings.append(
                 "정사영상은 지형(terrain)에 드레이프됩니다 — 지형 미생성으로 생략"
             )

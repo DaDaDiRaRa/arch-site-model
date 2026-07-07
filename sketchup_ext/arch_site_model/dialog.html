@@ -40,6 +40,7 @@
       <input type="number" id="radius" min="10" max="2000" value="250" style="width:110px" />
     </div>
     <label class="chk"><input type="checkbox" id="terrain" checked /> 지형(TIN)</label>
+    <label class="chk"><input type="checkbox" id="orthophoto" /> 정사영상</label>
   </div>
 
   <button id="go">모델 생성</button>
@@ -111,6 +112,7 @@
           address: $("address").value,
           radius_m: parseInt($("radius").value, 10) || 250,
           terrain: $("terrain").checked,
+          orthophoto: $("orthophoto").checked,
         };
         // sketchup 브리지가 없으면 클릭이 조용히 죽지 않게 — 원인을 화면에 표시.
         if (window.sketchup && typeof window.sketchup.generate === "function") {

@@ -116,8 +116,13 @@ def generate_endpoint(req: GenerateRequest) -> dict:
     out3dm = result.get("outputs", {}).get("3dm")
     if out3dm:
         files["3dm"] = f"/api/files/{job_id}/3dm"
-        if out3dm.get("orthophoto"):
-            files["ortho_png"] = f"/api/files/{job_id}/ortho"
+    # 정사영상 PNG는 출력 포맷과 무관하게 생성됨 → 다운로드 URL 제공. .3dm은 Rhino가
+    # 텍스처로 참조, .skp 확장은 PNG를 받아 지형에 직접 드레이프(B2).
+    ortho_ready = (result.get("geometry") or {}).get("ortho_extent_m") or (
+        out3dm and out3dm.get("orthophoto")
+    )
+    if ortho_ready:
+        files["ortho_png"] = f"/api/files/{job_id}/ortho"
 
     return {
         "ok": True,

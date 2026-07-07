@@ -13,9 +13,13 @@ module ArchSiteModel
       body = {
         "address"    => params["address"].to_s,
         "radius_m"   => (params["radius_m"] || 250).to_i,
-        # B1: 텍스처 없음 → orthophoto=false, .3dm 불필요 → outputs=skp(경량).
-        "layers"     => { "buildings" => true, "terrain" => params["terrain"] != false, "orthophoto" => false },
-        "outputs"    => ["skp"],
+        # orthophoto=true면 백엔드가 정사영상 PNG 생성 → 확장이 다운로드해 지형에 드레이프(B2).
+        "layers"     => {
+          "buildings"  => true,
+          "terrain"    => params["terrain"] != false,
+          "orthophoto" => params["orthophoto"] == true,
+        },
+        "outputs"    => ["skp"],  # .3dm 불필요 — geometry + 정사영상 URL만 받음
       }
 
       request = Sketchup::Http::Request.new(url, Sketchup::Http::POST)
@@ -38,11 +42,26 @@ module ArchSiteModel
       data = JSON.parse(response.body)
       geom = data["geometry"]
       return { error: "응답에 geometry가 없습니다. 백엔드 버전을 확인하세요." } if geom.nil?
-      { geometry: geom, warnings: data["warnings"] || [] }
+      # 정사영상: extent(geometry) + 다운로드 URL(files.ortho_png)이 모두 있으면 제공.
+      ortho = nil
+      ext = geom["ortho_extent_m"]
+      ourl = (data["files"] || {})["ortho_png"]
+      ortho = { extent: ext, url: ourl } if ext && ourl
+      { geometry: geom, warnings: data["warnings"] || [], ortho: ortho }
     rescue JSON::ParserError => e
       { error: "응답 파싱 실패: #{e.message}" }
     rescue StandardError => e
       { error: "응답 처리 오류: #{e.message}" }
+    end
+
+    # 바이너리(정사영상 PNG 등) 다운로드. yield: 바이트 문자열 또는 nil(실패).
+    def self.download_binary(url, &callback)
+      request = Sketchup::Http::Request.new(url, Sketchup::Http::GET)
+      request.start do |_req, response|
+        callback.call(response.status_code == 200 ? response.body : nil)
+      end
+    rescue StandardError
+      callback.call(nil)
     end
 
     # --- 대반경 순차조립 (타일) -------------------------------------------

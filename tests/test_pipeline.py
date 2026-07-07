@@ -380,21 +380,31 @@ def test_orthophoto_without_terrain_warns_and_skips(monkeypatch, tmp_path):
     assert any("지형" in w and "정사영상" in w for w in out["warnings"])
 
 
-def test_orthophoto_skp_only_warns(monkeypatch):
-    """outputs=skp만 + orthophoto → .3dm 전용이라 경고."""
+def test_orthophoto_skp_only_generates_for_extension(monkeypatch, tmp_path):
+    """outputs=skp만 + orthophoto → 정사영상 PNG 생성 + geometry.ortho_extent_m (B2:
+    데스크톱 확장이 PNG를 받아 지형에 드레이프. 더 이상 .3dm 전용 아님)."""
     monkeypatch.setattr(
         pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
     )
     _patch_small_ortho(monkeypatch)
+    _patch_synth_dem(monkeypatch)
     out = generate(
         "대전광역시 서구 괴정동 358",
         client=FakeClient(_daejeon_features()),
         outputs=["skp"],
         layers={"buildings": True, "terrain": True, "orthophoto": True},
+        output_dir=str(tmp_path),
         ortho_fetch=lambda url: _solid_png8(),
+        include_geometry=True,
     )
     assert out["ok"] is True
-    assert any(".3dm" in w and "정사영상" in w for w in out["warnings"])
+    # 정사영상이 생성돼 확장이 쓸 extent가 geometry에 담긴다.
+    assert out["geometry"]["ortho_extent_m"] is not None
+    # PNG가 output_dir에 저장됨(확장이 /api/files/.../ortho로 다운로드).
+    from pathlib import Path
+    assert list(Path(tmp_path).glob("*_ortho.png"))
+    # ".3dm 전용" 경고는 더 이상 없어야 한다.
+    assert not any(".3dm" in w and "정사영상" in w for w in out["warnings"])
 
 
 # ---------------------------------------------------------------------------
