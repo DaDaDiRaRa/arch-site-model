@@ -71,13 +71,23 @@
     };
 
     $("go").addEventListener("click", function () {
-      var payload = {
-        address: $("address").value,
-        radius_m: parseInt($("radius").value, 10) || 250,
-        terrain: $("terrain").checked,
-      };
-      if (window.sketchup && window.sketchup.generate) {
-        window.sketchup.generate(JSON.stringify(payload));
+      try {
+        var payload = {
+          address: $("address").value,
+          radius_m: parseInt($("radius").value, 10) || 250,
+          terrain: $("terrain").checked,
+        };
+        // sketchup 브리지가 없으면 클릭이 조용히 죽지 않게 — 원인을 화면에 표시.
+        if (window.sketchup && typeof window.sketchup.generate === "function") {
+          window.sketchup.generate(JSON.stringify(payload));
+        } else {
+          window.showError(
+            "SketchUp 연결 없음(sketchup.generate 미등록). 확장 재설치 후 " +
+            "SketchUp을 완전히 종료·재시작하세요."
+          );
+        }
+      } catch (e) {
+        window.showError("클릭 처리 오류: " + (e && e.message ? e.message : e));
       }
     });
   </script>
