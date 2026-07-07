@@ -1,17 +1,24 @@
 """DEM 격자 → TIN 삼각망 (Phase 3B, 사양서 §6.5).
 
-grid_to_tin: 각 셀을 대각 교차 2삼각형으로 분할.
-TerrainMesh: SketchUp 인치 단위 (x,y,z) 정점 + 삼각형 인덱스.
+grid_to_tin  : 각 셀을 대각 교차 2삼각형으로 분할(균일 — 어디든 5m마다 삼각형).
+adaptive_tin : 오차 한계 적응형 TIN(greedy insertion) — 평지는 큰 삼각형, 복잡한 곳만
+               촘촘. 지정한 수직오차(max_error_m) 이내를 보장하는 최소 삼각형을 지향.
+               → 정확도 유지하며 삼각형 대폭 감소(넓은 반경도 가벼워짐). pydelatin이
+               C 컴파일러를 요구해 설치가 취약하므로 scipy만으로 순수 파이썬 구현.
+TerrainMesh  : SketchUp 인치 단위 (x,y,z) 정점 + 삼각형 인덱스.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 import numpy as np
 
 from src.config import M2I
 from src.terrain.dem import DEMPatch
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -69,4 +76,97 @@ def grid_to_tin(dem: DEMPatch) -> TerrainMesh:
             if vnw >= 0 and vse >= 0 and vsw >= 0:
                 triangles.append((vnw, vse, vsw))
 
+    return TerrainMesh(vertices=vertices, triangles=triangles)
+
+
+def build_tin(dem: DEMPatch, max_error_m: float = 0.0) -> TerrainMesh:
+    """max_error_m>0 이면 적응형 TIN, 아니면 균일 격자. 적응형 실패 시 격자로 폴백."""
+    if max_error_m and max_error_m > 0:
+        try:
+            return adaptive_tin(dem, max_error_m)
+        except Exception as e:  # noqa: BLE001 — 어떤 이유든 균일 격자로 안전 폴백
+            log.warning("adaptive_tin 실패, 균일 격자 폴백: %s", e)
+    return grid_to_tin(dem)
+
+
+def _fill_nan_nearest(h: np.ndarray) -> np.ndarray:
+    """NaN을 최근접 유효값으로 채운다(적응형 보간용 완전 격자 확보)."""
+    mask = np.isnan(h)
+    if not mask.any():
+        return h
+    from scipy.ndimage import distance_transform_edt
+
+    idx = distance_transform_edt(mask, return_distances=False, return_indices=True)
+    return h[tuple(idx)]
+
+
+def adaptive_tin(
+    dem: DEMPatch, max_error_m: float, max_iters: int = 25
+) -> TerrainMesh:
+    """오차 한계 적응형 TIN (greedy insertion, Garland–Heckbert 계열).
+
+    격자 네 모서리에서 시작해, 현재 삼각망이 실제 표고를 max_error_m 넘게 벗어나는
+    셀을 반복 삽입한다(삼각형마다 최악 오차 점 1개씩 → 군집 방지). 평지·완경사는
+    큰 삼각형 몇 개로 오차 0에 수렴하고, 능선·급경사에만 삼각형이 촘촘해진다.
+    출력 좌표 = 로컬 미터 × M2I (grid_to_tin과 동일 계약).
+    """
+    from scipy.interpolate import LinearNDInterpolator
+    from scipy.spatial import Delaunay
+
+    grid = dem.grid
+    rows, cols = grid.shape
+    if rows < 3 or cols < 3:
+        return grid_to_tin(dem)
+
+    h = _fill_nan_nearest(grid).astype(np.float64)
+    cc, rr = np.meshgrid(np.arange(cols), np.arange(rows))
+    pts_all = np.column_stack([cc.ravel(), rr.ravel()]).astype(np.float64)  # (N,2) col,row
+    z_all = h.ravel()
+    n = pts_all.shape[0]
+
+    # 시작 = 네 모서리. 상한(cap): 절반 넘으면 적응 이득이 없어 중단.
+    selected = list(dict.fromkeys([0, cols - 1, (rows - 1) * cols, n - 1]))
+    cap = max(4, int(n * 0.5))
+
+    for _ in range(max_iters):
+        sel = np.array(selected)
+        tri = Delaunay(pts_all[sel])
+        zi = LinearNDInterpolator(tri, z_all[sel])(pts_all)
+        err = np.abs(z_all - zi)
+        err = np.where(np.isnan(err), 0.0, err)  # hull 밖(없음이 정상) → 0
+        if float(err.max()) <= max_error_m or len(selected) >= cap:
+            break
+        simp = tri.find_simplex(pts_all)
+        over = (simp >= 0) & (err > max_error_m)
+        cand = np.where(over)[0]
+        if cand.size == 0:
+            break
+        # 삼각형마다 오차 최대 점 1개(벡터화): (simplex asc, err desc) 정렬 후 각 그룹 첫 점
+        s = simp[cand]
+        order = np.lexsort((-err[cand], s))
+        s_sorted, cand_sorted = s[order], cand[order]
+        first = np.empty(s_sorted.shape, dtype=bool)
+        first[0] = True
+        first[1:] = s_sorted[1:] != s_sorted[:-1]
+        selected.extend(cand_sorted[first].tolist())
+        selected = list(dict.fromkeys(selected))
+
+    sel = np.array(selected)
+    pts = pts_all[sel]
+    zsel = z_all[sel]
+    tri = Delaunay(pts)
+
+    tf = dem.transform
+    ox, oy = dem.offset
+    vertices: list[tuple[float, float, float]] = []
+    for k in range(sel.size):
+        col, row = pts[k]
+        x_abs = tf.c + tf.a * col
+        y_abs = tf.f + tf.e * row
+        vertices.append((
+            float(x_abs - ox) * M2I,
+            float(y_abs - oy) * M2I,
+            float(zsel[k]) * M2I,
+        ))
+    triangles = [(int(a), int(b), int(c)) for a, b, c in tri.simplices]
     return TerrainMesh(vertices=vertices, triangles=triangles)

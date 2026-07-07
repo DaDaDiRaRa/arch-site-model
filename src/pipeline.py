@@ -212,7 +212,7 @@ def generate(
 
     if layers.get("terrain"):
         from src.geometry.seating import seat_building
-        from src.geometry.terrain_mesh import grid_to_tin
+        from src.geometry.terrain_mesh import build_tin
         from src.terrain.dem import clip_dem_mosaic
         from src.terrain.store import find_tiles
 
@@ -247,7 +247,7 @@ def generate(
                         replace(s, base_z_m=seat_building(s, dem))
                         for s in solids
                     ]
-                    terrain_mesh = grid_to_tin(dem)
+                    terrain_mesh = build_tin(dem, config.TERRAIN_MAX_ERROR_M)
 
     # 7. 지적 레이어 (Phase 5)
     cadastral_parcels: list | None = None

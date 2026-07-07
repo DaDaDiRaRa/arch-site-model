@@ -113,3 +113,88 @@ def test_grid_to_tin_large_grid():
     mesh = grid_to_tin(dem)
     assert len(mesh.vertices) == 10_000
     assert len(mesh.triangles) == 99 * 99 * 2
+
+
+# ---------------------------------------------------------------------------
+# 적응형 TIN (adaptive_tin / build_tin)
+# ---------------------------------------------------------------------------
+
+def _surface_dem(n: int, heights: np.ndarray, cell: float = 5.0) -> DEMPatch:
+    """n×n 격자 + 지정 표고 배열로 DEMPatch 생성."""
+    minx, miny = 200_000.0, 400_000.0
+    maxy = miny + n * cell
+    transform = Affine(cell, 0, minx, 0, -cell, maxy)
+    return DEMPatch(grid=heights.astype(np.float32), transform=transform, offset=(minx, miny))
+
+
+def _max_vertical_error(dem: DEMPatch, mesh: TerrainMesh) -> float:
+    """메시가 실제 DEM 표고를 얼마나 벗어나는가(m). 각 격자셀에서 최대 절대 오차."""
+    from scipy.interpolate import LinearNDInterpolator
+
+    tf = dem.transform
+    ox, oy = dem.offset
+    # 정점(인치·로컬) → (col, row, z[m]) 복원
+    cr = []
+    zz = []
+    for vx, vy, vz in mesh.vertices:
+        x_abs = vx / M2I + ox
+        y_abs = vy / M2I + oy
+        col = (x_abs - tf.c) / tf.a
+        row = (y_abs - tf.f) / tf.e
+        cr.append((col, row))
+        zz.append(vz / M2I)
+    interp = LinearNDInterpolator(np.array(cr), np.array(zz))
+    rows, cols = dem.grid.shape
+    cc, rr = np.meshgrid(np.arange(cols), np.arange(rows))
+    zi = interp(np.column_stack([cc.ravel(), rr.ravel()]))
+    err = np.abs(dem.grid.ravel().astype(np.float64) - zi)
+    err = err[~np.isnan(err)]
+    return float(err.max()) if err.size else 0.0
+
+
+def test_adaptive_flat_is_two_triangles():
+    """완전 평지 → 삼각형 극소(평면이므로 2개)."""
+    from src.geometry.terrain_mesh import adaptive_tin
+
+    dem = _surface_dem(40, np.full((40, 40), 50.0))
+    mesh = adaptive_tin(dem, max_error_m=0.25)
+    assert len(mesh.triangles) <= 8  # 균일격자라면 39*39*2=3042
+
+
+def test_adaptive_plane_is_few_triangles():
+    """기울어진 평면 → 소수 삼각형(평면은 2삼각으로 정확 근사)."""
+    from src.geometry.terrain_mesh import adaptive_tin
+
+    n = 40
+    yy, xx = np.mgrid[0:n, 0:n]
+    dem = _surface_dem(n, 50.0 + 0.4 * xx + 0.2 * yy)
+    mesh = adaptive_tin(dem, max_error_m=0.25)
+    assert len(mesh.triangles) <= 8
+
+
+def test_adaptive_respects_error_bound():
+    """봉우리 지형: 삼각형은 균일격자보다 훨씬 적고, 오차는 한계 이내."""
+    from src.geometry.terrain_mesh import adaptive_tin
+
+    n = 50
+    yy, xx = np.mgrid[0:n, 0:n]
+    heights = 50.0 + 30.0 * np.exp(-((xx - n / 2) ** 2 + (yy - n / 2) ** 2) / (2 * 7.0 ** 2))
+    dem = _surface_dem(n, heights)
+    tol = 0.5
+
+    adaptive = adaptive_tin(dem, max_error_m=tol)
+    uniform = grid_to_tin(dem)
+
+    assert len(adaptive.triangles) < len(uniform.triangles)          # 삼각형 감소
+    assert _max_vertical_error(dem, adaptive) <= tol + 1e-6          # 오차 한계 준수
+
+
+def test_build_tin_dispatch():
+    """build_tin: max_error=0 → 균일격자, >0 → 적응형(평지에서 삼각형 적음)."""
+    from src.geometry.terrain_mesh import build_tin
+
+    dem = _surface_dem(30, np.full((30, 30), 50.0))
+    uniform = build_tin(dem, max_error_m=0.0)
+    adaptive = build_tin(dem, max_error_m=0.25)
+    assert len(uniform.triangles) == 29 * 29 * 2
+    assert len(adaptive.triangles) <= 8

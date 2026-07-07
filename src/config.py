@@ -21,6 +21,16 @@ VWORLD_DOMAIN = os.environ.get("VWORLD_DOMAIN", "")
 M2I = 39.3701              # meter → inch (SketchUp MCP는 인치 단위)
 DEFAULT_FLOOR_H_M = 3.0    # 기본 층고 (m)
 
+# --- 지형 TIN ---
+# 지형 삼각망 방식: >0 이면 오차 한계 적응형 TIN(그 수직오차[m] 이내 보장, 평지는 큰
+# 삼각형·복잡한 곳만 촘촘 → 삼각형 대폭 감소, 넓은 반경도 가벼움). 0 이면 균일 격자
+# (어디든 5m마다 삼각형). 기본 0.25m = 25cm 정확도. 정확도 더 원하면 낮추고(무거워짐),
+# 더 가볍게는 올린다.
+try:
+    TERRAIN_MAX_ERROR_M = float(os.environ.get("TERRAIN_MAX_ERROR_M", "0.25"))
+except ValueError:
+    TERRAIN_MAX_ERROR_M = 0.25
+
 # --- 정사영상(orthophoto) 텍스처 ---
 # 소스: "vworld"(기존 VWORLD_KEY 재사용) | "ngii"(NGII_KEY 발급 후 사용, 공공누리 1유형).
 # 기술은 동일 — TileSource만 바뀐다. NGII 키 승인 시 .env에 NGII_KEY 채우고 ORTHO_SOURCE=ngii.

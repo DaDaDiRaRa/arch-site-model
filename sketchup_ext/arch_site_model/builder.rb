@@ -90,6 +90,9 @@ module ArchSiteModel
       smooth = Geom::PolygonMesh::AUTO_SOFTEN | Geom::PolygonMesh::SMOOTH_SOFT_EDGES
       mat = material(model, "asm_terrain", C_TERRAIN)
       grp.entities.add_faces_from_mesh(mesh, smooth, mat, mat)
+      # 타일 경계·테두리에 남는 하드 엣지(지형에 보이는 격자선)를 숨긴다: 지형 그룹의
+      # 모든 엣지를 soft+smooth → 선이 안 보이고 매끈하게 셰이딩(겹친 타일도 선 없이 blend).
+      grp.entities.grep(Sketchup::Edge).each { |e| e.soft = true; e.smooth = true }
     end
 
     def self.build_buildings(model, parent_ents, buildings)

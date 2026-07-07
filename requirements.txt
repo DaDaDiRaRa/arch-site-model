@@ -7,6 +7,7 @@ pyproj>=3.6           # EPSG 변환 (PROJ 번들 wheel)
 numpy>=1.26           # DEM 격자·모자이크 배열
 rasterio>=1.3         # DEM 클립 + 정사영상 타일 디코드·재투영 (GDAL 번들 wheel)
 shapely>=2.0          # bbox 포함 판정 (지형 타일 조회)
+scipy>=1.11           # 적응형 TIN (greedy insertion: Delaunay + 보간) — terrain_mesh.adaptive_tin
 
 # --- 외부 API / 출력 ---
 requests>=2.31        # VWorld / 정사영상 타일 호출
