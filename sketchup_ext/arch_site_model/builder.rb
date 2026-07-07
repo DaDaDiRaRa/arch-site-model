@@ -106,14 +106,25 @@ module ArchSiteModel
     # (정사영상 특성과 정확히 일치). 실패한 면은 조용히 건너뛴다.
     def self.drape_ortho(model, terrain_grp, png_path, extent)
       return unless png_path && extent && extent.length == 4
+      unless File.exist?(png_path)
+        puts "[ortho] PNG 파일 없음: #{png_path}"
+        return
+      end
       x0, y0, x1, y1 = extent.map(&:to_f)
       dx = x1 - x0
       dy = y1 - y0
+      sz = (File.size(png_path) rescue "?")
+      puts "[ortho] drape 시작: #{png_path} (#{sz}B), extent=#{extent.inspect}"
       return if dx.abs < 1e-6 || dy.abs < 1e-6
 
       mat = model.materials.add("asm_ortho")
       mat.texture = png_path
-      terrain_grp.entities.grep(Sketchup::Face).each do |face|
+      puts "[ortho] material.texture=#{mat.texture ? mat.texture.filename : 'nil(텍스처 로드 실패)'}"
+
+      faces = terrain_grp.entities.grep(Sketchup::Face)
+      applied = 0
+      failed = 0
+      faces.each do |face|
         vs = face.outer_loop.vertices
         next if vs.length < 3
         pts_uvs = []
@@ -124,13 +135,16 @@ module ArchSiteModel
           pts_uvs << p << Geom::Point3d.new(u, w, 0)
         end
         begin
-          face.position_material(mat, pts_uvs, true)
-        rescue StandardError
-          next
+          r = face.position_material(mat, pts_uvs, true)
+          r ? (applied += 1) : (failed += 1)
+        rescue StandardError => e
+          failed += 1
+          puts "[ortho] position_material 예외(첫 1건): #{e.message}" if failed == 1
         end
       end
-    rescue StandardError
-      nil
+      puts "[ortho] 완료: 면 #{faces.length}, 적용 #{applied}, 실패 #{failed}"
+    rescue StandardError => e
+      puts "[ortho] drape 오류: #{e.message}"
     end
 
     def self.build_buildings(model, parent_ents, buildings)

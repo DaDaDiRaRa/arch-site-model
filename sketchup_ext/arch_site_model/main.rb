@@ -67,10 +67,13 @@ module ArchSiteModel
           next
         end
         ortho = result[:ortho]
+        puts "[ortho] backend: #{ortho ? "extent=#{ortho[:extent].inspect} url=#{ortho[:url]}" : 'nil (정사영상 미요청 또는 백엔드 미생성)'}"
         if ortho && ortho[:url]
           full = "#{Settings.backend_url}#{ortho[:url]}"
           ApiClient.download_binary(full) do |bytes|
+            puts "[ortho] 다운로드: #{bytes ? "#{bytes.bytesize}B" : 'nil(실패)'}"
             png = bytes ? write_temp_png(bytes) : nil
+            puts "[ortho] temp png: #{png || 'nil'}"
             finish_single(dlg, result, png, ortho[:extent])
           end
         else
