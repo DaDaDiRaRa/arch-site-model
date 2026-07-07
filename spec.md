@@ -90,6 +90,12 @@ GET https://api.vworld.kr/req/data
 
 `gro_flo_co` 0/null 건물 존재 가능 → `missing_floors_policy` 분기 처리.
 
+**geomFilter BOX 10km² 한도**: VWorld data API의 `geomFilter=BOX`는 요청영역 10km² 이내만 허용
+(반경 ~1.58km 상한). `VWorldClient.get_features`가 bbox>~9.5km²면 서브박스(≤9km², 한 변 ~3km)로
+분할 조회 후 병합·중복제거(경계 피처는 인접 서브박스에 중복 → `id`/`bd_mgt_sn`/`pnu` 키로 dedup).
+`count()`도 분할 대응. 상한 ~반경 15km(서브박스 100개). 호출자(pipeline/tiles/site_check/preview)
+투명 적용 — 반경 2km+ 조회 가능.
+
 ### 2.3 대지 경계 (LP_PA_CBND_BUBUN)
 
 ```
@@ -115,8 +121,14 @@ geo_store/
 
 한 질의가 여러 타일에 걸치면 겹치는 타일을 전부 병합(mosaic)해 사용한다(§7).
 
-현재 비축: 대전 전역 13타일(10km, 5m 해상도) — GCS `gs://arch-site-model-dem`
-(asia-northeast3, `/vsicurl` 서빙).
+**소스 준비**: 시·도 SHP → bake. (a) 좌표대 재투영 — 동부원점(EPSG:5187) 지역 SHP는 베이크 시
+내부 기준 5186으로 재투영(`read_contours(target_crs="EPSG:5186")`, 5186이면 no-op). (b) 도엽
+중복제거 — 시·도 단위 다운로드는 경계 도엽을 각 구 폴더에 바이트 동일 복사하므로 `_find_shp`가
+도엽 번호(`수치지도_<도엽>` 폴더명)로 dedup. (c) 거리제한 채움 — 볼록껍질 밖 nan 셀을 실데이터
+200m 이내만 채우고 먼 셀은 nodata 유지(무제한 외삽 시 지역 경계에서 mosaic 오염). §4·§8 참고.
+
+현재 비축: 6개 광역단체 120타일(10km 격자, 5m 해상도) — 대전 14·서울 15·부산 24·대구 36·
+울산 20·세종 11. 공개 GCS `gs://arch-site-model-dem`(asia-northeast3, `/vsicurl` 서빙).
 
 ---
 
@@ -149,7 +161,7 @@ geo_store/
 | 이름 | 기본값 | 설명 |
 |---|---|---|
 | `address` | (필수) | 대지 주소 |
-| `radius_m` | `250` | 반경 (m) |
+| `radius_m` | `250` | 반경 (m). 2km+ 지원 — VWorld BOX 10km² 한도를 클라이언트가 bbox 분할·병합으로 우회(§2.2) |
 | `floor_height_m` | `3.0` | 기본 층고 (m) |
 | `outputs` | `["skp"]` | `"skp"` / `"3dm"` 복수 선택 가능 |
 | `layers` | `{"buildings": true}` | 활성화할 레이어 |
@@ -275,6 +287,11 @@ geo_store/
 | 내부 계산 | EPSG:5186 (Korea 2000 중부원점) | 미터 |
 | SketchUp MCP | SketchUp 로컬 | 인치 (`× M2I = 39.3701`) |
 | Rhino .3dm | 로컬 미터 | 미터 |
+
+**좌표대(벨트)**: 한국 TM 좌표대가 여럿 — EPSG:5186(중부원점: 서울·대전·광주·세종),
+EPSG:5187(동부원점: 부산·대구·울산). 내부 기준은 5186 고정. 동부원점(5187) 지역 SHP는 베이크
+시 5186으로 재투영해 굽는다(§2.4·§8) — z(표고)는 수평 재투영에 무영향. 미적용 시 동부원점
+지역 지형이 ~2° 어긋남.
 
 **origin_offset**: 건물 군의 EPSG:5186 최소 bbox 좌하단.
 - 로컬 좌표 = 5186 좌표 − offset (수백 km 절댓값 제거)
@@ -421,7 +438,7 @@ src/
     geocode.py           주소 → 좌표
     bbox.py              반경 → BBOX (4326)
     crs.py               4326 ↔ 5186 변환 + origin_offset + apply_offset
-    vworld.py            VWorldClient (페이지네이션 내장)
+    vworld.py            VWorldClient (페이지네이션 내장 + bbox 분할: 10km² 한도 우회, 반경 2km+)
     ortho.py             정사영상 WMTS 타일 다운로드 + 모자이크 + EPSG:5186 재투영 (Tier 1)
   geometry/
     building.py          BuildingSolid + features_to_solids + floors_of
@@ -435,6 +452,7 @@ src/
     store.py             load_manifest + find_tiles(겹치는 타일 전부·고해상도 우선) / find_tile(대표 1개)
     contour_bake.py      등고선 SHP → DEM(.tif) 오프라인 굽기 (CLI)
                           + bake_tiled(대용량 지역 타일 배치 베이크, --tile-km/--margin-m)
+                          + 좌표대 재투영(5187→5186)·도엽 중복제거·거리제한 채움(fill_dist_m)
     dem.py               clip_dem + clip_dem_mosaic(다중 타일 rasterio.merge 병합, 로컬/vsigs) + DEMPatch (표고 보간)
 ```
 
@@ -465,6 +483,7 @@ src/
 | 지형 개선 | 계단현상 완화 — guarded CloughTocher 재bake | ✅ |
 | geocode | 지번+도로명(PARCEL→ROAD) 지원 | ✅ |
 | 전국 DEM 확장 | 다중 타일 mosaic + 배치 베이크(bake_tiled) + GCS COG 서빙(/vsicurl) | ✅ 프로덕션 |
+| 전국 DEM(다지역) | 6개 광역단체 120타일 + 좌표대 재투영(5187→5186) + 도엽 중복제거 + 거리제한 채움 + bbox 분할(반경 2km+) | ✅ 프로덕션 |
 
 ---
 
@@ -495,6 +514,10 @@ src/
     기준 단일 값 — 타일마다 다른 원점을 쓰지 않는다. 타일별로 재계산하면 좌표가 어긋난다.
 12. **DEM 타일은 GCS 서빙**: 타일은 `DEM_TILE_BASE=/vsicurl/…`(원격)에서 읽고 `manifest.json`은
     로컬(git). 타일 열기 실패 시 지형 생략(조용한 fallback)이므로 `warnings` 확인.
+13. **동부원점(5187) 지역 소스 CRS**: 베이크가 SHP를 5186으로 재투영하니(§2.4·§4) 부산·대구·울산
+    등 소스 CRS가 섞여도 됨. 내부·타일은 항상 5186.
+14. **반경 2km+ 자동 처리**: VWorld BOX 10km² 한도는 클라이언트가 bbox 분할로 우회(§2.2) —
+    큰 반경도 예전 10km² 오류 없이 조회된다.
 
 ---
 

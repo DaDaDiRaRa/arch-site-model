@@ -161,7 +161,7 @@ check_site_data("대전광역시 서구 괴정동 358", radius_m=250)
 | 파라미터 | 기본값 | 설명 |
 | --- | --- | --- |
 | `address` | (필수) | 대지 주소 |
-| `radius_m` | `250` | 반경 (m) |
+| `radius_m` | `250` | 반경 (m) — **2km 이상도 지원**(VWorld 박스당 10km² 한도를 클라이언트가 bbox 분할로 자동 우회, 상한 ~반경 15km) |
 | `floor_height_m` | `3.0` | 기본 층고 (m) |
 | `outputs` | `["skp"]` | `"skp"` · `"3dm"` 선택 |
 | `layers` | `{"buildings": true}` | 레이어 활성화 |
@@ -282,16 +282,19 @@ y_abs = y_local + origin_offset[1]   # → EPSG:5186 Y (m)
 
 ## 5. 지형 DEM 추가/갱신
 
-**현재 비축**: **대전 전역** 커버 — 10km 격자 13타일, 5m 해상도(EPSG:5186). 타일은 공개 GCS 버킷
-`gs://arch-site-model-dem`(asia-northeast3)에 있고, 배포된 Cloud Run 앱이 GDAL `/vsicurl` 윈도우
-범위읽기로 **요청 시점에** 읽습니다(컨테이너 이미지에 타일 미포함). `manifest.json`만 로컬/깃에
-남고 큰 타일은 `DEM_TILE_BASE`로 원격 해석됩니다. 타일을 못 열면(로컬 부재/GCS 불가) 파이프라인은
-경고와 함께 건물만 생성으로 조용히 폴백합니다.
+**현재 비축**: **6개 광역단체** 커버 — 대전 14타일 · 서울 15 · 부산 24 · 대구 36 · 울산 20 · 세종 11
+= **총 120타일**, 10km 격자·5m 해상도. 타일은 공개 GCS 버킷 `gs://arch-site-model-dem`(asia-northeast3)에
+COG로 있고, 배포된 Cloud Run 앱이 GDAL `/vsicurl` 윈도우 범위읽기로 **요청 시점에** 읽습니다(컨테이너
+이미지에 타일 미포함). `manifest.json`만 로컬/깃에 남고 큰 타일은 `DEM_TILE_BASE`로 원격 해석됩니다.
+타일을 못 열면(로컬 부재/GCS 불가) 파이프라인은 경고와 함께 건물만 생성으로 조용히 폴백합니다.
 
 새 지역 추가(반복 루프):
 
 1. [국토지리정보원](https://map.ngii.go.kr)에서 대상 지역 수치지형도Ver2.0 SHP(1:5,000)를 아무 로컬
-   폴더에 다운로드 — `N3L_F0010000.shp`(등고선) + `N3P_F0020000.shp`(표고점), EPSG:5186.
+   폴더에 다운로드 — `N3L_F0010000.shp`(등고선) + `N3P_F0020000.shp`(표고점). **폴더 경로만 주면 됩니다**:
+   (a) **동부원점(EPSG:5187) 지역**(부산·대구·울산 등)도 그대로 — `contour_bake`가 SHP를 읽을 때 파이프라인
+   기준인 EPSG:5186으로 자동 재투영합니다(5186이면 no-op, 안 하면 지형이 ~2° 어긋남). (b) 시·도 단위로
+   받아 경계 도엽이 여러 구 폴더에 중복 복사돼도 도엽 번호로 자동 중복제거됩니다. 사용자 추가 작업 없음.
 1. 배치 베이크 — `--tile-km`로 지역을 격자 타일로 굽습니다(등고선·표고점 1회 읽고 타일별 서브셋
    보간, `--margin-m` 여유로 이음새 연속, 전역 격자 픽셀정합). `dem_<지역>_r{r}c{c}.tif` 타일이
    생성되고 `manifest.json`이 타일별로 자동 갱신됩니다.
@@ -355,4 +358,4 @@ python -m pytest tests/test_integration_api.py -v
 | 확장(Phase B) | SketchUp `.rbz` — 지형+건물 조립(B1) | ✅ (B2 정사영상 텍스처 예정) |
 | 지형 개선 | 계단현상 완화 — guarded CloughTocher 재bake | ✅ |
 | geocode | 지번+도로명(PARCEL→ROAD) 지원 | ✅ |
-| 전국 DEM 확장 | 다중 타일 mosaic(find_tiles/clip_dem_mosaic) + 배치 베이크(bake_tiled) + GCS COG 서빙(/vsicurl) | ✅ 프로덕션 |
+| 전국 DEM 확장 | 6개 광역단체 120타일 GCS COG 서빙(/vsicurl) + 다중 타일 mosaic + 배치 베이크(bake_tiled) + 좌표대 재투영(5187→5186) + 도엽 중복제거 + bbox 분할(반경 2km+) | ✅ 프로덕션 |

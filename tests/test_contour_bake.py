@@ -280,6 +280,20 @@ def test_find_shp_flat_dump_no_dedup(tmp_path):
     assert len(found) == 2
 
 
+def test_find_shp_dedups_bare_sheet_number_folders(tmp_path):
+    """2MAP5000 포맷(도엽번호가 곧 폴더명, 예: 37611088)도 중복 도엽 제거."""
+    for si in ("화성시", "수원시"):   # 같은 도엽 37611088이 두 시에 중복
+        d = tmp_path / si / "37611088"
+        d.mkdir(parents=True)
+        (d / "N3L_F0010000.shp").write_bytes(b"")
+    d2 = tmp_path / "화성시" / "37611089"   # 다른 도엽
+    d2.mkdir(parents=True)
+    (d2 / "N3L_F0010000.shp").write_bytes(b"")
+
+    found = _find_shp(tmp_path, _CONTOUR_PAT)
+    assert len(found) == 2   # 37611088(중복→1) + 37611089
+
+
 def test_read_contours_reprojects_5187_to_5186(tmp_path):
     """동부원점(5187) SHP는 읽을 때 5186으로 재투영된다(부산·대구 대응)."""
     from pyproj import Transformer

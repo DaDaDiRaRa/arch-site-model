@@ -293,6 +293,43 @@ def _patch_small_ortho(monkeypatch):
     monkeypatch.setattr(pl.config, "ORTHO_ZOOM", 16)
 
 
+def _patch_synth_dem(monkeypatch):
+    """실 DEM 타일 없이 합성 지형을 주입한다.
+
+    geo_store/*.tif 는 gitignore(GCS가 서빙)라 CI 체크아웃엔 없다 → 실 타일에
+    의존하면 지형이 조용히 생략돼 테스트가 깨진다(테스트 규칙: 합성 데이터로 동작).
+    파이프라인이 지형 경로를 함수-로컬 import(`from src.terrain.store import
+    find_tiles`, `from src.terrain.dem import clip_dem_mosaic`)로 부르므로
+    소스 모듈 속성을 패치하면 호출 시점에 반영된다.
+    """
+    import numpy as np
+    from rasterio.transform import from_bounds as _tf_from_bounds
+
+    import src.terrain.dem as dem_mod
+    import src.terrain.store as store_mod
+    from src.terrain.dem import DEMPatch
+
+    monkeypatch.setattr(
+        store_mod,
+        "find_tiles",
+        lambda bbox, manifest=None: [
+            {"file": "synthetic_dem.tif", "region": "합성", "cell_m": 5.0}
+        ],
+    )
+
+    def _fake_mosaic(tile_paths, bbox_5186, offset):
+        minx, miny, maxx, maxy = bbox_5186
+        rows = cols = 24
+        tf = _tf_from_bounds(minx, miny, maxx, maxy, cols, rows)
+        # 완만한 남서→북동 경사(50~60m) — z_range·TIN·seating 모두 유효값
+        cx = np.linspace(0.0, 1.0, cols, dtype=np.float32)[None, :]
+        ry = np.linspace(0.0, 1.0, rows, dtype=np.float32)[:, None]
+        grid = (50.0 + 5.0 * (cx + ry)).astype(np.float32)
+        return DEMPatch(grid=grid, transform=tf, offset=offset)
+
+    monkeypatch.setattr(dem_mod, "clip_dem_mosaic", _fake_mosaic)
+
+
 def test_generate_orthophoto_textures_terrain(monkeypatch, tmp_path):
     """orthophoto=True → .3dm 지형 메시에 텍스처 좌표 + provenance 기록."""
     import rhino3dm
@@ -301,6 +338,7 @@ def test_generate_orthophoto_textures_terrain(monkeypatch, tmp_path):
         pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
     )
     _patch_small_ortho(monkeypatch)
+    _patch_synth_dem(monkeypatch)
     out = generate(
         "대전광역시 서구 괴정동 358",
         client=FakeClient(_daejeon_features()),
@@ -370,6 +408,7 @@ def test_generate_include_geometry(monkeypatch):
     monkeypatch.setattr(
         pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
     )
+    _patch_synth_dem(monkeypatch)
     out = generate(
         "대전광역시 서구 괴정동 358",
         client=FakeClient(_daejeon_features()),

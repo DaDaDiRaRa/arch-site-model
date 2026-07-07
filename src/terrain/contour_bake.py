@@ -74,10 +74,15 @@ def _find_elev_field(gdf: gpd.GeoDataFrame) -> str:
 
 
 def _sheet_key(p: Path) -> str:
-    """중복제거 키. 도엽 폴더(예: `(B010)수치지도_37608048_...`)면 도엽 번호,
-    아니면 전체 경로(=중복제거 안 함)."""
-    m = _SHEET_PAT.search(p.parent.name)
-    return m.group(1) if m else str(p)
+    """중복제거 키. 도엽 폴더면 도엽 번호, 아니면 전체 경로(=중복제거 안 함).
+    두 다운로드 포맷 지원: `(B010)수치지도_<도엽>_...`(수치지도_숫자) / `<도엽번호>`(2MAP5000)."""
+    name = p.parent.name
+    m = _SHEET_PAT.search(name)
+    if m:
+        return m.group(1)
+    if re.fullmatch(r"\d{6,}", name):   # 도엽번호가 곧 폴더명 (2MAP5000 포맷)
+        return name
+    return str(p)
 
 
 def _find_shp(shp_dir: Path, pattern: re.Pattern) -> list[Path]:

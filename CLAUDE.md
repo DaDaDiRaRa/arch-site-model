@@ -9,20 +9,25 @@
 
 > 완료하면 해당 줄을 삭제한다(항상 "남은 일"만 남게 유지).
 
-- [ ] **전국 5m DEM 확장**: 목표 = 전국 어디 주소든 지형+건물 자동 생성. **파이프라인 완성·프로덕션
-      GCS 서빙 실증(2026-07-03) — 이제 지역 추가는 반복 작업.** 건물·지적은 VWorld 실시간이라 이미
-      전국; 남은 건 지형(DEM)뿐. **자동/API 취득 불가 확인**: 실시간 표고 API 없음(VWorld 3D Data API
-      2019 폐쇄), VWorld WFS 169레이어에 등고선·표고점 없음, 무료 공개DEM은 90m뿐(EPSG:5179) → 지역별
-      1:5,000 수치지형도 SHP **수동 다운로드**가 유일 경로.
-      **완료**: 다중 타일 mosaic(`find_tiles`+`clip_dem_mosaic`), 배치 베이크(`contour_bake.bake_tiled`
-      + `--tile-km`/`--margin-m`: 등고선 1회 읽고 타일별 서브셋 보간·margin 여유·픽셀정합), manifest
-      4모서리 엔벨로프(이음새 갭 제거), 대전 전역 13타일 베이크, **GCS 라이브**(공개버킷
-      `gs://arch-site-model-dem` + Cloud Run env `DEM_TILE_BASE=/vsicurl/…`로 COG 윈도우 읽기, 실주소
-      검증 완료), 타일 git 추적 해제(`geo_store/*.tif` gitignore — GCS가 서빙).
-      **남은 것**: (a) 추가 지역 SHP 확보(사람 손 — 시·도 단위 연속수치지형도) → 폴더 경로 주면
-      bake→`dem_to_cog`(COG)→`gcloud storage cp … gs://arch-site-model-dem/dem/`는 반복, **manifest만
-      커밋·푸시하면 라이브**(타일은 GCS), (b) 과거 115MB 히스토리 purge(filter-repo+force-push, 보류 —
-      동작 무관). 상세 [[nationwide-dem-ngii-source]].
+- [ ] **전국 5m DEM 확장**: 목표 = 전국 어디 주소든 지형+건물 자동 생성. **6개 광역단체 프로덕션
+      GCS 라이브(2026-07-06) — 지역 추가는 반복 작업.** 건물·지적은 VWorld 실시간이라 이미 전국;
+      남은 건 지형(DEM)뿐. **자동/API 취득 불가 확인**: 실시간 표고 API 없음(VWorld 3D Data API 2019
+      폐쇄), VWorld WFS 169레이어에 등고선·표고점 없음, 무료 공개DEM은 90m뿐 → 지역별 1:5,000
+      수치지형도 SHP **수동 다운로드**가 유일 경로.
+      **완료**: 다중 타일 mosaic(`find_tiles`+`clip_dem_mosaic`), 배치 베이크(`bake_tiled`
+      +`--tile-km`/`--margin-m`), manifest 4모서리 엔벨로프, **좌표대 재투영**(동부원점 5187→5186 —
+      부산·대구·울산), **도엽 중복제거**(시·도 다운로드 시 경계도엽 바이트동일 복사), **거리제한 채움**
+      (`fill_dist_m` 기본 200m — 지역 경계 외삽 오염 방지: 대전 fill이 세종까지 140m로 뻗치던 버그
+      해결), **bbox 분할**(VWorld 10km²/쿼리 한도 우회 → 반경 2km+). **6개 광역단체 120타일**
+      (대전14·서울15·부산24·대구36·울산20·세종11) GCS 라이브(공개버킷 `gs://arch-site-model-dem` +
+      Cloud Run `DEM_TILE_BASE=/vsicurl/…`), 타일 git 미추적(`geo_store/*.tif` gitignore).
+      **남은 것**: (a) 추가 지역 SHP 확보(사람 손) → 폴더 경로 주면 bake→`dem_to_cog`→`gcloud storage
+      cp`는 반복, **manifest만 커밋·푸시하면 라이브**, (b) **경기권 및 기타 지역 — 나중에 추가 예정**
+      (사용자가 SHP 폴더 채워 알림 대기). 경기 화성시(`2MAP5000_SHP` 포맷, XML 메타 없음)는 기존 로직과
+      **호환 확인 완료**(등고선/표고점·CRS 5186·필드명 동일, `_sheet_key`가 `2MAP5000` bare 도엽번호
+      폴더도 dedup) — 아직 베이크 안 함, 경기권 폴더 모이면 일괄 베이크, (c) 인천·광주(자치구 개편으로
+      지오코딩 불안정 — 개편 확정 후), 울산 서부(신불산) 도엽 갭, (d) 과거 115MB 히스토리 purge(보류).
+      상세 [[nationwide-dem-ngii-source]].
 - [ ] **Phase B — SketchUp 확장(.rbz)**: `sketchup_ext/`. **B1(지형+건물, 텍스처 없음) 코드 완성**
       — 확장이 `/api/generate`(geometry JSON) 호출 → 데스크톱 SketchUp에서 지형 mesh+건물 돌출 조립.
       백엔드 계약은 실요청으로 검증(2026-07-02). **남은 것: (a) 사용자 SketchUp 2021+ 설치·실행
@@ -128,7 +133,7 @@ src/
     geocode.py           주소 → 좌표 (VWorld address API)
     bbox.py              반경 → bbox (EPSG:4326)
     crs.py               EPSG:4326 ↔ 5186 변환 + origin_offset
-    vworld.py            VWorld data API 클라이언트 (페이지네이션 내장)
+    vworld.py            VWorld data API 클라이언트 (페이지네이션 + bbox 분할: 10km²/쿼리 한도 우회 → 반경 2km+)
     ortho.py             정사영상 WMTS 타일수학 + TileSource + 모자이크(재투영→PNG, Tier 1)
   geometry/
     building.py          LT_C_SPBD features → BuildingSolid (쿼드 솔리드, 홀 포함)
@@ -140,7 +145,7 @@ src/
     rhino.py             BuildingSolid(+TerrainMesh+CadastralParcel) → .3dm (Phase 4)
   terrain/
     store.py             manifest.json 조회 (find_tiles 겹치는 타일 전부·고해상도 우선 / find_tile 대표 1개)
-    contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A) + bake_tiled(대용량 지역 타일 배치, --tile-km/--margin-m)
+    contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A) + bake_tiled(대용량 지역 타일 배치) + 좌표대 재투영(5187→5186)·도엽 중복제거·거리제한 채움(fill_dist_m)
     dem.py               DEM 타일 클립 + 표고 보간 (Phase 3B) + clip_dem_mosaic(다중 타일 rasterio.merge 병합)
 
 geo_store/
@@ -256,13 +261,16 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 - `NOT_FOUND` → 정상 응답 (결과 없음), 예외 아님
 - `gro_flo_co` 0/null 건물 존재 가능 → `floors_of()`가 `None` 반환, `default_floors=1` 적용
 - **주소→좌표는 지번+도로명 모두 지원**: `geocode()`가 지번(PARCEL) 먼저 조회, `NOT_FOUND`면 도로명(ROAD)으로 재시도 (`src/geo/geocode.py::_ADDR_TYPES`)
+- **반경 2km+ 는 bbox 분할로 자동 처리**: geomFilter BOX는 요청영역 10km² 이내만 허용(반경 ~1.58km 상한). `get_features`/`count`가 큰 bbox를 ≤9km² 서브박스로 나눠 조회 후 병합·중복제거(경계 피처) → 반경 2km+ 가능(상한 ~15km). 예전 "16km² 초과" 오류 사라짐.
 
 ---
 
 ## 좌표계 규칙
 
 - **외부 API**: `EPSG:4326` (lon/lat)
-- **내부 계산**: `EPSG:5186` (Korea 2000 중부원점, 미터)
+- **내부 계산**: `EPSG:5186` (Korea 2000 중부원점, 미터) — **전국 고정**. 한국 TM 좌표대가 여럿이지만
+  (5186 중부: 서울·대전·광주·세종 / 5187 동부: 부산·대구·울산) 파이프라인은 5186만 쓴다. 동부원점
+  (5187) 지역 SHP도 `contour_bake`가 읽을 때 5186으로 재투영해 통일(안 하면 지형이 ~2° 어긋남).
 - **SketchUp MCP**: 인치 (`×M2I=39.3701`)
 - `pyproj.Transformer` 사용 시 반드시 `always_xy=True`
 - `origin_offset`: 건물 군의 최소 bbox 좌하단. 로컬 좌표 = 5186 좌표 - offset → 수백 km 절댓값 제거
@@ -313,11 +321,11 @@ python -m src.terrain.contour_bake <shp_dir> `
 (각 폴더에 `N3L_F0010000.shp` 등고선 + `N3P_F0020000.shp` 표고점). `<shp_dir>`로 상위 "새 폴더"를
 주면 rglob으로 양 도엽을 함께 읽는다(`--sheets`는 manifest 메타용일 뿐 필터 아님).
 
-**현재 비축 (대전 전역):** `dem_daejeon_r{r}c{c}.tif` 13타일 (10km 격자, 5m, EPSG:5186,
-method=clough guard 3m) — 경위도 약 127.22~127.58 / 36.17~36.53. **git 미추적**
-(`geo_store/*.tif` gitignore) → 공개 GCS `gs://arch-site-model-dem/dem/`에 COG로 업로드돼
-`/vsicurl`로 서빙, `manifest.json`만 git 추적. (과거 단일 도엽 `dem_daejeon_36710065_66.tif`
-560×900도 manifest·GCS에 잔존.)
+**현재 비축 (6개 광역단체):** 대전·서울·부산·대구·울산·세종 = **120타일**(대전14·서울15·부산24·
+대구36·울산20·세종11). 10km 격자·5m·EPSG:5186·method=clough guard 3m·거리제한 채움 fill_dist 200m.
+부산·대구·울산은 동부원점(5187) 원본을 5186으로 재투영. **git 미추적**(`geo_store/*.tif` gitignore)
+→ 공개 GCS `gs://arch-site-model-dem/dem/`에 COG로 서빙(`/vsicurl`), `manifest.json`만 git 추적.
+지역 추가는 폴더 경로 → `bake_tiled`(재투영·중복제거·거리채움 자동) → `dem_to_cog` → 업로드 → manifest 커밋.
 
 **표고점 필수**: `F0020000` 없으면 봉우리가 평면으로 처리됨. 항상 함께 bake할 것.
 
