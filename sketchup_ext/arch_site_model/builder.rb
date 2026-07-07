@@ -143,6 +143,13 @@ module ArchSiteModel
         end
       end
       puts "[ortho] 완료: 면 #{faces.length}, 적용 #{applied}, 실패 #{failed}"
+      # "텍스처가 표시된 음영"으로 전환 → 위성사진이 뷰포트에 보이게(안 하면 재질
+      # 평균색만 보여 초록으로 보임). 텍스처를 실제로 입힌 경우에만 켠다.
+      begin
+        model.rendering_options["Texture"] = true if applied > 0
+      rescue StandardError
+        nil
+      end
     rescue StandardError => e
       puts "[ortho] drape 오류: #{e.message}"
     end
