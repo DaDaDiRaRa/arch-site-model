@@ -64,7 +64,8 @@ SketchUp 확장  ──HTTP POST /api/generate──▶  백엔드(FastAPI)
         ◀── geometry(로컬 미터: 건물 footprint/base_z/height/flagged + 지형 verts/tris) + warnings
    Builder: 미터→인치(×39.3701)
      - 지형: Geom::PolygonMesh → add_faces_from_mesh (소프트 엣지)
-     - 건물: footprint 면 + pushpull(위로) + 홀 처리 + 착색
+     - 건물: 바닥면(홀 포함) + 벽·윗면을 PolygonMesh로 일괄 생성(add_faces_from_mesh).
+             pushpull 미사용 — 밀집지(수백 동) 렉·크래시 방지(지형과 동일 대량 메쉬 방식)
      - 태그/그룹 분리 + zoom_extents
 ```
 

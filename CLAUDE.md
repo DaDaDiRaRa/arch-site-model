@@ -166,6 +166,7 @@ docs/
   deploy.md              배포 가이드 (로컬 실행·도커·Cloud Run·인증·NGII 전환)
   orthophoto_texture_plan.md  정사영상 텍스처 계획 (Tier 1 완료, Tier 2a .skp 드레이프)
   sketchup_extension.md  SketchUp 확장 설치·사용·개발 가이드 (Phase B)
+  kbs_topomap_reference.md  KBS TopoMap(원본 수동 워크플로우) 기능 대조표 + 무인화 로드맵 (도로/수계/자동QA)
 
 Dockerfile               프론트 빌드 + 파이썬 런타임 단일 이미지 (Cloud Run 배포)
 .github/workflows/deploy.yml  main push 시 pytest → Cloud Run 자동 배포
