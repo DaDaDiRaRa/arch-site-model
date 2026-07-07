@@ -3,7 +3,7 @@
 > 대지 주소 입력만으로 주변 지형·건물 3D 대지모델을 자동 생성. **MCP 서버 + 배포 웹앱 + SketchUp 확장**.
 
 **입력**: 대지 주소(지번·도로명) + 반경(m)  
-**출력**: `.skp` (SketchUp) · `.3dm` (Rhino, 정사영상 텍스처 포함) · 브라우저 3D 미리보기  
+**출력**: `.skp` (SketchUp, 정사영상 텍스처 포함) · `.3dm` (Rhino, 정사영상 텍스처 포함) · 브라우저 3D 미리보기  
 **소비 경로**: ① MCP 도구(Claude) · ② 웹앱(주소→다운로드 + 3D 미리보기) · ③ SketchUp 확장(.rbz) — 엔진·백엔드는 공유  
 **핵심**: `gro_flo_co`(실제 층수) 직접 사용 — AI 추정 0%, "재현이지 상상이 아님"
 
@@ -44,6 +44,7 @@ Copy-Item .env.example .env
 | `VWORLD_KEY` | VWorld 운영 키 |
 | `VWORLD_DOMAIN` | 키 발급 시 등록 도메인 (기타 개발자 키는 불필요) |
 | `DEM_TILE_BASE` | (선택) DEM 타일 읽기 위치. 기본=로컬 `geo_store`. GCS 서빙 시 `/vsicurl/https://storage.googleapis.com/<버킷>/<프리픽스>` — 로컬 개발엔 불필요 |
+| `TERRAIN_MAX_ERROR_M` | (선택) 지형 TIN 적응형 단순화 오차 한도(m, 기본 `0.25`). `>0` = 오차 유계 적응형 TIN(평탄부는 큰 삼각형, 복잡부는 조밀 삼각형 — 수직오차 ≤ 이 값 보장). `0` = 균일 5m 격자 |
 
 > **키 발급**: [VWorld 공간정보 오픈플랫폼](https://www.vworld.kr) → 개발자 → 인증키 발급
 
@@ -97,7 +98,18 @@ python sketchup_ext/build_rbz.py                                  # 개발용(lo
 ```
 
 SketchUp 확장 관리자에서 `sketchup_ext/dist/arch_site_model.rbz` 설치 → **Extensions > 대지모델 생성**.
-확장이 백엔드 `geometry`를 받아 지형·건물을 조립(B1). 상세 **`docs/sketchup_extension.md`**.
+확장이 백엔드 `geometry`를 받아 지형·건물을 조립(B1). 건물은 깔끔한 실면(벽=쿼드, 상판=n각형)으로
+조립되어(push/pull·삼각메시 아님) 밀집지역 렉과 삼각분할 선이 없고, 지형 타일 경계선도 제거됩니다(soft edge).
+상세 **`docs/sketchup_extension.md`**.
+
+**대반경(1~2km) 타일 순차조립**: 반경 500m 초과 시 확장이 타일을 하나씩 받아(`/api/tile_plan` →
+`/api/generate_tile`) 진행바·취소 버튼과 함께 점진 조립합니다 — 수만 개 엔티티를 한 번에 만들며 데스크톱이
+멈추거나 죽던 문제를 회피(1km 검증). 인접 타일은 살짝 겹쳐 이음새가 보이지 않습니다. **Rhino(.3dm) 모드는
+타일링 불필요** — `.3dm`은 서버에서 생성되고 Rhino가 대형 모델을 잘 다루므로 반경만큼 그대로 확장됩니다.
+
+**정사영상 텍스처**: "정사영상" 체크 시 확장이 항공/위성 정사영상을 지형에 드레이프합니다(백엔드가
+`geometry.ortho_extent_m` + `files.ortho_png` 반환). 단발(≤500m) 정사영상만 지원 — 대반경 타일 정사영상은
+미구현. (클라우드 MCP `.skp` 코드는 여전히 텍스처 불가 — 데스크톱 확장만 가능.)
 
 ---
 
@@ -216,9 +228,11 @@ generate_site_model(
 
 #### 정사영상 텍스처
 
-`layers`에 `orthophoto: true` + `outputs`에 `"3dm"` 포함 시, 지형 TIN에 정사영상을 위→아래 평면투영으로
-드레이프합니다(**`.3dm` 전용** — SketchUp MCP는 이미지 텍스처 미지원). 소스는 `ORTHO_SOURCE`(기본 `vworld`).
-키 없음/타일 실패 시 경고 후 건물·지형만 생성(조용한 fallback).
+지형 TIN에 정사영상을 위→아래 평면투영으로 드레이프합니다. **이제 `.3dm`(Rhino)와 `.skp`(SketchUp 데스크톱
+확장) 모두 지원** — `.3dm`은 `layers`에 `orthophoto: true` + `outputs`에 `"3dm"`, SketchUp 데스크톱 확장은
+"정사영상" 체크로 활성화합니다(백엔드가 정사영상 PNG를 함께 서빙). 소스는 `ORTHO_SOURCE`(기본 `vworld`,
+위성 영상 실측 검증). 키 없음/타일 실패 시 경고 후 건물·지형만 생성(조용한 fallback). 클라우드 MCP `.skp`
+코드는 여전히 텍스처 불가(데스크톱 확장만 가능), 대반경 타일 정사영상은 미구현(단발 ≤500m만).
 
 ```python
 generate_site_model(
@@ -288,6 +302,11 @@ COG로 있고, 배포된 Cloud Run 앱이 GDAL `/vsicurl` 윈도우 범위읽기
 이미지에 타일 미포함). `manifest.json`만 로컬/깃에 남고 큰 타일은 `DEM_TILE_BASE`로 원격 해석됩니다.
 타일을 못 열면(로컬 부재/GCS 불가) 파이프라인은 경고와 함께 건물만 생성으로 조용히 폴백합니다.
 
+> **지형 TIN — 적응형 LOD**: 런타임 지형 삼각망은 `TERRAIN_MAX_ERROR_M`(기본 0.25m) 오차 한도의
+> 적응형 TIN으로 생성됩니다 — 평탄부는 큰 삼각형, 복잡부는 조밀 삼각형으로 수직오차를 보장하면서
+> 삼각형 수를 크게 줄입니다(신반포 250m: 19,602→2,467, 약 86% 감소). 대반경일수록 모델이 가벼워지며
+> 정확도 손실은 없습니다. (`0`으로 두면 균일 5m 격자.) `scipy`가 런타임 의존성으로 추가되었습니다.
+
 새 지역 추가(반복 루프):
 
 1. [국토지리정보원](https://map.ngii.go.kr)에서 대상 지역 수치지형도Ver2.0 SHP(1:5,000)를 아무 로컬
@@ -353,9 +372,11 @@ python -m pytest tests/test_integration_api.py -v
 | 확장2 | `preview_site` — 건물 목록·규모 미리보기 | ✅ |
 | 확장3 | 이격면(setback) 실연동 — arch-law-diagnose | 🚧 블로커 |
 | 확장4 | `generate_site_tiles` — 대량건물 타일분할 | ✅ |
-| 확장5 | 정사영상 텍스처 Tier 1 — 지형 드레이프 (.3dm) | ✅ |
+| 확장5 | 정사영상 텍스처 — 지형 드레이프 (.3dm + .skp 데스크톱 확장) | ✅ (단발 ≤500m, 대반경 타일 정사영상 미구현) |
 | 웹앱 | FastAPI 백엔드 + React UI + 브라우저 3D 미리보기(F2) + Cloud Run 배포 | ✅ |
-| 확장(Phase B) | SketchUp `.rbz` — 지형+건물 조립(B1) | ✅ (B2 정사영상 텍스처 예정) |
+| 확장(Phase B) | SketchUp `.rbz` — 지형+건물 조립(B1, 깔끔한 실면) + 정사영상 드레이프 | ✅ |
+| 대반경 조립 | SketchUp 확장 타일 순차조립(반경>500m, `/api/tile_plan`·`/api/generate_tile`, 진행바·취소) — `src/tiles_stream.py` | ✅ (1km 검증, .3dm은 타일링 불필요) |
+| 지형 LOD | 적응형 TIN(`TERRAIN_MAX_ERROR_M`, 오차 유계 삼각형 ~86% 감소) | ✅ |
 | 지형 개선 | 계단현상 완화 — guarded CloughTocher 재bake | ✅ |
 | geocode | 지번+도로명(PARCEL→ROAD) 지원 | ✅ |
 | 전국 DEM 확장 | 6개 광역단체 120타일 GCS COG 서빙(/vsicurl) + 다중 타일 mosaic + 배치 베이크(bake_tiled) + 좌표대 재투영(5187→5186) + 도엽 중복제거 + bbox 분할(반경 2km+) | ✅ 프로덕션 |

@@ -217,7 +217,7 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 | `{"buildings": true}` | 건물 매싱만 (기본값, Phase 2) |
 | `{"buildings": true, "terrain": true}` | 지형 TIN + 건물 앉힘 (Phase 3B) |
 | `{"buildings": true, "cadastral": true}` | 건물 + 대지 경계 폴리곤 (Phase 5) |
-| `{"buildings": true, "terrain": true, "orthophoto": true}` | 지형에 정사영상 텍스처 (Tier 1, **.3dm 전용**) |
+| `{"buildings": true, "terrain": true, "orthophoto": true}` | 지형에 정사영상 텍스처 (.3dm=Rhino 텍스처 / .skp=데스크톱 확장 B2 드레이프) |
 
 지형 활성화 시 추가 응답 필드:
 
@@ -225,19 +225,24 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 - `stats.elev_range_m`: 클립 DEM 표고 범위 `[min, max]`
 - DEM 타일 없거나 범위 밖이면 `ok: true` + `warnings`에 경고 → **건물만 생성됨** (조용한 fallback)
 
-**정사영상(orthophoto) — Tier 1:**
+**정사영상(orthophoto):**
 
-- 지형 TIN에 위→아래 평면투영으로 정사영상을 드레이프. `terrain: true` + `outputs=["3dm"]` 필요
-  (클라우드 MCP `.skp`는 샌드박스가 이미지 반입 차단 → 텍스처 불가. `.3dm`만 지원).
-- 소스: `config.ORTHO_SOURCE` = `"vworld"`(기본, `VWORLD_KEY` 재사용) | `"ngii"`(공공누리 1유형,
-  `NGII_KEY` 발급 후). 기술 동일 — `src/geo/ortho.py::TileSource`만 교체. NGII 타일 격자(3857 vs
-  5179)는 키 발급 후 GetCapabilities로 확정 필요.
-- 파이프라인: `bbox → WMTS 타일 다운로드 → 모자이크 → EPSG:5186 재투영(위도 왜곡 보정) → PNG →
-  평면매핑 UV`. PNG는 `.3dm`과 같은 `output_dir`에 저장(같이 둬야 텍스처 참조 유효).
-- 응답: `outputs.3dm.orthophoto = {image_path, missing_tiles, zoom}`,
-  `provenance.orthophoto_src`(출처표시용) + `orthophoto_zoom`.
+- 지형 TIN에 위→아래 평면투영으로 정사영상을 드레이프. `terrain: true` 필요(지형 없으면 조용히 생략).
+- **소비자 2종**:
+  - **.3dm (Rhino)**: `write_3dm`이 지형 메시에 비트맵 텍스처 입힘(평면매핑 UV). `outputs=["3dm"]`.
+  - **.skp 데스크톱 확장 (B2)**: 백엔드는 **출력 포맷과 무관하게** mosaic PNG를 만들고
+    `geometry.ortho_extent_m`(로컬 미터 extent) + `files.ortho_png`(다운로드 URL)을 응답에 담는다.
+    데스크톱 SketchUp 확장이 PNG를 다운로드해 지형 삼각형마다 `Face#position_material`로 **양면**
+    평면투영 드레이프(+ "텍스처" 뷰모드 자동 전환). **클라우드 MCP `.skp` 코드**는 여전히 텍스처
+    불가(샌드박스 이미지 차단) — 이건 데스크톱 확장 전용 경로다.
+- 소스: `config.ORTHO_SOURCE` = `"vworld"`(기본, `VWORLD_KEY` 재사용, 위성 실취득 검증됨) |
+  `"ngii"`(공공누리 1유형, `NGII_KEY` 발급 후). 기술 동일 — `src/geo/ortho.py::TileSource`만 교체.
+- 파이프라인: `bbox → WMTS 타일 다운로드 → 모자이크 → EPSG:5186 재투영(위도 왜곡 보정) → PNG`.
+  PNG는 `output_dir`(잡 폴더)에 저장 — .3dm은 같은 폴더 참조, 확장은 `/api/files/<job>/ortho`로 다운로드.
+- 응답: `outputs.3dm.orthophoto = {image_path, missing_tiles, zoom}`, `geometry.ortho_extent_m`,
+  `files.ortho_png`, `provenance.orthophoto_src`(출처표시용) + `orthophoto_zoom`.
 - 조용한 fallback: 키 없음/지형 미생성/타일 초과·실패 시 `warnings` 추가 후 건물·지형만 생성.
-- 미착수: Tier 2a — SketchUp `.skp`용 컴패니언 Ruby 드레이프(반자동). 상세 `docs/orthophoto_texture_plan.md`.
+- 대반경 타일 경로(`/api/generate_tile`)의 정사영상은 미착수(Phase 2). 상세 `docs/orthophoto_texture_plan.md`.
 
 ### `generate_site_tiles(address, radius_m=500, tile_size_m=200.0, floor_height_m, layers, missing_floors_policy)`
 
@@ -343,6 +348,15 @@ python -m src.terrain.contour_bake <shp_dir> `
 
 DEM 타일 클립 → TIN 삼각망 → 건물 앉힘까지 파이프라인에 통합.
 
+**TIN 방식 — `terrain_mesh.build_tin(dem, config.TERRAIN_MAX_ERROR_M)`:**
+
+- `TERRAIN_MAX_ERROR_M > 0`(기본 0.25) → **오차 한계 적응형 TIN**(`adaptive_tin`, scipy greedy
+  insertion). 평지는 큰 삼각형·복잡한 곳만 촘촘 → 지정 수직오차(25cm) 이내를 보장하며 삼각형을
+  최소화. 실측(신반포 250m): 삼각형 86%↓(19602→2467), 실측 최대오차 0.25m 준수. 넓은 반경도 가벼움.
+- `= 0` → 균일 격자(`grid_to_tin`, 어디든 5m마다 삼각형).
+- pydelatin은 C 컴파일러를 요구해 설치가 취약 → scipy(이미 런타임 의존성)만으로 순수 파이썬 구현.
+  scipy 없거나 실패 시 균일 격자로 안전 폴백. **`requirements.txt`에 scipy 추가됨**(배포 적응형).
+
 **사용 예시:**
 
 ```python
@@ -380,8 +394,10 @@ result = generate_site_model(
 | 확장2 | `preview_site` — 건물 목록·규모 미리보기 (생성 없음) | ✅ 완료 |
 | 확장3 | 이격면(setback) 실연동 — arch-law-diagnose | 🚧 블로커 (아래 참고) |
 | 확장4 | `generate_site_tiles` — 대량건물 타일분할 | ✅ 완료 |
-| 확장5 | 정사영상 텍스처 Tier 1 — 지형 TIN 드레이프 (.3dm) | ✅ 완료 (Tier 2a `.skp` 미착수) |
+| 확장5 | 정사영상 텍스처 — 지형 TIN 드레이프 (.3dm=Rhino, .skp=데스크톱 확장 B2) | ✅ .3dm+.skp단일 (타일경로 Phase 2) |
 | 확장6 | 전국 DEM 확장 — 다중 타일 mosaic(`find_tiles`/`clip_dem_mosaic`) + 배치 베이크(`bake_tiled`) + GCS COG 서빙(`/vsicurl`) | ✅ 프로덕션 (지역 추가는 반복) |
+| 확장7 | 지형 LOD — 오차 한계 적응형 TIN(`adaptive_tin`, scipy greedy insertion, 삼각형 86%↓·25cm) | ✅ 완료 |
+| 확장8 | 대반경 타일 순차조립 — `/api/tile_plan`+`/api/generate_tile`, 확장이 타일별 fetch+조립(진행바/취소), 이음매 겹침 | ✅ 완료 (1km 검증, 2km 대기) |
 
 ---
 
