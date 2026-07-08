@@ -81,6 +81,34 @@ try:
 except ValueError:
     ROAD_CELL_M = 2.5
 
+# 도로 평탄화(R2a) — 중심선 종단 프로파일 평활 + KD-트리 단면 평탄.
+# ROAD_SMOOTH_WIN_M: 중심선 종단 이동평균 창(m). 클수록 매끈하나 급경사서 뜰 수 있음.
+# ROAD_CL_SAMPLE_M : 중심선 조밀화 간격(m) — 종단 샘플·KD-트리 점 밀도.
+# ROAD_CL_MAX_DIST_M: 노면 정점에서 이 거리 밖에 중심선이 없으면 평탄화 생략(드레이프 유지).
+def _envf(name, default):
+    try:
+        return float(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+ROAD_SMOOTH_WIN_M = _envf("ROAD_SMOOTH_WIN_M", 40.0)
+ROAD_CL_SAMPLE_M = _envf("ROAD_CL_SAMPLE_M", 5.0)
+ROAD_CL_MAX_DIST_M = _envf("ROAD_CL_MAX_DIST_M", 30.0)
+
+# 도로 버닝(R2b) 스커트 밴드 폭(m). 도로 밖 이 거리까지 지형을 도로 높이↔자연 표고로 선형
+# 블렌딩해 절토/성토 비탈을 만든다(지형이 도로를 덮거나 뜨는 이음매 제거). 0이면 스커트 없음.
+ROAD_SKIRT_M = _envf("ROAD_SKIRT_M", 12.0)
+
+# 평활 종단 프로파일이 실제(원본) 지면에서 벗어날 수 있는 최대치(m). 종단 평활(창 40m)이 국소
+# 파임/솟음을 다리처럼 건너뛰어 도로가 6~7m씩 뜨거나 파이는 것을 막는다 — 평활값을
+# [원본−dev, 원본+dev]로 클램프해 도로가 지면을 바짝 따라가게(작은 절토/성토만 허용).
+ROAD_MAX_DEV_M = _envf("ROAD_MAX_DEV_M", 2.0)
+
+# 도로 크라운(횡단구배, R2b 정제). 노면을 중심선에서 가장자리로 이 %만큼 낮춰 볼록한 배수형상.
+# ROAD_CROWN_CAP_M: 크라운 적용 최대 편측거리(m) — 넓은 면(광장)서 과도한 하강 방지. 0%면 평평.
+ROAD_CROWN_PCT = _envf("ROAD_CROWN_PCT", 2.0)
+ROAD_CROWN_CAP_M = _envf("ROAD_CROWN_CAP_M", 15.0)
+
 
 def road_file_path(filename: str) -> str:
     """road_manifest의 도로 파일명 → 실제 읽기 경로. dem_tile_path와 동형(로컬↔원격)."""

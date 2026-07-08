@@ -29,25 +29,31 @@ log = logging.getLogger(__name__)
 
 # 도로경계 폴리곤 레이어코드(A0010000). 폴리곤은 N3A 접두 — 선(N3L)/점(N3P)은 제외한다.
 _ROAD_POLY_PAT = re.compile(r"A0010000", re.IGNORECASE)
+# 도로중심선 레이어코드(A0020000). 선은 N3L 접두 — 면(N3A)/점(N3P)은 제외한다.
+_ROAD_CL_PAT = re.compile(r"A0020000", re.IGNORECASE)
 
 
-def _find_road_shp(shp_dir: Path) -> list[Path]:
-    """A0010000 '폴리곤' 레이어 SHP 목록(도엽 중복 제거). 선/점 레이어는 건너뜀."""
+def _find_shp_dedup(shp_dir: Path, pat: re.Pattern, skip_prefixes: tuple[str, ...]) -> list[Path]:
+    """pat 일치 SHP(도엽 중복 제거). skip_prefixes(대문자) 접두 파일은 제외."""
     matched = sorted(
-        (p for p in shp_dir.rglob("*.shp") if _ROAD_POLY_PAT.search(p.stem)),
+        (p for p in shp_dir.rglob("*.shp") if pat.search(p.stem)),
         key=str,
     )
     seen: set[str] = set()
     out: list[Path] = []
     for p in matched:
-        stem = p.stem.upper()
-        if stem.startswith("N3L") or stem.startswith("N3P"):  # 선/점 레이어 제외
+        if p.stem.upper().startswith(skip_prefixes):
             continue
         key = _sheet_key(p)
         if key not in seen:
             seen.add(key)
             out.append(p)
     return out
+
+
+def _find_road_shp(shp_dir: Path) -> list[Path]:
+    """A0010000 '폴리곤' 레이어 SHP 목록(선/점 제외)."""
+    return _find_shp_dedup(shp_dir, _ROAD_POLY_PAT, ("N3L", "N3P"))
 
 
 def read_road_polygons(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> list:
@@ -70,6 +76,24 @@ def read_road_polygons(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> li
     return polys
 
 
+def read_road_centerlines(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> list:
+    """도로중심선(A0020000) LineString을 target_crs로 통일해 반환. 없으면 빈 목록."""
+    shp_dir = Path(shp_dir)
+    files = _find_shp_dedup(shp_dir, _ROAD_CL_PAT, ("N3A", "N3P"))
+    lines = []
+    for f in files:
+        gdf = gpd.read_file(f, encoding="euc-kr")
+        gdf = _to_target_crs(gdf, target_crs)
+        for geom in gdf.geometry:
+            if geom is None or geom.is_empty:
+                continue
+            if geom.geom_type == "LineString":
+                lines.append(geom)
+            elif geom.geom_type == "MultiLineString":
+                lines.extend(g for g in geom.geoms if not g.is_empty)
+    return lines
+
+
 def bake_roads(
     shp_dir: str | Path,
     out_path: str | Path,
@@ -77,31 +101,45 @@ def bake_roads(
     target_crs: str = "EPSG:5186",
     min_area_m2: float = 1.0,
 ) -> dict:
-    """도로경계 폴리곤 → GeoJSON(EPSG:5186) 저장 + road_manifest.json 갱신.
+    """도로경계 폴리곤(A0010000) + 도로중심선(A0020000) → GeoJSON(EPSG:5186) + manifest 갱신.
 
-    GeoJSON은 지오메트리만 담는다(A0010000은 UFID 외 속성 없음). 좌표는 EPSG:5186 미터.
+    폴리곤 feature(properties {})와 중심선 feature(properties {"cl":1})를 한 FeatureCollection에
+    담는다. 중심선은 R2 평탄화(종단 프로파일)의 척추로 쓴다. 좌표는 EPSG:5186 미터.
     """
     out_path = Path(out_path)
     polys = read_road_polygons(shp_dir, target_crs)
     polys = [p for p in polys if p.area >= min_area_m2]  # 슬리버 제거
     if not polys:
         raise ValueError("유효 도로 폴리곤이 없습니다(슬리버 제거 후 0).")
+    centerlines = read_road_centerlines(shp_dir, target_crs)
 
     from shapely.geometry import mapping
 
     epsg = int(str(target_crs).split(":")[-1])
     features = [{"type": "Feature", "properties": {}, "geometry": mapping(p)} for p in polys]
+    features += [
+        {"type": "Feature", "properties": {"cl": 1}, "geometry": mapping(ls)}
+        for ls in centerlines
+    ]
     fc = {"type": "FeatureCollection", "crs_epsg": epsg, "features": features}
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(fc), encoding="utf-8")
 
-    # 조회용 4326 엔벨로프 (geopandas 재투영으로 정확히)
+    # 조회용 4326 엔벨로프 (geopandas 재투영으로 정확히 — 폴리곤 범위 기준)
     gs = gpd.GeoSeries(polys, crs=target_crs)
     b4326 = [float(v) for v in gs.to_crs("EPSG:4326").total_bounds]  # minx,miny,maxx,maxy
 
     _update_road_manifest(region, out_path.name, b4326, len(polys))
-    log.info("도로 %d개 → %s (region=%s)", len(polys), out_path.name, region)
-    return {"file": out_path.name, "polygons": len(polys), "bounds_4326": b4326}
+    log.info(
+        "도로 %d개 + 중심선 %d개 → %s (region=%s)",
+        len(polys), len(centerlines), out_path.name, region,
+    )
+    return {
+        "file": out_path.name,
+        "polygons": len(polys),
+        "centerlines": len(centerlines),
+        "bounds_4326": b4326,
+    }
 
 
 def _road_manifest_path() -> Path:

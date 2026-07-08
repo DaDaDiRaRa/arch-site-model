@@ -200,7 +200,23 @@ KBS 도로 모듈(§2): `RoadConnect`(중심선 연결·용접) · `RoadFlatten`
   → 병합 메시(vertices/triangles)+외곽선. `Viewer3D` 회색 면(receiveShadow)+엣지. 대전 37폴리곤 →
   정점6923·삼각형11503(0실패). 테스트 `test_road.py` build_road_geometry(2). **F2 geometry 전용**
   (.3dm/.skp 도로 출력은 후속).
-- **R2 — 평탄화**: 종단 평활+크라운, 교량 제외, (후반)스커트. 리플 제거 검증.
+- **R2a — 평탄화(종단평활+단면평탄) ✅완료(2026-07-08)**: `road_bake`가 A0020000 중심선도 GeoJSON에
+  담고, `clip_centerlines`+`flatten_road_mesh`가 중심선 조밀화·DEM샘플·종단 이동평균(창 40m) → KD-트리
+  최근접으로 노면/외곽선 z 교체(단면 평탄·리플 제거). 중심선 30m 밖은 드레이프 폴백. 대전 거칠기
+  0.200→0.126. config: `ROAD_SMOOTH_WIN_M`/`ROAD_CL_SAMPLE_M`/`ROAD_CL_MAX_DIST_M`. 테스트
+  `test_road.py`(clip_centerlines/flatten/fallback 3).
+- **R2b — 지형 버닝(절토/성토) ✅완료(2026-07-08)**: `road.burn_roads` — 도로 폴리곤 래스터화 →
+  footprint 셀=중심선 평활 표고 세팅 + 스커트 밴드(`ROAD_SKIRT_M`, distance_transform_edt) 비탈 블렌딩.
+  파이프라인이 버닝 후 `build_tin`(§6b) → 지형이 도로에 맞게 절토/성토 → "지형이 도로 뚫음/덮음" 소멸.
+  건물은 원본 지면 앉힘. 터널/지하는 미베이크라 자동 제외. **2정제(2026-07-08)**: 각 도로셀을 자기
+  지면 ±`ROAD_MAX_DEV_M`(2m) 클램프(종단평활 과다로 도로가 산처럼 솟던 것 해결, >3m솟음 145→2) +
+  `carve_terrain`(도로 footprint 안 지형 삼각형 제거 → 초록 겹침 제거). 버닝 후 flatten 미적용
+  (클램프 풀림 방지). 테스트 `test_road.py` burn·carve(3). config `ROAD_SKIRT_M`·`ROAD_MAX_DEV_M`.
+  **크라운 완료(2026-07-08)**: `apply_crown` — 중심선까지 수직거리×`ROAD_CROWN_PCT`(2%)로 노면을
+  낮춰 볼록 배수형상(`ROAD_CROWN_CAP_M` 15m 상한). 테스트 crown(1). **남은 R2b**: 교차부 프로파일
+  블렌딩(접합부 z 튐) + 값 튜닝. 교량은 버닝 제외.
+- **R2b 교차부 블렌딩 ✅완료(2026-07-08)**: `burn_roads`가 k(8)-최근접 중심선 IDW(1/d²) 평균으로 셀
+  z 결정 → 접합부 z 계단 완화. 테스트 blend(1). **R2b 사실상 완료** — 교량 데크·스커트 튜닝은 선택.
 - **R3 — 보도·차선**: A0033320 보도, A0020000 차선 마킹.
 - **R4 — 수계**(별도): E계열 → 표고고정 수면.
 

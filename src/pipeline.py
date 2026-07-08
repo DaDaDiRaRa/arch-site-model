@@ -234,7 +234,6 @@ def generate(
 
     if layers.get("terrain"):
         from src.geometry.seating import seat_building
-        from src.geometry.terrain_mesh import build_tin
         from src.terrain.dem import clip_dem_mosaic
         from src.terrain.store import find_tiles
 
@@ -264,11 +263,12 @@ def generate(
                     )
                 else:
                     elev_range = list(zr)
+                    # 건물은 원본(버닝 전) 지면에 앉힌다 — 도로 버닝 영향 안 받게.
                     solids = [
                         replace(s, base_z_m=seat_building(s, dem))
                         for s in solids
                     ]
-                    terrain_mesh = build_tin(dem, config.TERRAIN_MAX_ERROR_M)
+                    # 지형 TIN은 도로 버닝(R2b) 후에 생성 → §6b (지형이 도로에 맞게 절토/성토).
 
     # 7. 지적 레이어 (Phase 5)
     cadastral_parcels: list | None = None
@@ -295,9 +295,16 @@ def generate(
     #     도로는 실시간 API가 없어 오프라인 굽기(road_bake)한 GeoJSON을 road_manifest로 조회.
     #     road_mesh는 F2/.3dm/.skp 3소비자 공용(로컬 미터).
     road_mesh = None
+    road_features = None  # 6b 지형 carve에서도 씀 — 함수 스코프로 유지
     road_count = 0
     if layers.get("roads"):
-        from src.geometry.road import build_road_mesh, clip_roads
+        from src.geometry.road import (
+            apply_crown,
+            build_road_mesh,
+            burn_roads,
+            clip_centerlines,
+            clip_roads,
+        )
         from src.terrain.store import find_road_file
 
         rf = find_road_file(bbox)
@@ -308,14 +315,43 @@ def generate(
             )
         else:
             bbox_5186_road = _bbox_4326_to_5186(bbox)
-            road_features = clip_roads(
-                config.road_file_path(rf["file"]), bbox_5186_road, offset
-            )
+            road_path = config.road_file_path(rf["file"])
+            road_features = clip_roads(road_path, bbox_5186_road, offset)
             road_count = len(road_features)
             if road_count == 0:
                 warnings.append("반경 내 도로 폴리곤 없음 (A0010000).")
             else:
+                cls = clip_centerlines(road_path, bbox_5186_road, offset) if dem is not None else []
+                # R2b 버닝: 지형을 도로에 맞게 절토/성토(뚫림·먹힘 제거). 이후 TIN은 §6b에서 이 DEM으로.
+                if dem is not None and cls:
+                    dem = burn_roads(
+                        dem, road_features, cls,
+                        win_m=config.ROAD_SMOOTH_WIN_M,
+                        sample_m=config.ROAD_CL_SAMPLE_M,
+                        max_dist_m=config.ROAD_CL_MAX_DIST_M,
+                        skirt_m=config.ROAD_SKIRT_M,
+                        max_dev=config.ROAD_MAX_DEV_M,
+                    )
+                # 노면 = 버닝(절토/성토·자기지면±dev 클램프)된 DEM 위 드레이프 → 지형과 동일 표면 →
+                #   이음매·큰 뜸/파임 없음. 버닝 후 별도 flatten을 걸면 클램프가 풀리므로 걸지 않는다.
                 road_mesh = build_road_mesh(road_features, dem, config.ROAD_CELL_M)
+                # R2b 정제: 크라운(횡단구배) — 중심선에서 가장자리로 살짝 낮춰 볼록한 배수형상.
+                if road_mesh is not None and cls and config.ROAD_CROWN_PCT > 0:
+                    road_mesh = apply_crown(
+                        road_mesh, cls, config.ROAD_CROWN_PCT,
+                        config.ROAD_CL_SAMPLE_M, config.ROAD_CROWN_CAP_M,
+                    )
+
+    # 6b. 지형 TIN — 도로 버닝(R2b) 후의 DEM으로 생성 → 지형이 도로에 맞게 절토/성토된다.
+    #     이후 도로 footprint 안 지형 삼각형을 잘라내(carve) 지형이 도로 위를 덮는 초록 겹침 제거.
+    if layers.get("terrain") and dem is not None and elev_range is not None:
+        from src.geometry.terrain_mesh import build_tin
+
+        terrain_mesh = build_tin(dem, config.TERRAIN_MAX_ERROR_M)
+        if road_features:
+            from src.geometry.road import carve_terrain
+
+            terrain_mesh = carve_terrain(terrain_mesh, road_features, config.M2I)
 
     # setback stub (arch-law-diagnose 연동은 [목표])
     if setback:
