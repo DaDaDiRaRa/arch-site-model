@@ -212,3 +212,68 @@ def test_generate_tile_terrain(monkeypatch):
     # (인접 타일과 겹쳐 gap이 없어짐). 로컬 x가 음수인 정점이 존재해야 한다.
     assert min(v[0] for v in verts) < 0
     assert min(v[1] for v in verts) < 0
+
+
+def _write_road_geojson(path, b5186):
+    """타일 중앙을 가로지르는 도로 폴리곤 + 중심선 GeoJSON(EPSG:5186 절대좌표)."""
+    import json
+
+    minx, miny, maxx, maxy = b5186
+    midy = (miny + maxy) / 2.0
+    road_poly = [
+        [minx + 5, midy - 4], [maxx - 5, midy - 4],
+        [maxx - 5, midy + 4], [minx + 5, midy + 4], [minx + 5, midy - 4],
+    ]
+    centerline = [[minx + 5, midy], [maxx - 5, midy]]
+    gj = {
+        "type": "FeatureCollection",
+        "features": [
+            {"type": "Feature", "properties": {},
+             "geometry": {"type": "Polygon", "coordinates": [road_poly]}},
+            {"type": "Feature", "properties": {},
+             "geometry": {"type": "LineString", "coordinates": centerline}},
+        ],
+    }
+    path.write_text(json.dumps(gj), encoding="utf-8")
+    return path
+
+
+def test_generate_tile_roads(monkeypatch, tmp_path):
+    """layers.roads=True + 지형 → 지형·도로·차선 통합 삼각화(geometry.roads/lanes)."""
+    import src.terrain.store as store_mod
+
+    _patch_synth_dem_tile(monkeypatch)
+    b4326, b5186, offset = _tile_bbox_around(127.3700, 36.3400)
+    gj = _write_road_geojson(tmp_path / "roads.geojson", b5186)
+
+    # 도로 매니페스트 조회·경로 해석을 임시 GeoJSON으로 우회.
+    monkeypatch.setattr(
+        store_mod, "find_road_file", lambda bbox, manifest=None: {"file": str(gj)}
+    )
+    monkeypatch.setattr(ts.config, "road_file_path", lambda f: f)
+
+    out = generate_tile(
+        b4326, b5186, offset,
+        layers={"buildings": True, "terrain": True, "roads": True},
+        client=FakeClient([_feature(0, 127.3700, 36.3400)]),
+    )
+    assert out["ok"] is True
+    assert out["road_triangles"] > 0
+    roads = out["geometry"]["roads"]
+    assert roads is not None and roads["triangles"]
+    # 지형도 여전히 나온다(통합 표면 = 지형 + 도로 분리 메시).
+    assert out["geometry"]["terrain"] is not None
+    # 중심선 → 차선 폴리라인.
+    assert out["geometry"]["lanes"]
+
+
+def test_generate_tile_roads_skipped_without_terrain():
+    """지형 미요청이면 도로도 없음(도로 z는 DEM 표고 → 지형 필요)."""
+    b4326, b5186, offset = _tile_bbox_around(127.3700, 36.3400)
+    out = generate_tile(
+        b4326, b5186, offset, layers={"buildings": True, "roads": True},
+        client=FakeClient([_feature(0, 127.3700, 36.3400)]),
+    )
+    assert out["ok"] is True
+    assert out["geometry"]["roads"] is None
+    assert out["road_triangles"] == 0

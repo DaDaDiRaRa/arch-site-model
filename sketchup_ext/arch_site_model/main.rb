@@ -118,6 +118,7 @@ module ArchSiteModel
           "buildings"  => true,
           "terrain"    => params["terrain"] != false,
           "orthophoto" => params["orthophoto"] == true, # 타일별 풀해상도 정사영상
+          "roads"      => params["roads"] == true,       # 타일별 도로·보도·차선 (Phase R)
         }
         root_holder = { group: nil } # root는 첫 타일과 함께 생성(빈 그룹 purge 방지)
         state = { total: tiles.length, built: 0, errors: 0 }

@@ -15,10 +15,12 @@
       등 대기(사용자가 SHP 폴더 채워 알림). 경기 화성(`2MAP5000_SHP`)은 로직 호환 확인됨. 인천·광주는
       자치구 개편 확정 후. 상세 [[nationwide-dem-ngii-source]].
 - [ ] **도로 Phase R 후속(선택)**: 도로·보도·차선 + **통합 표면**(지형·도로·보도를 한 삼각화로 → 정점
-      공유, 이음매·구멍·뜸 구조적 제거) **완료**. 남은 정교화 — 차선 다차선·대시(A0020000 `폭원`/`차선수`),
-      보도 표현 강화(도로 겹침 구간은 도로우선이라 콘크리트색 축소), 도로 경계 샤프닝, 대반경 타일경로
-      (`generate_tile`)에 도로 추가. 입체 데크(고가/교량 A0070000/A0090000/A0110020)는 DSM 블로커 —
-      `구분` 필드로 분류만 됨(고가=T0 휴리스틱, 지하/터널=생략, 복층=QA 플래그). 상세 `docs/road_surface_plan.md`.
+      공유, 이음매·구멍·뜸 구조적 제거) **완료**. **대반경 타일경로(`generate_tile`)에 도로 추가 완료**
+      (타일마다 도로/보도/중심선 클립→버닝→통합표면, `test_generate_tile_roads`) + **SketchUp 확장
+      builder가 도로/보도/차선 렌더**(단일+타일, 데스크톱 실기 렌더 검증 대기). 남은 정교화 — 차선
+      다차선·대시(A0020000 `폭원`/`차선수`), 보도 표현 강화(도로 겹침 구간은 도로우선이라 콘크리트색 축소),
+      도로 경계 샤프닝. 입체 데크(고가/교량 A0070000/A0090000/A0110020)는 DSM 블로커 — `구분` 필드로
+      분류만 됨(고가=T0 휴리스틱, 지하/터널=생략, 복층=QA 플래그). 상세 `docs/road_surface_plan.md`.
 - [ ] **DEM/DSM 이원화(고가/교량 데크 실측) — 블로커**: 지면=DEM, 공중 구조물=DSM 원리는 유효하나
       고해상도 DSM 민간 취득 불가(2026-07-08 확정: NGII 라이다=공문/기관 한정, 지자체 DSM=₩10M+"민간
       제공 불가", 무료 글로벌=30m라 데크·건물에 무용). 기관 접근/데이터 협약 생기면 승격(정사영상·setback과
@@ -121,7 +123,7 @@ src/
   api.py                 FastAPI 백엔드 (배포용 HTTP API — /api/generate, /api/tile_plan+/api/generate_tile(대반경 타일 순차조립), 파일 다운로드, frontend/dist 서빙)
   pipeline.py            generate_site_model 파이프라인
   tiles.py               generate_site_tiles — 대량건물 타일분할 .skp 코드 (백로그5)
-  tiles_stream.py        tile_plan + generate_tile — SketchUp 확장 대반경(1~2km) 순차조립용 타일별 geometry JSON (계획→타일별 fetch, centroid 중복제거)
+  tiles_stream.py        tile_plan + generate_tile — SketchUp 확장 대반경(1~2km) 순차조립용 타일별 geometry JSON (계획→타일별 fetch, centroid 중복제거, 타일별 정사영상·도로/보도/차선 통합표면)
   site_check.py          check_site_data 핵심 로직
   preview.py             preview_site 핵심 로직
   config.py              전역 설정·환경변수 (+ dem_tile_path: DEM 타일 로컬↔GCS /vsicurl 경로 해석)
@@ -159,7 +161,7 @@ frontend/                React + Vite + Tailwind 웹 UI (주소 입력 → /api/
 
 sketchup_ext/            SketchUp 확장(.rbz) — 주소→백엔드 geometry JSON→SketchUp 조립 (Phase B) [B1: 지형+건물]
   arch_site_model.rb     로더(SketchupExtension 등록)
-  arch_site_model/       main(메뉴·HtmlDialog)·api_client(Sketchup::Http)·builder(지형mesh+건물돌출)·settings·dialog.html
+  arch_site_model/       main(메뉴·HtmlDialog)·api_client(Sketchup::Http)·builder(지형mesh+건물돌출+정사영상 드레이프+도로/보도 메시·차선 폴리라인)·settings·dialog.html
   build_rbz.py           확장 폴더 → dist/arch_site_model.rbz 패키징
 
 docs/

@@ -14,10 +14,12 @@ module ArchSiteModel
         "address"    => params["address"].to_s,
         "radius_m"   => (params["radius_m"] || 250).to_i,
         # orthophoto=true면 백엔드가 정사영상 PNG 생성 → 확장이 다운로드해 지형에 드레이프(B2).
+        # roads=true면 지형·도로·보도를 통합 삼각화해 geometry.roads/sidewalks/lanes 반환(Phase R).
         "layers"     => {
           "buildings"  => true,
           "terrain"    => params["terrain"] != false,
           "orthophoto" => params["orthophoto"] == true,
+          "roads"      => params["roads"] == true,
         },
         "outputs"    => ["skp"],  # .3dm 불필요 — geometry + 정사영상 URL만 받음
       }

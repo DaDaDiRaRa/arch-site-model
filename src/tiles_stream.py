@@ -157,7 +157,10 @@ def generate_tile(
     offset은 tile_plan이 준 전체 기준을 그대로 사용해야 타일들이 정렬된다.
     layers.orthophoto=True면 이 타일 영역만 풀해상도(zoom 18) 정사영상을 만들어 `ortho`에
     담는다(base64) — 확장이 이 타일 지형에 드레이프. 타일마다 자기 이미지라 단발과 같은 선명도.
-    반환: {"ok": True, "geometry": {...}, "solids": n, "terrain_triangles": n, "ortho": {..}|없음}.
+    layers.roads=True면 이 타일(margin 포함) 도로/보도/차선을 클립·버닝해 지형과 한 번의 통합
+    삼각화로 만들어 geometry.roads/sidewalks/lanes에 담는다(지형 필요 — z가 DEM 표고).
+    반환: {"ok": True, "geometry": {...}, "solids": n, "terrain_triangles": n,
+           "road_triangles": n, "ortho": {..}|없음}.
     """
     layers = layers or {"buildings": True}
     offset = (float(offset[0]), float(offset[1]))
@@ -191,16 +194,21 @@ def generate_tile(
 
     solids = [s for s in solids if _in_tile(s)]
 
-    # 지형: 이 타일 bbox를 margin만큼 넓혀 DEM 클립 → 앉힘 → TIN.
+    # 지형: 이 타일 bbox를 margin만큼 넓혀 DEM 클립 → 앉힘. TIN 생성은 도로 클립 뒤로 미룬다
+    # (도로 있으면 지형·도로·보도를 한 번의 통합 삼각화로 만들어야 하므로 — 파이프라인 §6b와 동일).
     #
     # margin(=DEM 셀 몇 칸)만큼 넓히면 인접 타일 지형이 경계에서 서로 겹친다. 같은
     # DEM 값이라 겹침부가 정확히 포개져 "이음매(gap)"가 사라진다(타일이 각자 자기
     # bbox만 클립하면 경계에서 ~1셀씩 벌어져 틈이 보임). 건물은 위에서 이미 중심점
     # 기준으로 걸러 중복이 없다 — **지형만** 겹치므로 건물 중복은 없다.
     terrain_mesh = None
+    road_mesh = None
+    sidewalk_mesh = None
+    lanes = None
+    dem = None
+    clip_5186 = None
     if layers.get("terrain"):
         from src.geometry.seating import seat_building
-        from src.geometry.terrain_mesh import build_tin
         from src.terrain.dem import clip_dem_mosaic
         from src.terrain.store import find_tiles
 
@@ -215,14 +223,66 @@ def generate_tile(
             # 넓힌 영역이 이웃 DEM 타일에 걸칠 수 있으니 find_tiles도 넓혀 다시.
             dem_tiles = find_tiles(_bbox_5186_to_4326(clip_5186))
             paths = [config.dem_tile_path(t["file"]) for t in dem_tiles]
-            dem = None
             try:
                 dem = clip_dem_mosaic(paths, clip_5186, offset)
             except Exception:  # noqa: BLE001 — 타일 열기 실패 시 지형 생략
                 dem = None
             if dem is not None and dem.z_range() is not None:
+                # 건물은 원본(버닝 전) 지면에 앉힌다 — 도로 버닝 영향 안 받게.
                 solids = [replace(s, base_z_m=seat_building(s, dem)) for s in solids]
-                terrain_mesh = build_tin(dem, config.TERRAIN_MAX_ERROR_M)
+            else:
+                dem = None
+
+    # 도로(Phase R): 이 타일(margin 포함)만 도로/보도/중심선 클립 → DEM 버닝(절토/성토). 도로는
+    # 실시간 API 없어 road_manifest GeoJSON(오프라인 굽기) 조회. z가 DEM 표고라 dem 없으면 생략.
+    road_features = None
+    sidewalk_features = None
+    centerlines = None
+    if layers.get("roads") and dem is not None and clip_5186 is not None:
+        from src.geometry.road import (
+            burn_roads,
+            clip_centerlines,
+            clip_roads,
+            clip_sidewalks,
+            drape_centerlines,
+        )
+        from src.terrain.store import find_road_file
+
+        rf = find_road_file(_bbox_5186_to_4326(clip_5186))
+        if rf is not None:
+            road_path = config.road_file_path(rf["file"])
+            road_features = clip_roads(road_path, clip_5186, offset)
+            sidewalk_features = clip_sidewalks(road_path, clip_5186, offset)
+            if road_features or sidewalk_features:
+                centerlines = clip_centerlines(road_path, clip_5186, offset)
+                if road_features and centerlines:
+                    dem = burn_roads(
+                        dem, road_features, centerlines,
+                        win_m=config.ROAD_SMOOTH_WIN_M,
+                        sample_m=config.ROAD_CL_SAMPLE_M,
+                        max_dist_m=config.ROAD_CL_MAX_DIST_M,
+                        skirt_m=config.ROAD_SKIRT_M,
+                        max_dev=config.ROAD_MAX_DEV_M,
+                    )
+                if centerlines:
+                    lanes = drape_centerlines(centerlines, dem)
+
+    # 지형·도로·보도 메시: 도로/보도 있으면 통합 삼각화(정점 공유 → 이음매·구멍·겹침 0),
+    # 없으면 일반 TIN. 버닝된 dem을 쓴다(도로에 맞게 절토/성토된 지형).
+    if dem is not None and dem.z_range() is not None:
+        if road_features or sidewalk_features:
+            from src.geometry.road import build_unified_surface
+
+            terrain_mesh, road_mesh, sidewalk_mesh = build_unified_surface(
+                dem, config.TERRAIN_MAX_ERROR_M, road_features, sidewalk_features,
+                config.ROAD_CELL_M, config.M2I,
+                centerlines=centerlines,
+                crown_pct=config.ROAD_CROWN_PCT, crown_cap=config.ROAD_CROWN_CAP_M,
+            )
+        else:
+            from src.geometry.terrain_mesh import build_tin
+
+            terrain_mesh = build_tin(dem, config.TERRAIN_MAX_ERROR_M)
 
     # 정사영상: 이 타일 영역(지형 겹침 margin 포함)만 풀해상도(zoom 18)로 → 타일 지형에 드레이프.
     ortho = None
@@ -231,11 +291,15 @@ def generate_tile(
         pad = (bbox_5186[0] - m, bbox_5186[1] - m, bbox_5186[2] + m, bbox_5186[3] + m)
         ortho = _ortho_b64(_bbox_5186_to_4326(pad), offset, config.ORTHO_ZOOM, ortho_fetch)
 
-    geometry = _build_geometry(solids, terrain_mesh, None)
+    geometry = _build_geometry(
+        solids, terrain_mesh, None,
+        roads=road_mesh, sidewalks=sidewalk_mesh, lanes=lanes,
+    )
     return {
         "ok": True,
         "geometry": geometry,
         "solids": len(solids),
         "terrain_triangles": len(terrain_mesh.triangles) if terrain_mesh else 0,
+        "road_triangles": len(road_mesh.triangles) if road_mesh else 0,
         "ortho": ortho,
     }

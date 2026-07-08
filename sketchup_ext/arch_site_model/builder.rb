@@ -13,6 +13,12 @@ module ArchSiteModel
     C_BUILDING = [70, 130, 180].freeze  # steel blue
     C_FLAGGED  = [210, 120, 60].freeze  # orange (층수 미확인)
     C_TERRAIN  = [120, 150, 90].freeze  # olive green
+    C_ROAD     = [116, 121, 127].freeze # 아스팔트 그레이 (F2 C_ROAD_FILL과 동일)
+    C_SIDEWALK = [176, 172, 160].freeze # 콘크리트 베이지그레이 (F2 C_SIDEWALK)
+    C_LANE     = [232, 200, 74].freeze  # 노랑 — 차선/중심선 마킹 (F2 C_LANE)
+
+    # 노면을 지형 바로 위로 살짝 띄우는 리프트(m) — 경계선 z-fighting 방지(src road.py ROAD_LIFT_M와 동일).
+    ROAD_LIFT_M = 0.03
 
     # 단일 조립(소반경): root 그룹 생성 + 전체 조립 + zoom. 반환: 생성된 건물 수.
     # geometry: {"buildings"=>[...], "terrain"=>{...}|nil}
@@ -45,11 +51,16 @@ module ArchSiteModel
       nil
     end
 
-    # 지형 + 건물을 주어진 entities에 조립(단일/타일 공통). 반환: 건물 수.
+    # 지형 + 도로/보도/차선 + 건물을 주어진 entities에 조립(단일/타일 공통). 반환: 건물 수.
     def self.build_into(model, parent_ents, geometry, ortho_png = nil, ortho_extent = nil)
       if geometry["terrain"]
         build_terrain(model, parent_ents, geometry["terrain"], ortho_png, ortho_extent)
       end
+      # 도로 노면(Phase R) — 지형 위에 얹는 드레이프 메시 + 차선 폴리라인. 각기 별도 태그
+      # (roads/sidewalks/lanes)라 정사영상과 함께 켜도 태그로 숨길 수 있다.
+      build_surface_mesh(model, parent_ents, geometry["roads"], "roads", C_ROAD)
+      build_surface_mesh(model, parent_ents, geometry["sidewalks"], "sidewalks", C_SIDEWALK)
+      build_lanes(model, parent_ents, geometry["lanes"])
       build_buildings(model, parent_ents, geometry["buildings"] || [])
     end
 
@@ -169,6 +180,63 @@ module ArchSiteModel
       end
     rescue StandardError => e
       puts "[ortho] drape 오류: #{e.message}"
+    end
+
+    # 도로/보도 노면(Phase R) → 지형 위 드레이프 메시. terrain과 같은 PolygonMesh 방식(소프트
+    # 엣지)이되, z를 ROAD_LIFT_M 올려 지형 경계선 z-fighting을 피한다. 색은 재질로. surf가
+    # 비었으면 조용히 생략. tag_name = "roads"|"sidewalks". (통합 표면이라 정점은 지형과 공유
+    # 위치지만 별도 그룹·메시로 온다 — 리프트로 노면이 지형 바로 위에 얹힌다.)
+    def self.build_surface_mesh(model, parent_ents, surf, tag_name, rgb)
+      return unless surf
+      verts = surf["vertices"] || []
+      tris = surf["triangles"] || []
+      return if verts.empty? || tris.empty?
+
+      grp = parent_ents.add_group
+      grp.name = tag_name
+      grp.layer = tag(model, tag_name)
+
+      lift = ROAD_LIFT_M * M2I
+      mesh = Geom::PolygonMesh.new(verts.length, tris.length)
+      idx = verts.map { |v| mesh.add_point(Geom::Point3d.new(v[0] * M2I, v[1] * M2I, v[2] * M2I + lift)) }
+      tris.each do |t|
+        a = idx[t[0]]; b = idx[t[1]]; c = idx[t[2]]
+        next if a.nil? || b.nil? || c.nil? || a == b || b == c || a == c
+        mesh.add_polygon(a, b, c)
+      end
+
+      smooth = Geom::PolygonMesh::AUTO_SOFTEN | Geom::PolygonMesh::SMOOTH_SOFT_EDGES
+      mat = material(model, "asm_#{tag_name}", rgb)
+      grp.entities.add_faces_from_mesh(mesh, smooth, mat, mat)
+      grp.entities.grep(Sketchup::Edge).each { |e| e.soft = true; e.smooth = true }
+    rescue StandardError => e
+      puts "[road] #{tag_name} 조립 오류: #{e.message}"
+    end
+
+    # 차선/중심선 마킹(Phase R3) → 노면 위 얇은 폴리라인(엣지). 노면보다 조금 더 띄워 얹는다.
+    # 엣지 material은 best-effort로 지정(모델의 "재질별 엣지색"이 켜져야 노랑; 기본 검정도 마킹으로
+    # 무해). 전역 렌더 옵션은 건드리지 않는다(건물·지형 엣지에 영향 방지). lanes 없으면 생략.
+    def self.build_lanes(model, parent_ents, lanes)
+      return unless lanes && !lanes.empty?
+      grp = parent_ents.add_group
+      grp.name = "lanes"
+      grp.layer = tag(model, "lanes")
+      lift = (ROAD_LIFT_M + 0.02) * M2I  # 노면보다 살짝 위
+      mat = material(model, "asm_lanes", C_LANE)
+      lanes.each do |line|
+        next unless line && line.length >= 2
+        pts = line.map { |p| Geom::Point3d.new(p[0] * M2I, p[1] * M2I, p[2] * M2I + lift) }
+        (0...(pts.length - 1)).each do |i|
+          begin
+            edge = grp.entities.add_line(pts[i], pts[i + 1])
+            edge.material = mat if edge && edge.respond_to?(:material=)
+          rescue StandardError
+            next
+          end
+        end
+      end
+    rescue StandardError => e
+      puts "[road] lanes 조립 오류: #{e.message}"
     end
 
     def self.build_buildings(model, parent_ents, buildings)

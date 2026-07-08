@@ -8,6 +8,11 @@ F1(웹)·F2(브라우저 뷰어)와 **같은 백엔드 `/api/generate`의 geomet
   mosaic PNG(단일) / base64 타일(타일 경로)을 반환하고, 확장이 받아 지형 면마다 `Face#position_material`로
   위→아래 **양면** 평면투영. 파이썬 쪽은 pytest로 검증됐고 UV 정합도 손검증했으나, SketchUp은 헤드리스가
   없어 개발자가 렌더를 무인 확인할 수 없다 → **실기 확인은 사용자 루프**(§7). 상세 §7.
+- **도로(구현됨 · 데스크톱 실기 렌더 검증 대기)**: `도로` 체크 시 백엔드가 지형·도로·보도를 한 번의 통합
+  삼각화로(정점 공유) 만들어 `geometry.roads/sidewalks/lanes`를 반환하고, 확장 builder가 도로(아스팔트
+  그레이)·보도(콘크리트)·차선(노랑 폴리라인)을 각각 `roads`/`sidewalks`/`lanes` 태그로 렌더한다. 단일·타일
+  경로 모두 지원. 도로는 z가 DEM 표고라 **지형 필요**(지형 없으면 조용히 생략). 도로 비축(`road_manifest`)
+  밖이면 경고와 함께 도로만 생략.
 - 대상: **SketchUp 2021+** (HtmlDialog, `Sketchup::Http`, `Geom::PolygonMesh`).
 
 **반경별 모드** (임계값 `main.rb::TILE_THRESHOLD_M`, 기본 500m):
@@ -61,7 +66,8 @@ uvicorn src.api:app --port 8000
 1. **Extensions > 대지모델 생성…** 실행.
 2. 주소·반경 입력, 지형 체크.
 3. **모델 생성** → (박힌 백엔드로) 조회 + 조립(최대 ~30초) → 지형·건물이 현재 모델에 생성됨.
-4. 결과는 태그로 분리: `terrain` / `buildings` / `buildings_unverified`(층수 미확인). 되돌리기 1회로 제거.
+4. 결과는 태그로 분리: `terrain` / `buildings` / `buildings_unverified`(층수 미확인) / (도로 시)
+   `roads` / `sidewalks` / `lanes`. 태그별로 숨김 가능. 되돌리기 1회로 제거.
 
 주소는 **지번(예: 괴정동 358)·도로명(예: 신반포로 45길71) 모두** 지원. 지형(DEM)은 현재 대전 서구
 도엽만 구워져 있어, 그 밖 지역은 **건물만** 생성되고 지형은 경고와 함께 생략된다(전국 건물 vs 대전 지형).
@@ -73,9 +79,12 @@ uvicorn src.api:app --port 8000
 ```text
 SketchUp 확장  ──HTTP POST /api/generate──▶  백엔드(FastAPI)
    (Sketchup::Http)   {address, radius_m, layers, outputs:["skp"]}
-        ◀── geometry(로컬 미터: 건물 footprint/base_z/height/flagged + 지형 verts/tris) + warnings
+        ◀── geometry(로컬 미터: 건물 footprint/base_z/height/flagged + 지형 verts/tris
+             + roads/sidewalks verts/tris + lanes 폴리라인) + warnings
    Builder: 미터→인치(×39.3701)
      - 지형: Geom::PolygonMesh → add_faces_from_mesh (소프트 엣지)
+     - 도로/보도: 지형과 같은 PolygonMesh 방식, z를 ROAD_LIFT_M(3cm) 올려 지형 위에 얹음(색=재질)
+     - 차선: 노면 위 폴리라인(엣지, 살짝 더 리프트)
      - 건물: 바닥면(홀 포함) + 벽·윗면을 PolygonMesh로 일괄 생성(add_faces_from_mesh).
              pushpull 미사용 — 밀집지(수백 동) 렉·크래시 방지(지형과 동일 대량 메쉬 방식)
      - 태그/그룹 분리 + zoom_extents
