@@ -440,6 +440,46 @@ def test_generate_include_geometry(monkeypatch):
     json.dumps(g)
 
 
+def test_generate_geometry_cadastral(monkeypatch):
+    """cadastral 레이어 + include_geometry → geometry.cadastral 링이 지형 표고로 드레이프."""
+    import json
+
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
+    )
+    _patch_synth_dem(monkeypatch)
+    out = generate(
+        "대전광역시 서구 괴정동 358",
+        layers={"buildings": True, "terrain": True, "cadastral": True},
+        client=FakeClientMulti(_daejeon_features(), _cadastral_features()),
+        include_geometry=True,
+    )
+    g = out["geometry"]
+    assert g["cadastral"], "지적 링이 있어야 함"
+    parcel = g["cadastral"][0]
+    assert {"pnu", "ring"} <= parcel.keys()
+    assert len(parcel["ring"]) >= 3
+    # 각 정점은 [x, y, z]. 지형이 있으므로 z가 표고(50~60m)로 드레이프 — 0이 아님.
+    assert all(len(v) == 3 for v in parcel["ring"])
+    assert any(v[2] != 0.0 for p in g["cadastral"] for v in p["ring"])
+    json.dumps(g)  # 직렬화 회귀 가드
+
+
+def test_generate_geometry_cadastral_none_when_not_requested(monkeypatch):
+    """cadastral 미요청 → geometry.cadastral is None (건물/지형만)."""
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
+    )
+    _patch_synth_dem(monkeypatch)
+    out = generate(
+        "대전광역시 서구 괴정동 358",
+        layers={"buildings": True, "terrain": True},
+        client=FakeClient(_daejeon_features()),
+        include_geometry=True,
+    )
+    assert out["geometry"]["cadastral"] is None
+
+
 def test_generate_geometry_omitted_by_default(monkeypatch):
     """기본(include_geometry=False)은 geometry=None — MCP 응답 비대화 방지."""
     monkeypatch.setattr(

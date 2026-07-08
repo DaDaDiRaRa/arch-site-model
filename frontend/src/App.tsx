@@ -23,6 +23,7 @@ export default function App() {
   const [radius, setRadius] = useState(250);
   const [terrain, setTerrain] = useState(true);
   const [orthophoto, setOrthophoto] = useState(true);
+  const [cadastral, setCadastral] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +41,7 @@ export default function App() {
         body: JSON.stringify({
           address,
           radius_m: radius,
-          layers: { buildings: true, terrain, orthophoto: terrain && orthophoto },
+          layers: { buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral },
           outputs: ["3dm"],
         }),
       });
@@ -115,6 +116,15 @@ export default function App() {
               />
               정사영상 텍스처
               {!terrain && <span className="text-xs text-slate-400">(지형 필요)</span>}
+            </label>
+            <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={cadastral}
+                onChange={(e) => setCadastral(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              지적(대지경계)
             </label>
           </div>
 

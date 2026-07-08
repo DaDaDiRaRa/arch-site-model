@@ -65,11 +65,14 @@ def _resolve_ortho_source():
     return VWORLD_SATELLITE, config.VWORLD_KEY, "VWorld Satellite"
 
 
-def _build_geometry(solids, terrain_mesh, ortho_info) -> dict:
+def _build_geometry(solids, terrain_mesh, ortho_info, cadastral=None, dem=None) -> dict:
     """브라우저 3D 미리보기용 경량 지오메트리 JSON (F2).
 
     모두 로컬 미터 좌표. 건물 footprint는 이미 미터, 지형 vertices는 인치(SketchUp)
     이므로 /M2I 로 미터 환산해 통일. 좌표는 cm 단위로 반올림해 응답 크기를 줄인다.
+
+    cadastral: CadastralParcel 목록(선택). dem이 있으면 각 링 정점을 DEM 표고로
+    드레이프(z)해 지형 위에 얹고, 없으면 z=0. 프론트가 LineLoop로 대지경계를 그린다.
     """
     m = config.M2I
 
@@ -98,9 +101,23 @@ def _build_geometry(solids, terrain_mesh, ortho_info) -> dict:
             "triangles": [[int(a), int(b), int(c)] for a, b, c in terrain_mesh.triangles],
         }
 
+    cadastral_out = None
+    if cadastral:
+        cadastral_out = []
+        for p in cadastral:
+            ring = p.footprint_m
+            if len(ring) < 3:
+                continue
+            if dem is not None:
+                pts = [[round(x, 2), round(y, 2), round(dem.elev_at(x, y), 2)] for x, y in ring]
+            else:
+                pts = [[round(x, 2), round(y, 2), 0.0] for x, y in ring]
+            cadastral_out.append({"pnu": p.pnu, "ring": pts})
+
     return {
         "buildings": buildings,
         "terrain": terrain,
+        "cadastral": cadastral_out,
         "ortho_extent_m": list(ortho_info["extent_local_m"]) if ortho_info else None,
     }
 
@@ -209,6 +226,7 @@ def generate(
     terrain_mesh = None
     elev_range: list[float] | None = None
     terrain_tile_file: str | None = None
+    dem = None  # 지적 드레이프(_build_geometry)에서도 재사용 — 함수 스코프로 유지
 
     if layers.get("terrain"):
         from src.geometry.seating import seat_building
@@ -228,7 +246,6 @@ def generate(
             tile_paths = [config.dem_tile_path(f) for f in tile_files]
             bbox_5186 = _bbox_4326_to_5186(bbox)
 
-            dem = None
             try:
                 dem = clip_dem_mosaic(tile_paths, bbox_5186, offset)
             except Exception as e:  # 타일 열기 실패(로컬 누락·GCS 미도달 등) → 건물만
@@ -381,7 +398,11 @@ def generate(
 
     # 브라우저 3D 미리보기용 지오메트리 JSON (F2). 로컬 미터 좌표로 통일.
     # MCP 응답 비대화 방지를 위해 include_geometry=True(웹 백엔드)일 때만 포함.
-    geometry = _build_geometry(solids, terrain_mesh, ortho_info) if include_geometry else None
+    geometry = (
+        _build_geometry(solids, terrain_mesh, ortho_info, cadastral=cadastral_parcels, dem=dem)
+        if include_geometry
+        else None
+    )
 
     return {
         "ok": True,

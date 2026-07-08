@@ -12,6 +12,7 @@ export interface SiteGeometry {
     flagged: boolean;
   }[];
   terrain: { vertices: [number, number, number][]; triangles: [number, number, number][] } | null;
+  cadastral?: { pnu: string; ring: [number, number, number][] }[] | null;
   ortho_extent_m: [number, number, number, number] | null;
 }
 
@@ -21,11 +22,14 @@ interface Props {
 }
 
 type ColorMode = "height" | "flat";
+type ViewMode = "solid" | "translucent" | "wireframe";
 
 const C_BUILDING = 0x4682b4; // steel blue (단색 모드)
 const C_FLAGGED = 0xd2783c; // orange — 층수 미확인
 const C_TERRAIN = 0x6a9a55; // olive green
 const C_EDGE = 0x27303a; // 건물 외곽선 (짙은 슬레이트)
+const C_CADASTRAL = 0xd9a441; // sandy yellow — 대지경계 (.3dm cadastral 레이어와 통일)
+const CADASTRAL_LIFT = 0.5; // 지형 위로 살짝 띄워 z-fighting 방지 (m)
 // 높이 그라디언트: 낮음(연한 스틸) → 높음(짙은 네이비). 스틸블루 정체성 유지.
 const RAMP_LO = new THREE.Color(0xa9cfe8);
 const RAMP_HI = new THREE.Color(0x1f3a5f);
@@ -36,13 +40,16 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
   const sceneRefs = useRef<{
     buildings?: THREE.Group | null;
     terrain?: THREE.Object3D | null;
+    cadastral?: THREE.Object3D | null;
     buildingMeshes: THREE.Mesh[];
     edges: THREE.LineSegments[];
     sun?: THREE.DirectionalLight;
   }>({ buildingMeshes: [], edges: [] });
   const [showBuildings, setShowBuildings] = useState(true);
   const [showTerrain, setShowTerrain] = useState(true);
+  const [showCadastral, setShowCadastral] = useState(true);
   const [colorMode, setColorMode] = useState<ColorMode>("height");
+  const [viewMode, setViewMode] = useState<ViewMode>("solid");
   const [showEdges, setShowEdges] = useState(true);
   const [showShadows, setShowShadows] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -90,8 +97,10 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
     try {
       const { group: buildings, meshes, edges } = buildBuildings(geometry.buildings, heightRange);
       const terrain = buildTerrain(geometry.terrain, orthoUrl, geometry.ortho_extent_m);
+      const cadastral = buildCadastral(geometry.cadastral);
       if (buildings) root.add(buildings);
       if (terrain) root.add(terrain);
+      if (cadastral) root.add(cadastral);
 
       root.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(root);
@@ -99,7 +108,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
       // 지형이 없으면 그림자를 받을 바닥면을 깔아 건물 그림자가 보이게 한다.
       if (!terrain && !box.isEmpty()) root.add(shadowGround(box));
 
-      sceneRefs.current = { buildings, terrain, buildingMeshes: meshes, edges, sun };
+      sceneRefs.current = { buildings, terrain, cadastral, buildingMeshes: meshes, edges, sun };
       if (!box.isEmpty()) {
         fitCamera(camera, controls, box);
         frameSunShadow(sun, box);
@@ -147,7 +156,8 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
   useEffect(() => {
     if (sceneRefs.current.buildings) sceneRefs.current.buildings.visible = showBuildings;
     if (sceneRefs.current.terrain) sceneRefs.current.terrain.visible = showTerrain;
-  }, [showBuildings, showTerrain]);
+    if (sceneRefs.current.cadastral) sceneRefs.current.cadastral.visible = showCadastral;
+  }, [showBuildings, showTerrain, showCadastral]);
 
   // 색상 모드: 높이별 그라디언트 ↔ 단색 (미확인 건물은 항상 주황)
   useEffect(() => {
@@ -158,6 +168,34 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
       mat.color.copy(colorMode === "height" && ud.rampColor ? ud.rampColor : new THREE.Color(C_BUILDING));
     }
   }, [colorMode]);
+
+  // 뷰모드: 솔리드 / 반투명 / 와이어프레임 (건물에만 적용 — 지형은 컨텍스트로 솔리드 유지)
+  useEffect(() => {
+    for (const m of sceneRefs.current.buildingMeshes) {
+      const mat = m.material as THREE.MeshStandardMaterial;
+      if (viewMode === "wireframe") {
+        mat.wireframe = true;
+        mat.transparent = false;
+        mat.opacity = 1;
+        mat.depthWrite = true;
+        mat.side = THREE.FrontSide;
+      } else if (viewMode === "translucent") {
+        // 반투명: 뒷면도 보이게 DoubleSide, depthWrite off로 겹친 매싱 투과.
+        mat.wireframe = false;
+        mat.transparent = true;
+        mat.opacity = 0.4;
+        mat.depthWrite = false;
+        mat.side = THREE.DoubleSide;
+      } else {
+        mat.wireframe = false;
+        mat.transparent = false;
+        mat.opacity = 1;
+        mat.depthWrite = true;
+        mat.side = THREE.FrontSide;
+      }
+      mat.needsUpdate = true; // side 변경은 셰이더 재컴파일 필요
+    }
+  }, [viewMode]);
 
   // 외곽선 on/off
   useEffect(() => {
@@ -171,6 +209,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
 
   const nB = geometry.buildings.length;
   const nT = geometry.terrain?.triangles.length ?? 0;
+  const nC = geometry.cadastral?.length ?? 0;
 
   return (
     <div>
@@ -185,12 +224,28 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
           지형 <span className="text-xs text-slate-400">({nT} 삼각형)</span>
         </label>
         <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={showCadastral} onChange={(e) => setShowCadastral(e.target.checked)} className="h-4 w-4" disabled={!nC} />
+          지적 <span className="text-xs text-slate-400">({nC})</span>
+        </label>
+        <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={showEdges} onChange={(e) => setShowEdges(e.target.checked)} className="h-4 w-4" />
           외곽선
         </label>
         <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={showShadows} onChange={(e) => setShowShadows(e.target.checked)} className="h-4 w-4" />
           그림자
+        </label>
+        <label className="flex items-center gap-1.5">
+          뷰
+          <select
+            value={viewMode}
+            onChange={(e) => setViewMode(e.target.value as ViewMode)}
+            className="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs text-slate-700"
+          >
+            <option value="solid">솔리드</option>
+            <option value="translucent">반투명</option>
+            <option value="wireframe">와이어</option>
+          </select>
         </label>
         <label className="flex items-center gap-1.5">
           색상
@@ -331,6 +386,26 @@ function buildTerrain(
   const mesh = new THREE.Mesh(geo, material);
   mesh.receiveShadow = true;
   return mesh;
+}
+
+// 대지경계(지적): 각 필지 외곽 링을 LineLoop로. z는 백엔드가 지형 표고로 드레이프(없으면 0).
+function buildCadastral(parcels: Props["geometry"]["cadastral"]): THREE.Group | null {
+  if (!parcels || !parcels.length) return null;
+  const g = new THREE.Group();
+  const mat = new THREE.LineBasicMaterial({ color: C_CADASTRAL });
+  for (const p of parcels) {
+    if (!p.ring || p.ring.length < 3) continue;
+    const pos = new Float32Array(p.ring.length * 3);
+    for (let i = 0; i < p.ring.length; i++) {
+      pos[3 * i] = p.ring[i][0];
+      pos[3 * i + 1] = p.ring[i][1];
+      pos[3 * i + 2] = p.ring[i][2] + CADASTRAL_LIFT;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.add(new THREE.LineLoop(geo, mat));
+  }
+  return g;
 }
 
 // 지형이 없을 때 건물 그림자를 받는 투명 바닥면(그림자만 렌더).
