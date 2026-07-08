@@ -5,6 +5,16 @@
 
 ---
 
+**구현 상태 (2026-07-08 갱신)**: Tier 1(`.3dm`)·Tier 2a(SketchUp) **모두 구현·테스트 완료**. 실제로는
+Tier 2a의 "컴패니언 `.rb` 수동 load"를 넘어 **확장 버튼 1회로 다운로드+드레이프까지 자동화**했다(단일
+`/api/generate` PNG 경로 + 대반경 `/api/generate_tile` base64 타일 경로 둘 다). 코드: `src/geo/ortho.py`,
+`pipeline.generate`, `tiles_stream._ortho_b64`, 확장 `builder.rb::drape_ortho`. 테스트: pytest 51 green
+(`test_ortho`/`test_pipeline`/`test_tiles_stream`). 남은 것은 **데스크톱 SketchUp 실기 렌더 검증뿐**(헤드리스
+없어 무인 확인 불가). 아래 §5는 착수 시점의 설계 기록으로, 실제 구현은 자동화 경로를 택했다. 사용·검증
+절차는 `docs/sketchup_extension.md` §7.
+
+---
+
 ## 0. 한 줄 결론
 
 지형 TIN에 정사영상을 자동으로 입히는 것은 **`.3dm`(Rhino) 출력으로는 완전 자동화가 지금 가능**하고

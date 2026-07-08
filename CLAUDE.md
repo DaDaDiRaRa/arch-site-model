@@ -7,107 +7,35 @@
 
 ## 다음 작업 (TODO)
 
-> 완료하면 해당 줄을 삭제한다(항상 "남은 일"만 남게 유지).
+> 완료하면 해당 줄을 삭제한다(항상 "남은 일"만 남게 유지). 완료 기능 상세는 아래 "구현 단계 현황"·모듈 구조 참조.
 
-- [ ] **전국 5m DEM 확장**: 목표 = 전국 어디 주소든 지형+건물 자동 생성. **6개 광역단체 프로덕션
-      GCS 라이브(2026-07-06) — 지역 추가는 반복 작업.** 건물·지적은 VWorld 실시간이라 이미 전국;
-      남은 건 지형(DEM)뿐. **자동/API 취득 불가 확인**: 실시간 표고 API 없음(VWorld 3D Data API 2019
-      폐쇄), VWorld WFS 169레이어에 등고선·표고점 없음, 무료 공개DEM은 90m뿐 → 지역별 1:5,000
-      수치지형도 SHP **수동 다운로드**가 유일 경로.
-      **완료**: 다중 타일 mosaic(`find_tiles`+`clip_dem_mosaic`), 배치 베이크(`bake_tiled`
-      +`--tile-km`/`--margin-m`), manifest 4모서리 엔벨로프, **좌표대 재투영**(동부원점 5187→5186 —
-      부산·대구·울산), **도엽 중복제거**(시·도 다운로드 시 경계도엽 바이트동일 복사), **거리제한 채움**
-      (`fill_dist_m` 기본 200m — 지역 경계 외삽 오염 방지: 대전 fill이 세종까지 140m로 뻗치던 버그
-      해결), **bbox 분할**(VWorld 10km²/쿼리 한도 우회 → 반경 2km+). **6개 광역단체 120타일**
-      (대전14·서울15·부산24·대구36·울산20·세종11) GCS 라이브(공개버킷 `gs://arch-site-model-dem` +
-      Cloud Run `DEM_TILE_BASE=/vsicurl/…`), 타일 git 미추적(`geo_store/*.tif` gitignore).
-      **남은 것**: (a) 추가 지역 SHP 확보(사람 손) → 폴더 경로 주면 bake→`dem_to_cog`→`gcloud storage
-      cp`는 반복, **manifest만 커밋·푸시하면 라이브**, (b) **경기권 및 기타 지역 — 나중에 추가 예정**
-      (사용자가 SHP 폴더 채워 알림 대기). 경기 화성시(`2MAP5000_SHP` 포맷, XML 메타 없음)는 기존 로직과
-      **호환 확인 완료**(등고선/표고점·CRS 5186·필드명 동일, `_sheet_key`가 `2MAP5000` bare 도엽번호
-      폴더도 dedup) — 아직 베이크 안 함, 경기권 폴더 모이면 일괄 베이크, (c) 인천·광주(자치구 개편으로
-      지오코딩 불안정 — 개편 확정 후), 울산 서부(신불산) 도엽 갭, (d) 과거 115MB 히스토리 purge(보류).
-      상세 [[nationwide-dem-ngii-source]].
-- [ ] **도로 노면 자동화 (Phase R)**: KBS 로드맵 1순위. 수치지형도 A0010000 도로경계 폴리곤 →
-      **DEM 드레이프**(표면도로는 DEM이라 이미 실제). **R1a(도로 외곽선) 완료(2026-07-08)**: 오프라인
-      `src/terrain/road_bake.py`(A0010000 폴리곤→지역 GeoJSON EPSG:5186 + `road_manifest.json`, 도엽
-      dedup·5187→5186 재투영은 contour_bake 헬퍼 재사용) → 런타임 `src/geometry/road.py::clip_roads`
-      (json+shapely, geopandas 런타임 무의존) + `store.find_road_file` → `pipeline` `layers.roads`
-      → `geometry.roads`. **R1b(노면 메시) 완료(2026-07-08)**: `road.build_road_geometry`/`_drape_polygon`
-      (경계 densify + 내부격자 → scipy Delaunay → 폴리곤 밖/구멍 삼각형 컬링 → DEM 드레이프)로 병합
-      노면 메시(vertices/triangles) + 외곽선 → `Viewer3D` 회색 면(receiveShadow)+엣지 + 앱 `도로(노면)`
-      토글 + 뷰어 `도로` 토글. **대전 실증**: 250m bbox 37폴리곤 → 정점6923·삼각형11503(0실패). cell
-      `config.ROAD_CELL_M`(기본 2.5m). `roads_*.geojson` gitignore(road_manifest.json만 추적), 서빙은
-      DEM처럼 추후 GCS. **출력 확장 완료(2026-07-08)**: RoadMesh를 F2/.3dm/.skp 3소비자 공용으로 —
-      `.3dm` `roads` 레이어(아스팔트 그레이 Mesh, `rhino._add_roads`), `.skp` 도로 그룹(`_road_literal`
-      +`_ROAD_BUILD`, 미터→인치 변환+리프트), F2 회색 면. `pipeline`이 `build_road_mesh` 1회 →
-      세 출력 공유(`stats.road_triangles`). 대전 실증: 250m 37폴리곤→11503삼각형이 .3dm roads 레이어·
-      .skp ROAD_VERTS로. **R2a(평탄화) 완료(2026-07-08)**: `road_bake`가 A0020000 중심선(LineString)도
-      지역 GeoJSON에 담고(대전 9363개), `road.clip_centerlines`+`flatten_road_mesh`가 중심선을
-      조밀화·DEM 샘플·종단 이동평균(창 `ROAD_SMOOTH_WIN_M` 40m)해 KD-트리(`scipy.cKDTree`) 최근접으로
-      노면·외곽선 정점 z를 교체 → **폭 방향 단면 평탄·종단 리플 제거**(같은 단면=같은 중심선 지점).
-      중심선 `ROAD_CL_MAX_DIST_M`(30m) 밖이면 드레이프 유지(광장 폴백). 대전 실측 거칠기 0.200→0.126
-      (−37%). **R2b 지형 버닝 완료(2026-07-08)**: `road.burn_roads`가 도로 폴리곤을 DEM 격자에
-      래스터화(`rasterio.features.rasterize`)해 **footprint 셀=중심선 평활 표고로 세팅(절토/성토)** +
-      **스커트 밴드(`ROAD_SKIRT_M` 12m, `scipy.ndimage.distance_transform_edt`)로 자연표고까지 비탈
-      블렌딩** → 지형이 도로를 뚫던/덮던 이음매 소멸. 파이프라인이 버닝 후 `build_tin`(6b 재배치)하고
-      건물은 원본 지면에 앉힘. 터널/지하(A0110020·A0090000)는 베이크에 없어 자동 제외(연속지형 개착 안 함).
-      **버닝 2정제 완료(2026-07-08)**: (1) **자기지면 ±`ROAD_MAX_DEV_M`(2m) 클램프**(각 도로셀을 그 자리
-      실제 지면 ±2m로 제한 → 종단평활이 국소 파임/솟음을 건너뛰어 도로가 6~7m씩 산처럼 솟던 것 해결,
-      실측 >3m솟음 145→2개), (2) **지형 carve**(`carve_terrain` — 도로 footprint 안 지형 삼각형 제거 →
-      적응형 TIN이 도로 위 덮던 초록 겹침 제거). 버닝 후 flatten 미적용(클램프 풀림 방지 — 도로는 버닝
-      DEM 드레이프만). **크라운(횡단구배) 완료(2026-07-08)**: `apply_crown` — 노면 정점을 중심선까지
-      수직거리 × `ROAD_CROWN_PCT`(2%)만큼 낮춰 볼록한 배수형상(`ROAD_CROWN_CAP_M` 15m 상한).
-      **교차부 블렌딩 완료(2026-07-08)**: `burn_roads`가 최근접 1개가 아니라 **k(8)-최근접 중심선의
-      거리가중 평균(IDW, 1/d²)**으로 셀 z를 정함 → 서로 다른 높이 도로 접합부의 z 계단(튐) 완화(단일
-      도로에선 수직 최근접점이 지배해 영향 미미). **R3 완료(2026-07-08)**: **보도**(A0033320 폴리곤 —
-      `road_bake`가 sw 태그로 함께 베이크, `clip_sidewalks`, 버닝 DEM 드레이프 메시, 지형 carve에 포함,
-      F2 콘크리트색 + `.3dm` `sidewalks` 레이어 + `.skp` 보도 그룹) + **차선(경량)**(A0020000 중심선을
-      노면 드레이프한 폴리라인 `drape_centerlines` → F2 노란 라인; 다차선 분리·대시는 후속). 대전
-      1085보도. **통합 표면 아키텍처 완료(2026-07-08)**: `road.build_unified_surface` — 지형·도로·보도를
-      **한 번의 Delaunay**로 삼각화(지형 DEM점[도로/보도 밖] + 도로/보도 경계·내부 샘플점 `_polygon_
-      sample_points`)한 뒤 삼각형을 중심점 재질(도로>보도>지형)로 분류 → 재색인해 (TerrainMesh, RoadMesh
-      road, RoadMesh sidewalk) 3메시로 낸다. **모든 메시가 같은 정점 위치를 공유**(대전 지형-도로 공유
-      정점 2023개)하므로 경계 100% 일치 → **검은 구멍·뜸·z-fighting·겹침이 구조적으로 불가능**. 이전
-      "두 삼각화 따로"(carve/conformed)의 근본 결함(두 독립 삼각화가 경계서 안 맞음)을 제거. z=버닝 DEM
-      +크라운. 6b가 도로/보도 있으면 unified, 없으면 build_tin. 리프트는 경계 z-fighting 방지 소량
-      (3cm). `carve_terrain`/`build_terrain_conformed`는 폴백·API로 유지. **남은 것**: 보도가 도로
-      폴리곤과 겹치는 구간은 도로우선이라 콘크리트색 축소(색만, 구멍 아님), 차선 정교화, 타일경로 도로.
-      입체(고가/교량/지하/터널 A0070000/A0090000/A0110020)는 `구분` 필드로 분류: 고가/교량 데크=T0
-      휴리스틱(abutment+통과높이), 지하/터널=생략/포털, 복층3+=자동 QA 플래그. 계획
-      `docs/road_surface_plan.md`.
-- [ ] **DEM/DSM 이원화(데크 실측 realism) — 블로커**: 원리 = 지면 DEM, 공중 구조물 DSM. 고가/교량
-      데크 실측높이·경사 + 건물높이 누락 보정 + 계단현상 해소까지 가능하나, **고해상도 DSM이 민간
-      취득 불가**(2026-07-08 확정): NGII 라이다=공문/기관 한정, 지자체 DSM=₩10M+"민간 제공 불가",
-      무료 글로벌=30m라 데크·건물에 무용. → **T0 휴리스틱으로 도로 착수**, DSM은 **기관 접근/데이터
-      협약 생기면 승격**(정사영상·setback과 같은 블로커 대기). 상세 `docs/dem_dsm_strategy.md`.
-- [ ] **Phase B — SketchUp 확장(.rbz)**: `sketchup_ext/`. **B1(지형+건물, 텍스처 없음) 데스크톱
-      검증 완료(2026-07-07)** — 신반포 150/250m에서 크래시 없이 깨끗한 면 렌더 확인. 건물은 **실제
-      면**(벽=수직 쿼드·윗면=n각형, `add_face`; pushpull·삼각메쉬 아님 → 밀집지 렉/크래시 해결).
-      **대반경(>500m) 타일 순차조립 추가**: `main.rb`가 `/api/tile_plan`→타일별 `/api/generate_tile`
-      순차 fetch+조립(진행바+취소, `Builder.build_tile`). **지형 LOD 완료(2026-07-07)**: 적응형
-      TIN(`adaptive_tin`)로 삼각형 86% 감소(25cm 정확도 보장) → 넓은 반경 최종 모델도 가벼움.
-      **남은 것: (a) 사용자 1~2km 타일모드 실기 테스트**(작성→테스트 루프. 1km 이음매 없이 완료
-      확인됨 2026-07-07), **(b) B2 정사영상 텍스처 드레이프**
-      (`Face#position_material` 평면투영). 상세 `docs/sketchup_extension.md`,
-      KBS 대조·로드맵 `docs/kbs_topomap_reference.md`, 텍스처 `docs/orthophoto_texture_plan.md` §5.
-- [ ] **F2 뷰어 색상·표현 개선(폴리시)**: **1차 개선 완료(2026-07-08)** — `Viewer3D.tsx`에
-      **높이별 색상 그라디언트**(연한 스틸→짙은 네이비, 미확인=주황 유지, 범례 + 높이별/단색 토글),
-      **건물 외곽선**(EdgesGeometry, thresholdAngle 20° — 밀집지 건물 구분, on/off), **그림자**
-      (PCFSoft shadow map, 태양 프레이밍, 지형 수광 + 지형 없을 때 ShadowMaterial 바닥면, on/off),
-      **하늘 그라디언트 배경 + 조명 튜닝**, **뷰모드**(솔리드/반투명/와이어프레임 — 건물에만, 지형은
-      솔리드 유지), **지적 경계 표시**(백엔드 `_build_geometry`가 cadastral 링을 DEM 표고로 드레이프해
-      z 포함 → 프론트 LineLoop, 앱에 `지적(대지경계)` 요청 토글 + 뷰어 `지적` 표시 토글) 추가.
-      **남은 것**: SSAO. 우선순위 낮음(동작 우선). 데스크톱 브라우저 실기 확인은 사용자 몫(빌드·타입체크
-      ·pytest 236개 통과).
-- [ ] **지형 계단현상 — 격자 솔버로 완전제거(선택)**: 1차 개선 완료(guarded CloughTocher,
-      quant 25.2→22.3%·flat 55.2→48.5%, 무인공물·봉우리 보존 — 2026-07-02 승격). 남은 건 **부분 개선**
-      한계 돌파: 라플라스 harmonic 인필 또는 ANUDEM류 반복 격자 솔버(등고선 셀 고정 → 최대원리로
-      오버슈트 없이 사이 매끔). 구현·런타임 비용 큼. 필요성 낮으면 skip 가능. `contour_bake.py`.
-- [ ] **NGII 정사영상 소스**(보류): 서버사이드 접근 막힘(브라우저 전용 키 정황) + EPSG:5179 타일
-      구현 필요. 규격은 [[orthophoto-texture-blocker]] 메모리에 저장됨. 키 서버사이드 접근이
-      풀리면 5179 `TileSource` 추가만 하면 됨.
-- [ ] **이격면(setback) 실연동**(블로커): arch-law-diagnose가 좁은 API 계약 노출할 때까지 보류.
+- [ ] **전국 5m DEM 확장**: 6개 광역단체(대전·서울·부산·대구·울산·세종 120타일) GCS 라이브. 건물·지적은
+      VWorld 실시간이라 이미 전국이고 남은 건 지형(DEM)뿐. 지역 추가 = 1:5,000 수치지형도 SHP 폴더
+      확보(사람 손) → `bake_tiled`→`dem_to_cog`→`gcloud storage cp`→`manifest.json` 커밋(반복). 경기권
+      등 대기(사용자가 SHP 폴더 채워 알림). 경기 화성(`2MAP5000_SHP`)은 로직 호환 확인됨. 인천·광주는
+      자치구 개편 확정 후. 상세 [[nationwide-dem-ngii-source]].
+- [ ] **도로 Phase R 후속(선택)**: 도로·보도·차선 + **통합 표면**(지형·도로·보도를 한 삼각화로 → 정점
+      공유, 이음매·구멍·뜸 구조적 제거) **완료**. 남은 정교화 — 차선 다차선·대시(A0020000 `폭원`/`차선수`),
+      보도 표현 강화(도로 겹침 구간은 도로우선이라 콘크리트색 축소), 도로 경계 샤프닝, 대반경 타일경로
+      (`generate_tile`)에 도로 추가. 입체 데크(고가/교량 A0070000/A0090000/A0110020)는 DSM 블로커 —
+      `구분` 필드로 분류만 됨(고가=T0 휴리스틱, 지하/터널=생략, 복층=QA 플래그). 상세 `docs/road_surface_plan.md`.
+- [ ] **DEM/DSM 이원화(고가/교량 데크 실측) — 블로커**: 지면=DEM, 공중 구조물=DSM 원리는 유효하나
+      고해상도 DSM 민간 취득 불가(2026-07-08 확정: NGII 라이다=공문/기관 한정, 지자체 DSM=₩10M+"민간
+      제공 불가", 무료 글로벌=30m라 데크·건물에 무용). 기관 접근/데이터 협약 생기면 승격(정사영상·setback과
+      같은 블로커 대기). 상세 `docs/dem_dsm_strategy.md`, [[dsm-acquisition-blocker]].
+- [ ] **Phase B — SketchUp 확장(.rbz)**: B1(지형+건물)·대반경 타일 순차조립·지형 LOD·**B2 정사영상
+      드레이프**(단일+타일 경로 모두, `Face#position_material` 위→아래 평면투영·양면) 모두 **코드 완성·테스트
+      통과**(pytest 51 green: ortho/pipeline/tiles_stream, UV 정합 손검증 완료, .rbz 최신 재빌드). 남은 건
+      **데스크톱 실기 렌더 검증뿐**(헤드리스 없어 개발자 무인 확인 불가 — 사용자 루프): (a) 1~2km 타일모드
+      실기 테스트(1km 이음매 없이 검증됨), (b) B2 정사영상이 지형에 실제로 입혀지는지 SketchUp에서 확인
+      (Ruby Console `[ortho]` 로그가 실패 원인 출력). 상세 `docs/sketchup_extension.md`.
+- [ ] **F2 뷰어 — SSAO(선택)**: 높이별 색 그라디언트·건물 외곽선·그림자·뷰모드(솔리드/반투명/와이어)·지적
+      경계·도로/보도/차선 표시 완료. 남은 건 SSAO뿐(우선순위 낮음, 동작 우선).
+- [ ] **지형 계단현상 격자 솔버(선택)**: guarded CloughTocher 1차 개선 완료(quant 25.2→22.3%). 완전제거는
+      라플라스 harmonic 인필/ANUDEM류 반복 격자 솔버(구현·런타임 비용 큼, 필요성 낮으면 skip). `contour_bake.py`.
+- [ ] **NGII 정사영상 소스**(보류): 서버사이드 키 접근 막힘(브라우저 전용 키 정황) + EPSG:5179 타일 구현
+      필요. 키 서버사이드 접근이 풀리면 5179 `TileSource` 추가만. [[orthophoto-texture-blocker]].
+- [ ] **이격면(setback) 실연동**(블로커): arch-law-diagnose가 좁은 API 계약(이격만 반환) 노출할 때까지 보류.
 
 ---
 
@@ -205,24 +133,28 @@ src/
     ortho.py             정사영상 WMTS 타일수학 + TileSource + 모자이크(재투영→PNG, Tier 1)
   geometry/
     building.py          LT_C_SPBD features → BuildingSolid (쿼드 솔리드, 홀 포함)
-    terrain_mesh.py      DEMPatch → TerrainMesh (TIN 삼각망, Phase 3B). grid_to_tin(균일) + adaptive_tin(오차 한계 적응형, scipy greedy insertion) + build_tin(디스패처, config.TERRAIN_MAX_ERROR_M)
+    terrain_mesh.py      DEMPatch → TerrainMesh (TIN 삼각망, Phase 3B). grid_to_tin(균일) + adaptive_tin(오차 한계 적응형, scipy greedy insertion) + adaptive_select/pixel_to_local_m(통합표면용 분리) + build_tin(디스패처, config.TERRAIN_MAX_ERROR_M)
     seating.py           BuildingSolid + DEMPatch → base_z 앉힘 (Phase 3B)
     cadastral.py         LP_PA_CBND_BUBUN features → CadastralParcel (Phase 5)
+    road.py              도로/보도 런타임 (Phase R). clip_roads/clip_sidewalks/clip_centerlines(GeoJSON→로컬미터, json+shapely) + burn_roads(도로를 DEM에 소각: footprint 절토/성토·스커트·IDW교차블렌딩·자기지면 클램프) + build_unified_surface(★지형·도로·보도를 1번 Delaunay로 삼각화→재질별 3메시, 정점공유로 이음매0) + apply_crown/drape_centerlines(차선) + build_road_mesh/carve_terrain/build_terrain_conformed(폴백·구버전)
   output/
-    skp_mcp.py           BuildingSolid(+TerrainMesh+CadastralParcel) → SketchUp MCP 코드 문자열
-    rhino.py             BuildingSolid(+TerrainMesh+CadastralParcel) → .3dm (Phase 4)
+    skp_mcp.py           BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk) → SketchUp MCP 코드 문자열
+    rhino.py             BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk) → .3dm (Phase 4-R)
   terrain/
-    store.py             manifest.json 조회 (find_tiles 겹치는 타일 전부·고해상도 우선 / find_tile 대표 1개)
+    store.py             manifest.json/road_manifest.json 조회 (find_tiles/find_road_file)
     contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A) + bake_tiled(대용량 지역 타일 배치) + 좌표대 재투영(5187→5186)·도엽 중복제거·거리제한 채움(fill_dist_m)
+    road_bake.py         수치지도 A0010000 도로경계·A0020000 중심선·A0033320 보도 SHP → 지역 GeoJSON(EPSG:5186) 오프라인 굽기 (Phase R) + road_manifest.json 갱신 (contour_bake 헬퍼 재사용)
     dem.py               DEM 타일 클립 + 표고 보간 (Phase 3B) + clip_dem_mosaic(다중 타일 rasterio.merge 병합)
 
 geo_store/
-  manifest.json          비축 DEM 타일 목록
-  dem_*.tif              GeoTIFF DEM 파일 (EPSG:5186)
+  manifest.json          비축 DEM 타일 목록 (git 추적)
+  road_manifest.json     비축 도로 GeoJSON 지역 목록 (git 추적)
+  dem_*.tif              GeoTIFF DEM 파일 (EPSG:5186, gitignore — GCS 서빙)
+  roads_*.geojson        도로/보도/중심선 지역 벡터 (EPSG:5186, gitignore — road_bake 생성)
 
 frontend/                React + Vite + Tailwind 웹 UI (주소 입력 → /api/generate 호출 → .3dm/정사영상 다운로드)
   src/App.tsx            메인 폼·결과 화면
-  src/Viewer3D.tsx       브라우저 3D 미리보기 (three.js — geometry JSON을 지형 mesh+건물 돌출로 렌더, 정사영상 드레이프) [F2]
+  src/Viewer3D.tsx       브라우저 3D 미리보기 (three.js — 지형 mesh+건물 돌출+정사영상 드레이프 + 지적/도로/보도/차선 + 높이색 그라디언트·외곽선·그림자·뷰모드·레이어 토글) [F2]
   dist/                  빌드 산출물 (FastAPI가 루트에서 서빙)
 
 sketchup_ext/            SketchUp 확장(.rbz) — 주소→백엔드 geometry JSON→SketchUp 조립 (Phase B) [B1: 지형+건물]
@@ -235,6 +167,8 @@ docs/
   orthophoto_texture_plan.md  정사영상 텍스처 계획 (Tier 1 완료, Tier 2a .skp 드레이프)
   sketchup_extension.md  SketchUp 확장 설치·사용·개발 가이드 (Phase B)
   kbs_topomap_reference.md  KBS TopoMap(원본 수동 워크플로우) 기능 대조표 + 무인화 로드맵 (도로/수계/자동QA)
+  road_surface_plan.md   도로 노면 자동화 (Phase R) 설계·진행 — R1~R3 + 통합 표면, KBS 대조, 한계
+  dem_dsm_strategy.md    DEM+DSM 이원화 전략 (지면=DEM, 공중 구조물=DSM) — DSM 취득 블로커 확정
 
 Dockerfile               프론트 빌드 + 파이썬 런타임 단일 이미지 (Cloud Run 배포)
 .github/workflows/deploy.yml  main push 시 pytest → Cloud Run 자동 배포
@@ -302,7 +236,9 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 - 응답: `outputs.3dm.orthophoto = {image_path, missing_tiles, zoom}`, `geometry.ortho_extent_m`,
   `files.ortho_png`, `provenance.orthophoto_src`(출처표시용) + `orthophoto_zoom`.
 - 조용한 fallback: 키 없음/지형 미생성/타일 초과·실패 시 `warnings` 추가 후 건물·지형만 생성.
-- 대반경 타일 경로(`/api/generate_tile`)의 정사영상은 미착수(Phase 2). 상세 `docs/orthophoto_texture_plan.md`.
+- 대반경 타일 경로(`/api/generate_tile`)도 정사영상 **구현됨**: 타일마다 자기 영역만 풀해상도(zoom 18)로
+  만들어 `ortho={extent_local_m, image_b64(base64 PNG)}`로 반환(`tiles_stream._ortho_b64`) → 확장이 타일
+  지형에 드레이프. 타일별 자기 이미지라 단발과 같은 선명도. 상세 `docs/orthophoto_texture_plan.md`.
 
 ### `generate_site_tiles(address, radius_m=500, tile_size_m=200.0, floor_height_m, layers, missing_floors_policy)`
 
@@ -454,10 +390,15 @@ result = generate_site_model(
 | 확장2 | `preview_site` — 건물 목록·규모 미리보기 (생성 없음) | ✅ 완료 |
 | 확장3 | 이격면(setback) 실연동 — arch-law-diagnose | 🚧 블로커 (아래 참고) |
 | 확장4 | `generate_site_tiles` — 대량건물 타일분할 | ✅ 완료 |
-| 확장5 | 정사영상 텍스처 — 지형 TIN 드레이프 (.3dm=Rhino, .skp=데스크톱 확장 B2) | ✅ .3dm+.skp단일 (타일경로 Phase 2) |
+| 확장5 | 정사영상 텍스처 — 지형 TIN 드레이프 (.3dm=Rhino, .skp=데스크톱 확장 B2, 단일+타일 경로) | ✅ 코드완성·테스트 (데스크톱 실기 렌더 검증 대기) |
 | 확장6 | 전국 DEM 확장 — 다중 타일 mosaic(`find_tiles`/`clip_dem_mosaic`) + 배치 베이크(`bake_tiled`) + GCS COG 서빙(`/vsicurl`) | ✅ 프로덕션 (지역 추가는 반복) |
 | 확장7 | 지형 LOD — 오차 한계 적응형 TIN(`adaptive_tin`, scipy greedy insertion, 삼각형 86%↓·25cm) | ✅ 완료 |
 | 확장8 | 대반경 타일 순차조립 — `/api/tile_plan`+`/api/generate_tile`, 확장이 타일별 fetch+조립(진행바/취소), 이음매 겹침 | ✅ 완료 (1km 검증, 2km 대기) |
+| F2 | 뷰어 표현 — 높이별 색·건물 외곽선·그림자·뷰모드·지적/도로/보도/차선 표시·레이어 토글 | ✅ 완료 (SSAO만 선택 잔여) |
+| R1 | 도로 노면 — A0010000 폴리곤 → DEM 드레이프 메시(외곽선+면) → F2/.3dm/.skp 3출력 | ✅ 완료 |
+| R2 | 도로 지형정합 — 버닝(절토/성토·스커트·IDW 교차블렌딩·자기지면 클램프) + 크라운(횡단구배) | ✅ 완료 |
+| R3 | 보도(A0033320)·차선(A0020000 중심선 경량 마킹) | ✅ 완료 (차선 다차선은 후속) |
+| R★ | 통합 표면 — 지형·도로·보도를 1번 Delaunay로(정점 공유) → 이음매·구멍·뜸·z-fighting 구조적 제거 | ✅ 완료 |
 
 ---
 

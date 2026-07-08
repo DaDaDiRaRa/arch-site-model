@@ -3,8 +3,11 @@
 주소를 입력하면 백엔드에서 지형·건물을 받아 **데스크톱 SketchUp 안에서 직접 조립**하는 Ruby 확장.
 F1(웹)·F2(브라우저 뷰어)와 **같은 백엔드 `/api/generate`의 geometry JSON을 재사용**한다.
 
-- **B1(현재)**: 지형(TIN mesh) + 건물(실제 면: 벽=쿼드·윗면=n각형) 조립. 텍스처 없음(단색).
-- **B2(예정)**: 정사영상 텍스처 드레이프(`Face#position_material`).
+- **B1**: 지형(TIN mesh) + 건물(실제 면: 벽=쿼드·윗면=n각형) 조립. 단색.
+- **B2(구현됨 · 데스크톱 실기 렌더 검증 대기)**: 정사영상 텍스처 드레이프. `정사영상` 체크 시 백엔드가
+  mosaic PNG(단일) / base64 타일(타일 경로)을 반환하고, 확장이 받아 지형 면마다 `Face#position_material`로
+  위→아래 **양면** 평면투영. 파이썬 쪽은 pytest로 검증됐고 UV 정합도 손검증했으나, SketchUp은 헤드리스가
+  없어 개발자가 렌더를 무인 확인할 수 없다 → **실기 확인은 사용자 루프**(§7). 상세 §7.
 - 대상: **SketchUp 2021+** (HtmlDialog, `Sketchup::Http`, `Geom::PolygonMesh`).
 
 **반경별 모드** (임계값 `main.rb::TILE_THRESHOLD_M`, 기본 500m):
@@ -97,13 +100,34 @@ SketchUp 확장  ──HTTP POST /api/generate──▶  백엔드(FastAPI)
   - 헤드리스 SketchUp이 없어 개발자가 무인 검증 불가 → 설치·실행은 사용자 테스트 루프.
   - 지형 삼각형이 많으면(큰 반경) SketchUp이 느려질 수 있음.
   - 배포 백엔드에 인증(토큰/IAP)을 붙이면 확장도 헤더 인증을 추가해야 함(B1 미구현).
-  - 텍스처는 B2에서. 현재는 단색.
+  - 텍스처(B2)는 구현됨 — `정사영상` 체크 시 자동 드레이프. 미체크면 단색(B1).
 
 ---
 
-## 7. 다음 (B2 — 텍스처)
+## 7. B2 — 정사영상 텍스처 드레이프 (구현됨 · 실기 검증 대기)
 
-`layers.orthophoto=true` + `outputs=["3dm"]`로 호출하면 백엔드가 정사영상 PNG를 만들고
-`files.ortho_png` URL + `geometry.ortho_extent_m`를 반환한다. 확장이 PNG를 다운로드해
-`model.materials.add` + `material.texture=` 후 지형 면에 `Face#position_material`로 위→아래
-평면 투영. 상세 설계: `docs/orthophoto_texture_plan.md` §5(Tier 2a).
+`정사영상` 체크 시 두 경로 모두 자동으로 지형에 위성사진을 드레이프한다. 원래 계획(Tier 2a: 컴패니언
+`.rb` 수동 load)을 넘어서 **버튼 1회로 다운로드+드레이프까지 자동**이다.
+
+**단일 조립(≤500m)** — `api_client.rb::generate`가 `layers.orthophoto=true`로 호출 → 백엔드가 출력
+포맷과 무관하게 mosaic PNG를 잡 폴더에 만들고 `files.ortho_png`(다운로드 URL) + `geometry.ortho_extent_m`
+(로컬 미터 extent)을 반환 → `main.rb`가 `download_binary`로 PNG를 받아 temp에 쓰고 `Builder.build`에 전달.
+
+**타일 조립(>500m)** — `generate_tile`이 타일마다 자기 영역만 풀해상도(zoom 18)로 만들어
+`ortho={extent_local_m, image_b64}`(base64 PNG)로 반환(`tiles_stream._ortho_b64`) → `main.rb`가
+디코드해 temp PNG로 쓰고 그 타일 지형에 드레이프. 타일별 자기 이미지라 단발과 같은 선명도.
+
+**드레이프(`builder.rb::drape_ortho`)** — `model.materials.add` + `material.texture=` 후 지형 삼각형마다
+`Face#position_material(mat, [pt,uv]×3, front/back)`로 **양면** 위→아래 평면투영. UV = `(x-x0)/dx,
+(y-y0)/dy` (extent 로컬 미터로 정규화, Z는 UV 무영향 = 정사영상 특성). 드레이프 후 `rendering_options["Texture"]=true`로
+"텍스처 표시 음영" 자동 전환. 실패 면은 조용히 건너뛴다.
+
+**남은 것 = 데스크톱 실기 렌더 검증**(헤드리스 없어 개발자 무인 확인 불가):
+
+1. 루트에서 백엔드 실행(`VWORLD_KEY` 필요 — 정사영상이 이 키 재사용): `uvicorn src.api:app --port 8000`
+2. 최신 `.rbz` 설치 후 SketchUp 완전 재시작.
+3. 주소·반경 입력, **지형✓ 정사영상✓** → 생성.
+4. **Window ▸ Ruby Console**에서 `[ortho] backend:` / `다운로드: NNNN B` / `드레이프 실패 면 0/…` 로그로 실패 원인 확인.
+5. 위성사진이 지형에 입혀지고 텍스처 뷰로 전환되면 성공.
+
+상세 설계 배경: `docs/orthophoto_texture_plan.md` §5(Tier 2a).

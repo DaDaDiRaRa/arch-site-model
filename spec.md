@@ -132,6 +132,15 @@ geo_store/
 현재 비축: 6개 광역단체 120타일(10km 격자, 5m 해상도) — 대전 14·서울 15·부산 24·대구 36·
 울산 20·세종 11. 공개 GCS `gs://arch-site-model-dem`(asia-northeast3, `/vsicurl` 서빙).
 
+### 2.5 도로·보도 (오프라인 비축, Phase R)
+
+DEM과 동일 사정(실시간 API 없음, 로컬 SHP뿐) — 수치지도 A계열을 오프라인으로 지역 GeoJSON에 굽는다
+(`src/terrain/road_bake.py`). 도로경계 `A0010000`(폴리곤, 노면), 도로중심선 `A0020000`(라인, 평탄화 척추
++`폭원`/`차선수`), 보도 `A0033320`(폴리곤). 한 FeatureCollection에 도로(properties {})·중심선({"cl":1})·
+보도({"sw":1})로 담고 `road_manifest.json`에 등록. 좌표계·도엽 dedup·5187→5186 재투영은 contour_bake
+헬퍼 재사용. `road_manifest.json`만 git 추적, `roads_*.geojson`은 gitignore(DEM 타일과 동일 원칙, 서빙 추후).
+입체(고가/교량 A0070000, 지하차도 A0090000, 터널 A0110020)는 미베이크 → 통합 표면에서 자동 제외.
+
 ---
 
 ## 3. MCP 도구 계약
@@ -178,6 +187,7 @@ geo_store/
 | `{"buildings": true}` | 건물 매싱만 |
 | `{"buildings": true, "terrain": true}` | 지형 TIN + 건물 앉힘 |
 | `{"buildings": true, "cadastral": true}` | 건물 + 대지 경계 폴리곤 |
+| `{..., "terrain": true, "roads": true}` | 도로 노면(A0010000)·보도(A0033320)·차선(A0020000) 추가. 지형 있으면 **통합 표면**(§5.6). 도로 벡터 비축(`road_manifest.json`) 필요 — 없으면 조용한 fallback |
 | `{..., "terrain": true, "orthophoto": true}` | 지형에 정사영상 텍스처 드레이프. `.3dm`은 비트맵 UV 직접, 웹/데스크톱 확장은 `files.ortho_png` PNG를 받아 드레이프(§3.2 추가 필드) |
 
 **missing_floors_policy:**
@@ -406,6 +416,27 @@ class CadastralParcel:
 
 MultiPolygon → 가장 큰 외곽 링만. shapely 파싱 오류(꼭짓점 < 4) → 건너뜀.
 
+### 5.6 도로·보도·차선 + 통합 표면 (Phase R)
+
+도로 벡터는 실시간 API가 없어(로컬 SHP뿐) 지형 DEM처럼 **오프라인 비축**한다 — `src/terrain/road_bake.py`
+가 수치지도 A0010000(도로경계 폴리곤)·A0020000(중심선)·A0033320(보도)을 지역 GeoJSON(EPSG:5186)으로
+굽고 `road_manifest.json`에 등록. 런타임(`src/geometry/road.py`)은 json+shapely로 bbox 클립한다.
+
+파이프라인(`layers.roads`, 지형 있을 때):
+
+1. **버닝** `burn_roads` — 도로 폴리곤을 DEM 격자에 래스터화해 **footprint 셀 = 중심선 종단 평활 표고**로
+   세팅(지형 절토/성토), footprint 밖 `ROAD_SKIRT_M` 밴드는 자연표고로 선형 블렌딩(비탈). 셀 z는 k-최근접
+   중심선 **IDW**(교차부 계단 완화), **자기지면 ±`ROAD_MAX_DEV_M`(2m) 클램프**(종단평활 과다로 도로가
+   솟는 것 방지). 터널/지하(A0110020·A0090000)는 미베이크라 자동 제외.
+2. **통합 표면** `build_unified_surface` — 지형 DEM 점(도로/보도 밖) + 도로/보도 경계·내부 샘플점을
+   **한 번의 Delaunay**로 삼각화 → 삼각형을 중심점 재질(도로>보도>지형)로 분류 → 재색인해 (TerrainMesh,
+   RoadMesh road, RoadMesh sidewalk) **3메시로 분리**. 모든 메시가 **같은 정점 위치를 공유**하므로
+   경계 100% 일치 → 이음매·구멍·뜸·z-fighting이 구조적으로 불가능. 도로 정점엔 크라운(횡단구배
+   `ROAD_CROWN_PCT` 2%) 적용. 차선은 중심선을 노면 드레이프한 폴리라인(경량 마킹).
+
+(지형 없음/DEM 없음이면 도로·보도는 개별 드레이프 메시로 폴백. `carve_terrain`/`build_terrain_conformed`는
+통합표면 이전 세대의 폴백·API로 유지.)
+
 ---
 
 ## 6. 출력 포맷
@@ -422,7 +453,7 @@ MultiPolygon → 가장 큰 외곽 링만. shapely 파싱 오류(꼭짓점 < 4) 
 ### 6.2 Rhino 3D (.3dm)
 
 `src/output/rhino.py` —
-`write_3dm(solids, terrain, path, offset, cadastral=None, ortho_image=None, ortho_extent_m=None) -> str`
+`write_3dm(solids, terrain, path, offset, cadastral=None, roads=None, sidewalks=None, ortho_image=None, ortho_extent_m=None) -> str`
 
 | 레이어 | 색상 | 객체 타입 |
 |---|---|---|
@@ -430,6 +461,8 @@ MultiPolygon → 가장 큰 외곽 링만. shapely 파싱 오류(꼭짓점 < 4) 
 | `buildings_unverified` | orange | `rhino3dm.Extrusion` (policy=flag 시) |
 | `terrain` | olive green | `rhino3dm.Mesh` (정사영상 시 planar UV + 비트맵 텍스처 머티리얼) |
 | `cadastral` | sandy yellow | `rhino3dm.PolylineCurve` at Z=0 |
+| `roads` | asphalt gray | `rhino3dm.Mesh` (도로 노면, Phase R) |
+| `sidewalks` | concrete beige | `rhino3dm.Mesh` (보도, Phase R) |
 
 - origin_offset: `model.Strings["origin_offset_x/y"]` + 각 객체 `SetUserString` 이중 기록
 - 좌표계: 로컬 미터 (SketchUp 인치 변환 없음)
@@ -452,7 +485,8 @@ generate(address, radius_m, floor_h_m, outputs, layers, output_dir,
               DEM_TILE_BASE로 로컬/GCS) → grid_to_tin (layers.terrain 시)
 5. 건물 앉힘   seat_building (min-vertex, 지형 활성 시)
 6. 지적 취득   LP_PA_CBND_BUBUN → features_to_parcels (layers.cadastral 시)
-6.5 정사영상   ortho.build_mosaic (layers.orthophoto + outputs=3dm 시) → PNG + 로컬 범위
+6.5 정사영상   ortho.build_mosaic (layers.orthophoto 시, 출력 포맷 무관 — .3dm은 텍스처로,
+              데스크톱 확장은 files.ortho_png로 소비) → PNG + 로컬 범위(ortho_extent_m)
 7. SKP 코드 생성  build_skp_code(solids, terrain, cadastral)
 8. .3dm 저장  write_3dm(solids, terrain, path, offset, cadastral, ortho_image, ortho_extent_m)
 9. geometry JSON  _build_geometry(solids, terrain, ortho) (include_geometry=True 시 — 웹/확장용)
@@ -527,13 +561,17 @@ src/
 | 확장5 | 정사영상 텍스처 Tier 1 — 지형 planar UV 드레이프 (.3dm) | ✅ |
 | 웹앱 | FastAPI 백엔드 + React UI + 브라우저 3D 미리보기(F2) + Cloud Run 배포 | ✅ |
 | 확장(Phase B1) | SketchUp `.rbz` — 지형+건물 조립(건물=실제 face) | ✅ |
-| 확장(Phase B2) | SketchUp 확장 정사영상 드레이프(PNG→position_material, 양면·Shaded 자동전환) | ✅ (타일별 정사영상은 예정) |
+| 확장(Phase B2) | SketchUp 확장 정사영상 드레이프(PNG→position_material, 양면·Shaded 자동전환, 단발+타일별) | ✅ 코드 (데스크톱 실기 렌더 검증 대기) |
 | 지형 LOD | 적응형 error-bounded TIN(scipy) — 25cm에서 삼각형 ~86%↓ | ✅ |
 | 대반경 조립 | `tiles_stream`(tile_plan/generate_tile) — 확장 타일 순차조립(>500m, 1km 검증) | ✅ |
 | 지형 개선 | 계단현상 완화 — guarded CloughTocher 재bake | ✅ |
 | geocode | 지번+도로명(PARCEL→ROAD) 지원 | ✅ |
 | 전국 DEM 확장 | 다중 타일 mosaic + 배치 베이크(bake_tiled) + GCS COG 서빙(/vsicurl) | ✅ 프로덕션 |
 | 전국 DEM(다지역) | 6개 광역단체 120타일 + 좌표대 재투영(5187→5186) + 도엽 중복제거 + 거리제한 채움 + bbox 분할(반경 2km+) | ✅ 프로덕션 |
+| F2 뷰어 표현 | 높이별 색·건물 외곽선·그림자·뷰모드·지적/도로/보도/차선·레이어 토글 (SSAO만 잔여) | ✅ |
+| 도로 R1~R3 (Phase R) | 도로 노면(A0010000)·보도(A0033320)·차선(A0020000) → F2/.3dm/.skp. 지형정합=버닝(절토/성토·스커트·IDW·클램프)+크라운 | ✅ |
+| 통합 표면 | 지형·도로·보도를 1번 Delaunay(정점 공유) → 이음매·구멍·뜸·z-fighting 구조적 제거 | ✅ |
+| DEM/DSM 이원화 | 지면=DEM, 공중 구조물=DSM 원리(고가/교량 데크 실측). 고해상도 DSM 민간 취득 불가 | 🚧 블로커 |
 
 ---
 
@@ -543,7 +581,7 @@ src/
 |---|---|---|
 | 이격면 실연동 | arch-law-diagnose 조닝 파라미터 → 이격 오프셋 | 🚧 블로커: arch-law-diagnose가 REST-only + 설계 프로그램 입력을 요구, 좁은 API 계약 없음 (§9 확장3 참고) |
 | 정사영상 Tier 2a | SketchUp 데스크톱 확장 정사영상 드레이프 (`Face#position_material`) | ✅ (Phase B2) — `docs/orthophoto_texture_plan.md` §5 |
-| 정사영상 타일 | 대반경 타일별(per-tile) 정사영상 드레이프 | 미착수 (Phase 2) |
+| 정사영상 타일 | 대반경 타일별(per-tile) 정사영상 드레이프 | ✅ `tiles_stream._ortho_b64`(타일마다 zoom 18 base64) → 확장 드레이프 (test_generate_tile_orthophoto) |
 | NGII 정사영상 소스 | VWorld → NGII(공공누리 1유형) 전환 | 보류: 서버사이드 키 접근 + EPSG:5179 타일 구현 필요 |
 | 지형 계단현상 완전제거 | 라플라스 harmonic 인필/ANUDEM류 격자 솔버 | 선택: 1차(guarded CloughTocher) 완료, 부분개선 한계 돌파용 |
 
