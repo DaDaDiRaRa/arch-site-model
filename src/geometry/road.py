@@ -14,6 +14,37 @@ from pathlib import Path
 
 from shapely.geometry import box, shape
 
+# 도로 GeoJSON 원격 fetch 캐시(URL→본문). 로컬 파일은 캐시 안 함(개발 중 재베이크 즉시 반영).
+_GEOJSON_CACHE: dict[str, str] = {}
+
+
+def _read_geojson_text(loc) -> str | None:
+    """도로 GeoJSON을 로컬 경로 또는 HTTP(S) URL에서 읽어 텍스트로 반환. 없으면 None.
+
+    배포는 `ROAD_BASE=gs://…`(config가 https URL로 변환)로 두면 여기로 원격 URL이 들어온다.
+    원격은 requests로 받아 캐시한다 — 같은 지역 파일을 clip_roads/clip_sidewalks/clip_centerlines가
+    한 요청에서 3번 읽으므로 재fetch를 막는다. 로컬은 캐시하지 않아 개발 중 재베이크가 바로 반영된다.
+    """
+    s = str(loc)
+    if s.startswith(("http://", "https://")):
+        cached = _GEOJSON_CACHE.get(s)
+        if cached is not None:
+            return cached
+        import requests
+
+        try:
+            resp = requests.get(s, timeout=30)
+            resp.raise_for_status()
+            text = resp.text
+        except requests.RequestException:
+            return None
+        _GEOJSON_CACHE[s] = text
+        return text
+    p = Path(s)
+    if not p.exists():
+        return None
+    return p.read_text(encoding="utf-8")
+
 
 @dataclass
 class RoadFeature:
@@ -71,11 +102,12 @@ def _clip_polys(geojson_path, bbox_5186, offset, want_sidewalk: bool) -> list[Ro
 
     want_sidewalk=False: 보도(properties.sw) 제외한 도로 폴리곤. True: 보도만.
     bbox_5186: (minx,miny,maxx,maxy) EPSG:5186. offset: origin_offset. 파일 없으면 빈 목록.
+    geojson_path는 로컬 경로 또는 HTTP(S) URL(배포 시 GCS) — _read_geojson_text가 흡수.
     """
-    path = Path(geojson_path)
-    if not path.exists():
+    text = _read_geojson_text(geojson_path)
+    if text is None:
         return []
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(text)
     feats = data.get("features", []) if isinstance(data, dict) else []
     clip = box(*bbox_5186)
     out: list[RoadFeature] = []
@@ -234,10 +266,10 @@ def _iter_lines(geom):
 
 def clip_centerlines(geojson_path: str | Path, bbox_5186, offset) -> list[list[tuple[float, float]]]:
     """지역 GeoJSON의 도로중심선(LineString)만 bbox 클립 → 로컬 미터 폴리라인 목록."""
-    path = Path(geojson_path)
-    if not path.exists():
+    text = _read_geojson_text(geojson_path)
+    if text is None:
         return []
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(text)
     feats = data.get("features", []) if isinstance(data, dict) else []
     clip = box(*bbox_5186)
     ox, oy = offset

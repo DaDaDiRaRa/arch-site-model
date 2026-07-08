@@ -65,7 +65,9 @@ docker run -p 8080:8080 --env-file .env arch-site-model
 ```
 
 - `.env`(VWORLD_KEY 등)는 **이미지에 넣지 않음** — 런타임 주입(`--env-file` 또는 `-e`).
-- `geo_store/`(DEM)는 이미지에 포함(현재 대전 단일 도엽). 지역 확장 시 GCS 버킷 마운트 고려.
+- `geo_store/`의 **manifest(`manifest.json`·`road_manifest.json`)만 git 추적 → 이미지에 포함**.
+  실제 데이터(DEM `dem_*.tif`·도로 `roads_*.geojson`)는 gitignore라 이미지에 없음 → **GCS에서 서빙**
+  (§5). 이미지엔 데이터 0바이트.
 
 ---
 
@@ -82,10 +84,11 @@ PR에서는 테스트만 돌고 배포는 안 됨.
    `VWORLD_KEY` 시크릿은 프로젝트 `arch-diagnose`에 **이미 존재** → 새로 만들 필요 없이 연결만:
    ```bash
    gcloud run services update arch-site-model --region asia-northeast3 \
-     --set-env-vars ORTHO_SOURCE=vworld \
-     --set-secrets VWORLD_KEY=VWORLD_KEY:latest
+     --update-env-vars ORTHO_SOURCE=vworld \
+     --update-secrets VWORLD_KEY=VWORLD_KEY:latest
    ```
-   이후 배포는 이 설정을 보존한다.
+   이후 배포는 이 설정을 보존한다. (`--update-*`는 기존 env/secret을 보존하며 추가/수정 —
+   `--set-*`는 전체 교체라 다른 값이 날아가니 주의.)
 
 → 이후로는 **커밋·push만 하면 자동 배포**. 아래는 수동 배포 참고.
 
@@ -110,6 +113,45 @@ gcloud run deploy arch-site-model \
 ```bash
 gcloud run deploy ... --set-secrets "VWORLD_KEY=vworld-key:latest"
 ```
+
+---
+
+## 5. 데이터 서빙 (DEM·도로 = 공개 GCS)
+
+DEM(`dem_*.tif`)·도로(`roads_*.geojson`)는 용량이 커 **gitignore** → 이미지에 없다. 공개 GCS
+버킷에 올리고 환경변수로 위치를 알려주면, 앱이 원격에서 읽는다(manifest만 이미지에 포함). 지역
+추가 = 굽기 → 업로드 → manifest 커밋(엔진 무수정).
+
+**DEM**(GDAL `/vsicurl` 윈도우 읽기):
+```bash
+# 굽기: contour_bake → dem_to_cog(COG 변환) 후
+gcloud storage cp geo_store/dem_*.tif gs://arch-site-model-dem/dem/
+```
+```bash
+gcloud run services update arch-site-model --region asia-northeast3 \
+  --update-env-vars DEM_TILE_BASE=/vsicurl/https://storage.googleapis.com/arch-site-model-dem/dem
+```
+
+**도로**(json+shapely라 GDAL 아님 → 앱이 HTTP로 fetch+캐시):
+```bash
+# 굽기: python -m src.terrain.road_bake <SHP폴더> --out geo_store/roads_<지역>.geojson --region "<지역>"
+#   (경계 폴리곤 없는 소로·골목은 실측 도로폭으로 자동 합성 — synthesize_gap_roads)
+gcloud storage cp geo_store/roads_*.geojson gs://arch-site-model-dem/roads/
+```
+```bash
+gcloud run services update arch-site-model --region asia-northeast3 \
+  --update-env-vars ROAD_BASE=gs://arch-site-model-dem/roads
+#   ROAD_BASE는 gs://…를 https://storage.googleapis.com/…로 변환해 읽는다(공개 버킷 필요).
+```
+
+- **⚠️ `--update-env-vars`를 쓸 것 (`--set-env-vars` 아님)**: `--set-env-vars`는 **기존 env를 전부
+  교체(삭제)**한다 → `DEM_TILE_BASE`·`ORTHO_SOURCE` 등이 날아가 DEM 서빙이 깨진다. `--update-env-vars`는
+  지정한 것만 추가/수정하고 나머지는 보존한다. (secret으로 붙인 `VWORLD_KEY`는 env-vars 변경에 영향 없음.)
+- **버킷 공개 읽기 필수**: 객체가 공개(allUsers:objectViewer)여야 `/vsicurl`·HTTP fetch가 된다.
+- **manifest는 git 추적**(`manifest.json`·`road_manifest.json`) → 커밋하면 배포 이미지에 들어간다.
+  데이터 파일명이 manifest와 일치해야 조회된다.
+- 미설정 시(로컬 개발) `DEM_TILE_BASE`/`ROAD_BASE`는 로컬 `geo_store` 기본 → 로컬 파일 사용.
+- **도로 미설정 증상**: 클라우드에서 지형·건물은 나오는데 도로만 조용히 생략 → `ROAD_BASE` 확인.
 
 ---
 

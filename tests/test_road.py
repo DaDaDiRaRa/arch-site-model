@@ -76,6 +76,71 @@ def test_clip_roads_missing_file(tmp_path):
     assert clip_roads(tmp_path / "nope.geojson", (0, 0, 1, 1), (0.0, 0.0)) == []
 
 
+def test_road_file_path_gs_and_https(monkeypatch):
+    """ROAD_BASE=gs://… → 공개 https URL, https:// → 그대로 결합 (배포 서빙)."""
+    from src import config
+
+    monkeypatch.setattr(config, "ROAD_BASE", "gs://mybucket/roads")
+    assert config.road_file_path("roads_x.geojson") == (
+        "https://storage.googleapis.com/mybucket/roads/roads_x.geojson"
+    )
+    monkeypatch.setattr(config, "ROAD_BASE", "https://cdn.example.com/roads/")
+    assert config.road_file_path("roads_x.geojson") == (
+        "https://cdn.example.com/roads/roads_x.geojson"
+    )
+
+
+def test_clip_roads_remote_url_fetches_and_caches(tmp_path, monkeypatch):
+    """geojson_path가 HTTP URL이면 requests로 받아 로컬과 동일 결과 + 캐시(재fetch 없음)."""
+    import src.geometry.road as road_mod
+
+    ext = [(226010, 402010), (226030, 402010), (226030, 402030), (226010, 402030), (226010, 402010)]
+    body = json.dumps({
+        "type": "FeatureCollection",
+        "features": [{"type": "Feature", "properties": {},
+                      "geometry": {"type": "Polygon", "coordinates": [ext]}}],
+    })
+    url = "https://storage.googleapis.com/test-bucket/roads/roads_x.geojson"
+    road_mod._GEOJSON_CACHE.pop(url, None)
+    calls = {"n": 0}
+
+    class _Resp:
+        text = body
+
+        def raise_for_status(self):
+            pass
+
+    def fake_get(u, timeout=30):
+        calls["n"] += 1
+        assert u == url
+        return _Resp()
+
+    monkeypatch.setattr("requests.get", fake_get)
+    try:
+        feats = clip_roads(url, (226000, 402000, 226040, 402040), (226000.0, 402000.0))
+        assert len(feats) == 1
+        clip_roads(url, (226000, 402000, 226040, 402040), (226000.0, 402000.0))
+        assert calls["n"] == 1  # 두 번째는 캐시 → 재fetch 없음
+    finally:
+        road_mod._GEOJSON_CACHE.pop(url, None)  # 테스트 간 오염 방지
+
+
+def test_clip_roads_remote_failure_returns_empty(monkeypatch):
+    """원격 fetch 실패 → 빈 목록(조용한 fallback, 요청은 계속)."""
+    import requests
+
+    import src.geometry.road as road_mod
+
+    url = "https://storage.googleapis.com/test-bucket/roads/missing.geojson"
+    road_mod._GEOJSON_CACHE.pop(url, None)
+
+    def fake_get(u, timeout=30):
+        raise requests.RequestException("boom")
+
+    monkeypatch.setattr("requests.get", fake_get)
+    assert clip_roads(url, (0, 0, 100, 100), (0.0, 0.0)) == []
+
+
 def test_clip_roads_and_sidewalks_separation(tmp_path):
     """도로(properties {})와 보도(sw) 폴리곤 분리 — clip_roads는 도로만, clip_sidewalks는 보도만."""
     from src.geometry.road import clip_sidewalks

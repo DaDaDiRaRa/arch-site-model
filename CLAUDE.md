@@ -17,10 +17,18 @@
 - [ ] **도로 Phase R 후속(선택)**: 도로·보도·차선 + **통합 표면**(지형·도로·보도를 한 삼각화로 → 정점
       공유, 이음매·구멍·뜸 구조적 제거) **완료**. **대반경 타일경로(`generate_tile`)에 도로 추가 완료**
       (타일마다 도로/보도/중심선 클립→버닝→통합표면, `test_generate_tile_roads`) + **SketchUp 확장
-      builder가 도로/보도/차선 렌더**(단일+타일, 데스크톱 실기 렌더 검증 대기). 남은 정교화 — 차선
-      다차선·대시(A0020000 `폭원`/`차선수`), 보도 표현 강화(도로 겹침 구간은 도로우선이라 콘크리트색 축소),
-      도로 경계 샤프닝. 입체 데크(고가/교량 A0070000/A0090000/A0110020)는 DSM 블로커 — `구분` 필드로
-      분류만 됨(고가=T0 휴리스틱, 지하/터널=생략, 복층=QA 플래그). 상세 `docs/road_surface_plan.md`.
+      builder가 도로/보도/차선 렌더**(단일+타일, 데스크톱 실기 렌더 검증 대기). **경계 폴리곤 없는
+      도로(소로·골목) 실측폭 합성 완료**: A0010000이 빠뜨린 도로를 A0020000 중심선의 실측 `도로폭`으로
+      버퍼링해 노면 채움(`road_bake.synthesize_gap_roads`, 커버리지 89%→100% 실측). 남은 정교화 — 차선
+      다차선·대시(A0020000 `차선수`), 보도 표현 강화(도로 겹침 구간은 도로우선이라 콘크리트색 축소),
+      도로 경계 샤프닝. **클라우드 도로 서빙 구현 완료**(DEM과 동일 원칙): `roads_*.geojson`(gitignore)을
+      공개 GCS에 올리고 `ROAD_BASE=gs://<버킷>/roads`로 두면 앱이 HTTP로 fetch+캐시해 읽는다
+      (`config.road_file_path` gs→https 변환, `road._read_geojson_text` fetch, DEM은 GDAL /vsicurl이라 도로만
+      HTTP). **남은 건 실제 배포 액션**(당신 GCP): `gcloud storage cp geo_store/roads_*.geojson
+      gs://arch-site-model-dem/roads/` + Cloud Run `--set-env-vars ROAD_BASE=gs://arch-site-model-dem/roads`.
+      미배포 시 클라우드 도로는 조용히 생략(로컬 백엔드는 정상). 상세 `docs/deploy.md` §5. 입체 데크(고가/
+      교량 A0070000/A0090000/A0110020)는 DSM 블로커 — `구분` 필드로 분류만 됨(고가=T0 휴리스틱, 지하/터널=
+      생략, 복층=QA 플래그). 상세 `docs/road_surface_plan.md`.
 - [ ] **DEM/DSM 이원화(고가/교량 데크 실측) — 블로커**: 지면=DEM, 공중 구조물=DSM 원리는 유효하나
       고해상도 DSM 민간 취득 불가(2026-07-08 확정: NGII 라이다=공문/기관 한정, 지자체 DSM=₩10M+"민간
       제공 불가", 무료 글로벌=30m라 데크·건물에 무용). 기관 접근/데이터 협약 생기면 승격(정사영상·setback과
@@ -145,14 +153,15 @@ src/
   terrain/
     store.py             manifest.json/road_manifest.json 조회 (find_tiles/find_road_file)
     contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A) + bake_tiled(대용량 지역 타일 배치) + 좌표대 재투영(5187→5186)·도엽 중복제거·거리제한 채움(fill_dist_m)
-    road_bake.py         수치지도 A0010000 도로경계·A0020000 중심선·A0033320 보도 SHP → 지역 GeoJSON(EPSG:5186) 오프라인 굽기 (Phase R) + road_manifest.json 갱신 (contour_bake 헬퍼 재사용)
+    road_bake.py         수치지도 A0010000 도로경계·A0020000 중심선(+실측 `도로폭`)·A0033320 보도 SHP → 지역 GeoJSON(EPSG:5186) 오프라인 굽기 (Phase R) + road_manifest.json 갱신 (contour_bake 헬퍼 재사용) + synthesize_gap_roads(경계 폴리곤 없는 도로를 실측 도로폭으로 버퍼해 노면 합성 {"syn":1}, --no-fill-gaps로 끔)
     dem.py               DEM 타일 클립 + 표고 보간 (Phase 3B) + clip_dem_mosaic(다중 타일 rasterio.merge 병합)
 
 geo_store/
   manifest.json          비축 DEM 타일 목록 (git 추적)
   road_manifest.json     비축 도로 GeoJSON 지역 목록 (git 추적)
   dem_*.tif              GeoTIFF DEM 파일 (EPSG:5186, gitignore — GCS 서빙)
-  roads_*.geojson        도로/보도/중심선 지역 벡터 (EPSG:5186, gitignore — road_bake 생성)
+  roads_*.geojson        도로/보도/중심선 지역 벡터 (EPSG:5186, gitignore — road_bake 생성). 배포는 공개 GCS에
+                         올리고 ROAD_BASE=gs://…/roads로 서빙(앱이 HTTP fetch, config.road_file_path/road._read_geojson_text). docs/deploy.md §5
 
 frontend/                React + Vite + Tailwind 웹 UI (주소 입력 → /api/generate 호출 → .3dm/정사영상 다운로드)
   src/App.tsx            메인 폼·결과 화면

@@ -34,6 +34,27 @@ _ROAD_CL_PAT = re.compile(r"A0020000", re.IGNORECASE)
 # 보도(인도) 레이어코드(A0033320). 폴리곤(N3A) — 선/점 제외.
 _SIDEWALK_PAT = re.compile(r"A0033320", re.IGNORECASE)
 
+# 도로구분별 기본 노면폭(m) — A0020000 '도로폭'이 없거나 0일 때만 폴백(실측값 우선).
+_DEFAULT_ROAD_WIDTH_M = {"대로": 25.0, "중로": 12.0, "소로": 6.0, "미분류": 8.0}
+_FALLBACK_WIDTH_M = 4.0
+
+
+def _resolve_width(width, road_class) -> float:
+    """노면 버퍼 폭(m): 실측 도로폭 우선 → 도로구분 기본폭 → 고정 폴백."""
+    if width is not None and width > 0:
+        return float(width)
+    return _DEFAULT_ROAD_WIDTH_M.get(road_class, _FALLBACK_WIDTH_M)
+
+
+def _iter_poly_geoms(geom):
+    """Polygon/MultiPolygon/GeometryCollection → Polygon 이터레이터."""
+    t = getattr(geom, "geom_type", None)
+    if t == "Polygon":
+        yield geom
+    elif t in ("MultiPolygon", "GeometryCollection"):
+        for g in geom.geoms:
+            yield from _iter_poly_geoms(g)
+
 
 def _find_shp_dedup(shp_dir: Path, pat: re.Pattern, skip_prefixes: tuple[str, ...]) -> list[Path]:
     """pat 일치 SHP(도엽 중복 제거). skip_prefixes(대문자) 접두 파일은 제외."""
@@ -97,21 +118,68 @@ def read_sidewalks(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> list:
 
 
 def read_road_centerlines(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> list:
-    """도로중심선(A0020000) LineString을 target_crs로 통일해 반환. 없으면 빈 목록."""
+    """도로중심선(A0020000) → (LineString, 도로폭[m]|None, 도로구분|None) 튜플 목록.
+
+    도로폭·도로구분 속성을 함께 읽어, 경계 폴리곤(A0010000)이 없는 도로(소로·골목)를 실측
+    폭으로 버퍼링해 노면을 합성(synthesize_gap_roads)하는 데 쓴다. 속성 없는 도엽은 None.
+    """
     shp_dir = Path(shp_dir)
     files = _find_shp_dedup(shp_dir, _ROAD_CL_PAT, ("N3A", "N3P"))
-    lines = []
+    out: list = []
     for f in files:
         gdf = gpd.read_file(f, encoding="euc-kr")
         gdf = _to_target_crs(gdf, target_crs)
-        for geom in gdf.geometry:
+        has_w = "도로폭" in gdf.columns
+        has_c = "도로구분" in gdf.columns
+        for _, r in gdf.iterrows():
+            geom = r.geometry
             if geom is None or geom.is_empty:
                 continue
-            if geom.geom_type == "LineString":
-                lines.append(geom)
-            elif geom.geom_type == "MultiLineString":
-                lines.extend(g for g in geom.geoms if not g.is_empty)
-    return lines
+            w = None
+            if has_w:
+                wv = r["도로폭"]
+                try:
+                    w = float(wv) if wv is not None and str(wv) != "" else None
+                except (TypeError, ValueError):
+                    w = None
+            cls = r["도로구분"] if has_c else None
+            parts = geom.geoms if geom.geom_type == "MultiLineString" else [geom]
+            for g in parts:
+                if not g.is_empty and g.geom_type == "LineString":
+                    out.append((g, w, cls))
+    return out
+
+
+def synthesize_gap_roads(polys, centerlines, min_area_m2: float = 1.0) -> list:
+    """경계 폴리곤(A0010000)이 없는 도로(중심선만 있는 소로·골목)를 실측 도로폭으로 버퍼해 노면 합성.
+
+    각 중심선의 'A0010000 폴리곤 밖' 구간만 도로폭/2로 버퍼 → union → A0010000 union을 빼
+    중복 제거. 경계 폴리곤이 있는 도로는 실측 경계(교차부 형상까지 정확)를 그대로 쓰고, 없는
+    곳만 실측 폭 리본으로 메운다 — 구간별 가장 정확한 소스를 쓰는 하이브리드. 반환: Polygon 목록.
+    """
+    from shapely.ops import unary_union
+    from shapely.prepared import prep
+
+    if not centerlines:
+        return []
+    poly_union = unary_union(polys) if polys else None
+    prep_u = prep(poly_union) if poly_union is not None else None
+
+    buffers = []
+    for g, w, cls in centerlines:
+        if poly_union is None or not prep_u.intersects(g):
+            outside = g                       # 폴리곤과 안 겹침 → 통째로 합성 대상
+        else:
+            outside = g.difference(poly_union)  # 겹치면 밖 구간만
+        if outside.is_empty or outside.length < 1.0:
+            continue                          # 사실상 폴리곤이 덮음 → 건너뜀
+        buffers.append(outside.buffer(_resolve_width(w, cls) / 2.0, cap_style=1, join_style=1))
+    if not buffers:
+        return []
+    synth = unary_union(buffers)
+    if poly_union is not None:
+        synth = synth.difference(poly_union)  # 실측 폴리곤과 겹침 최종 제거
+    return [p for p in _iter_poly_geoms(synth) if p.area >= min_area_m2]
 
 
 def bake_roads(
@@ -120,27 +188,36 @@ def bake_roads(
     region: str,
     target_crs: str = "EPSG:5186",
     min_area_m2: float = 1.0,
+    fill_gaps: bool = True,
 ) -> dict:
     """도로경계 폴리곤(A0010000) + 도로중심선(A0020000) → GeoJSON(EPSG:5186) + manifest 갱신.
 
-    폴리곤 feature(properties {})와 중심선 feature(properties {"cl":1})를 한 FeatureCollection에
-    담는다. 중심선은 R2 평탄화(종단 프로파일)의 척추로 쓴다. 좌표는 EPSG:5186 미터.
+    실측 경계 폴리곤(properties {}) + (fill_gaps 시) 경계 없는 도로를 실측 도로폭으로 버퍼링한
+    합성 노면(properties {"syn":1}) + 중심선(properties {"cl":1}) + 보도({"sw":1})를 한
+    FeatureCollection에 담는다. 중심선은 R2 평탄화(종단 프로파일)·차선 마킹의 척추로도 쓴다.
+    합성 노면은 A0010000이 소로·골목을 빠뜨려 생기는 커버리지 구멍을 실측 폭으로 메운다. 좌표=5186 m.
     """
     out_path = Path(out_path)
     polys = read_road_polygons(shp_dir, target_crs)
     polys = [p for p in polys if p.area >= min_area_m2]  # 슬리버 제거
     if not polys:
         raise ValueError("유효 도로 폴리곤이 없습니다(슬리버 제거 후 0).")
-    centerlines = read_road_centerlines(shp_dir, target_crs)
+    centerlines = read_road_centerlines(shp_dir, target_crs)  # (geom, 도로폭, 도로구분)
     sidewalks = [p for p in read_sidewalks(shp_dir, target_crs) if p.area >= min_area_m2]
+
+    # 경계 폴리곤 없는 도로(소로·골목)를 실측 도로폭으로 버퍼해 합성 → 커버리지 보완.
+    synth = synthesize_gap_roads(polys, centerlines, min_area_m2) if fill_gaps else []
 
     from shapely.geometry import mapping
 
     epsg = int(str(target_crs).split(":")[-1])
     features = [{"type": "Feature", "properties": {}, "geometry": mapping(p)} for p in polys]
     features += [
-        {"type": "Feature", "properties": {"cl": 1}, "geometry": mapping(ls)}
-        for ls in centerlines
+        {"type": "Feature", "properties": {"syn": 1}, "geometry": mapping(p)} for p in synth
+    ]
+    features += [
+        {"type": "Feature", "properties": {"cl": 1}, "geometry": mapping(g)}
+        for g, _w, _c in centerlines
     ]
     features += [
         {"type": "Feature", "properties": {"sw": 1}, "geometry": mapping(p)}
@@ -150,18 +227,19 @@ def bake_roads(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(fc), encoding="utf-8")
 
-    # 조회용 4326 엔벨로프 (geopandas 재투영으로 정확히 — 폴리곤 범위 기준)
-    gs = gpd.GeoSeries(polys, crs=target_crs)
+    # 조회용 4326 엔벨로프 — 실측+합성 도로 폴리곤 전체 범위 기준.
+    gs = gpd.GeoSeries(polys + synth, crs=target_crs)
     b4326 = [float(v) for v in gs.to_crs("EPSG:4326").total_bounds]  # minx,miny,maxx,maxy
 
-    _update_road_manifest(region, out_path.name, b4326, len(polys))
+    _update_road_manifest(region, out_path.name, b4326, len(polys) + len(synth))
     log.info(
-        "도로 %d개 + 중심선 %d개 + 보도 %d개 → %s (region=%s)",
-        len(polys), len(centerlines), len(sidewalks), out_path.name, region,
+        "도로 %d개(+합성 %d) + 중심선 %d개 + 보도 %d개 → %s (region=%s)",
+        len(polys), len(synth), len(centerlines), len(sidewalks), out_path.name, region,
     )
     return {
         "file": out_path.name,
         "polygons": len(polys),
+        "synthetic": len(synth),
         "centerlines": len(centerlines),
         "sidewalks": len(sidewalks),
         "bounds_4326": b4326,
@@ -195,8 +273,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--region", required=True, help="지역명(manifest 메타)")
     ap.add_argument("--target-crs", default="EPSG:5186")
     ap.add_argument("--min-area", type=float, default=1.0, help="슬리버 제거 최소 면적(m²)")
+    ap.add_argument(
+        "--no-fill-gaps", dest="fill_gaps", action="store_false",
+        help="경계 폴리곤 없는 도로를 실측 도로폭으로 버퍼링해 메우는 합성을 끔(A0010000만)",
+    )
     args = ap.parse_args(argv)
-    res = bake_roads(args.shp_dir, args.out, args.region, args.target_crs, args.min_area)
+    res = bake_roads(
+        args.shp_dir, args.out, args.region, args.target_crs, args.min_area, args.fill_gaps
+    )
     print(json.dumps(res, ensure_ascii=False))
     return 0
 

@@ -71,7 +71,10 @@ def dem_tile_path(filename: str) -> str:
 # --- 도로(Phase R) ---
 # 도로 노면 벡터(수치지도 A0010000 도로경계)를 오프라인 굽기로 지역별 GeoJSON(EPSG:5186)에
 # 담아 geo_store에 두고, road_manifest.json으로 조회한다. 런타임은 json+shapely로 읽어(DEM처럼
-# geopandas 런타임 의존 없이) bbox 클립·지형 드레이프한다. 배포 서빙은 DEM과 동일 패턴으로 추후.
+# geopandas 런타임 의존 없이) bbox 클립·지형 드레이프한다.
+# 배포 서빙: ROAD_BASE=gs://<버킷>/roads (또는 https://…) 로 두면 도로 GeoJSON을 공개 GCS에서
+# HTTP로 받아 읽는다(road_file_path가 https URL로 변환, road._read_geojson_text가 fetch+캐시).
+# 미설정 시 로컬 geo_store. manifest는 항상 git 추적, 데이터(gitignore)는 원격 — DEM과 동일 원칙.
 ROAD_BASE = os.environ.get("ROAD_BASE", str(GEO_STORE))
 
 # 도로 노면 메시(R1b) 내부 샘플 간격(m). 폴리곤 내부를 이 간격 격자로 샘플해 DEM 드레이프
@@ -111,10 +114,17 @@ ROAD_CROWN_CAP_M = _envf("ROAD_CROWN_CAP_M", 15.0)
 
 
 def road_file_path(filename: str) -> str:
-    """road_manifest의 도로 파일명 → 실제 읽기 경로. dem_tile_path와 동형(로컬↔원격)."""
+    """road_manifest의 도로 파일명 → 실제 읽기 위치(로컬 경로 또는 HTTP(S) URL).
+
+    도로 GeoJSON은 런타임이 json+shapely로 읽으므로(DEM처럼 GDAL 아님) 원격은 HTTP(S)로 받는다
+    (DEM의 /vsigs와 다른 점 — 그쪽은 GDAL 윈도우 읽기):
+      - gs://<버킷>/<프리픽스>  → https://storage.googleapis.com/<버킷>/<프리픽스> (공개 버킷)
+      - http(s)://...           → 그대로 결합
+      - 그 외(로컬 디렉터리)     → OS 경로
+    """
     base = ROAD_BASE
     if base.startswith("gs://"):
-        base = "/vsigs/" + base[len("gs://"):]
-    if base.startswith("/vsi") or "://" in base:
+        base = "https://storage.googleapis.com/" + base[len("gs://"):]
+    if base.startswith(("http://", "https://")):
         return base.rstrip("/") + "/" + filename
     return str(Path(base) / filename)
