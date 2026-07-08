@@ -514,13 +514,17 @@ def test_generate_geometry_roads(monkeypatch):
         include_geometry=True,
     )
     g = out["geometry"]
-    assert g["roads"], "도로 링이 있어야 함"
+    assert g["roads"], "도로 지오메트리가 있어야 함"
     assert out["stats"]["roads"] == 1
-    ring = g["roads"][0]["rings"][0]
-    assert len(ring) >= 3
-    assert all(len(v) == 3 for v in ring)  # [x,y,z]
+    # R1b: 노면 메시(vertices/triangles) + 외곽선(outlines)
+    roads = g["roads"]
+    assert roads["vertices"] and roads["triangles"], "노면 메시가 삼각화돼야 함"
+    assert all(len(v) == 3 for v in roads["vertices"])  # [x,y,z]
+    nv = len(roads["vertices"])
+    assert all(0 <= i < nv for tri in roads["triangles"] for i in tri)  # 인덱스 유효
+    assert roads["outlines"] and len(roads["outlines"][0]) >= 3
     # 지형이 있으니 z가 표고(50~60m)로 드레이프 — 0이 아님.
-    assert any(v[2] != 0.0 for v in ring)
+    assert any(v[2] != 0.0 for v in roads["vertices"])
     json.dumps(g)  # 직렬화 회귀 가드
 
 

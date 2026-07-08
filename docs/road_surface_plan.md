@@ -195,8 +195,11 @@ KBS 도로 모듈(§2): `RoadConnect`(중심선 연결·용접) · `RoadFlatten`
   `road.clip_roads`(json+shapely) + `store.find_road_file` + `pipeline layers.roads` →
   `geometry.roads`(링 DEM 드레이프) + `Viewer3D` LineLoop + 앱/뷰어 토글. 대전 4984폴리곤 베이크,
   250m bbox→37폴리곤 클립 실증. 테스트 `test_road.py`(4) + `test_pipeline.py` roads(2).
-- **R1b — 도로 노면 메시**: `road_bake`(gpkg 산출) + `road.clip/drape` + 3출력 + `Viewer3D.buildRoads`.
-  대전에서 노면이 지형 위에 뜨는지 검증.
+- **R1b — 도로 노면 메시 ✅완료(2026-07-08)**: `road.build_road_geometry`/`_drape_polygon`(경계
+  densify + 내부격자 → scipy Delaunay → 중심점 point-in-poly 컬링으로 오목·구멍 처리 → DEM 드레이프)
+  → 병합 메시(vertices/triangles)+외곽선. `Viewer3D` 회색 면(receiveShadow)+엣지. 대전 37폴리곤 →
+  정점6923·삼각형11503(0실패). 테스트 `test_road.py` build_road_geometry(2). **F2 geometry 전용**
+  (.3dm/.skp 도로 출력은 후속).
 - **R2 — 평탄화**: 종단 평활+크라운, 교량 제외, (후반)스커트. 리플 제거 검증.
 - **R3 — 보도·차선**: A0033320 보도, A0020000 차선 마킹.
 - **R4 — 수계**(별도): E계열 → 표고고정 수면.

@@ -74,6 +74,13 @@ def dem_tile_path(filename: str) -> str:
 # geopandas 런타임 의존 없이) bbox 클립·지형 드레이프한다. 배포 서빙은 DEM과 동일 패턴으로 추후.
 ROAD_BASE = os.environ.get("ROAD_BASE", str(GEO_STORE))
 
+# 도로 노면 메시(R1b) 내부 샘플 간격(m). 폴리곤 내부를 이 간격 격자로 샘플해 DEM 드레이프
+# 삼각화한다. 작을수록 곡면을 촘촘히 따라가나 삼각형↑. DEM 5m보다 촘촘한 2.5m 기본.
+try:
+    ROAD_CELL_M = float(os.environ.get("ROAD_CELL_M", "2.5"))
+except ValueError:
+    ROAD_CELL_M = 2.5
+
 
 def road_file_path(filename: str) -> str:
     """road_manifest의 도로 파일명 → 실제 읽기 경로. dem_tile_path와 동형(로컬↔원격)."""

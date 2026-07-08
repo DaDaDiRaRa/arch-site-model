@@ -33,10 +33,13 @@
       `src/terrain/road_bake.py`(A0010000 폴리곤→지역 GeoJSON EPSG:5186 + `road_manifest.json`, 도엽
       dedup·5187→5186 재투영은 contour_bake 헬퍼 재사용) → 런타임 `src/geometry/road.py::clip_roads`
       (json+shapely, geopandas 런타임 무의존) + `store.find_road_file` → `pipeline` `layers.roads`
-      → `geometry.roads`(링 DEM 드레이프) → `Viewer3D` LineLoop + 앱 `도로(노면)` 토글 + 뷰어 `도로`
-      토글. **대전 4984폴리곤 베이크 실증**(250m bbox→37폴리곤 클립). `roads_*.geojson` gitignore
-      (road_manifest.json만 추적), 서빙은 DEM처럼 추후 GCS. **남은 것**: R1b 노면 메시(`drape_polygon`
-      폴리곤 내부 삼각화) → R2 평탄화(종단평활+크라운) → R3 보도(A0033320)·차선(A0020000 폭원/차선수).
+      → `geometry.roads`. **R1b(노면 메시) 완료(2026-07-08)**: `road.build_road_geometry`/`_drape_polygon`
+      (경계 densify + 내부격자 → scipy Delaunay → 폴리곤 밖/구멍 삼각형 컬링 → DEM 드레이프)로 병합
+      노면 메시(vertices/triangles) + 외곽선 → `Viewer3D` 회색 면(receiveShadow)+엣지 + 앱 `도로(노면)`
+      토글 + 뷰어 `도로` 토글. **대전 실증**: 250m bbox 37폴리곤 → 정점6923·삼각형11503(0실패). cell
+      `config.ROAD_CELL_M`(기본 2.5m). `roads_*.geojson` gitignore(road_manifest.json만 추적), 서빙은
+      DEM처럼 추후 GCS. **남은 것**: R2 평탄화(종단평활+크라운, 리플 제거) → R3 보도(A0033320)·차선
+      (A0020000 폭원/차선수) → .3dm/.skp 출력에 도로 레이어 추가(현재 F2 geometry 전용).
       입체(고가/교량/지하/터널 A0070000/A0090000/A0110020)는 `구분` 필드로 분류: 고가/교량 데크=T0
       휴리스틱(abutment+통과높이), 지하/터널=생략/포털, 복층3+=자동 QA 플래그. 계획
       `docs/road_surface_plan.md`.

@@ -114,22 +114,12 @@ def _build_geometry(solids, terrain_mesh, ortho_info, cadastral=None, dem=None, 
                 pts = [[round(x, 2), round(y, 2), 0.0] for x, y in ring]
             cadastral_out.append({"pnu": p.pnu, "ring": pts})
 
-    # 도로(Phase R, R1a): 각 폴리곤 링을 DEM 표고로 드레이프(없으면 z=0). 프론트가 LineLoop로.
+    # 도로(Phase R): 폴리곤을 DEM 드레이프한 노면 메시(R1b) + 외곽선. dem 없으면 z=0 평면.
     roads_out = None
     if roads:
-        roads_out = []
-        for rf in roads:
-            rings3d = []
-            for ring in rf.rings:
-                if len(ring) < 3:
-                    continue
-                if dem is not None:
-                    pts = [[round(x, 2), round(y, 2), round(dem.elev_at(x, y), 2)] for x, y in ring]
-                else:
-                    pts = [[round(x, 2), round(y, 2), 0.0] for x, y in ring]
-                rings3d.append(pts)
-            if rings3d:
-                roads_out.append({"rings": rings3d})
+        from src.geometry.road import build_road_geometry
+
+        roads_out = build_road_geometry(roads, dem, config.ROAD_CELL_M)
 
     return {
         "buildings": buildings,

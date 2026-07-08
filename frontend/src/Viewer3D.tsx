@@ -13,7 +13,11 @@ export interface SiteGeometry {
   }[];
   terrain: { vertices: [number, number, number][]; triangles: [number, number, number][] } | null;
   cadastral?: { pnu: string; ring: [number, number, number][] }[] | null;
-  roads?: { rings: [number, number, number][][] }[] | null;
+  roads?: {
+    vertices: [number, number, number][];
+    triangles: [number, number, number][];
+    outlines: [number, number, number][][];
+  } | null;
   ortho_extent_m: [number, number, number, number] | null;
 }
 
@@ -31,8 +35,9 @@ const C_TERRAIN = 0x6a9a55; // olive green
 const C_EDGE = 0x27303a; // 건물 외곽선 (짙은 슬레이트)
 const C_CADASTRAL = 0xd9a441; // sandy yellow — 대지경계 (.3dm cadastral 레이어와 통일)
 const CADASTRAL_LIFT = 0.5; // 지형 위로 살짝 띄워 z-fighting 방지 (m)
-const C_ROAD = 0x5b6169; // 아스팔트 그레이 — 도로 외곽선 (R1a)
-const ROAD_LIFT = 0.15; // 도로는 지면 위 → 아주 살짝만 띄움 (m)
+const C_ROAD_FILL = 0x74797f; // 아스팔트 그레이 — 도로 노면 (R1b)
+const C_ROAD_EDGE = 0x3a3f45; // 짙은 그레이 — 도로 외곽선
+const ROAD_LIFT = 0.12; // 도로 노면은 지형 바로 위(살짝) → z-fighting 방지 (m)
 // 높이 그라디언트: 낮음(연한 스틸) → 높음(짙은 네이비). 스틸블루 정체성 유지.
 const RAMP_LO = new THREE.Color(0xa9cfe8);
 const RAMP_HI = new THREE.Color(0x1f3a5f);
@@ -218,7 +223,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
   const nB = geometry.buildings.length;
   const nT = geometry.terrain?.triangles.length ?? 0;
   const nC = geometry.cadastral?.length ?? 0;
-  const nR = geometry.roads?.length ?? 0;
+  const nR = geometry.roads?.outlines?.length ?? 0;
 
   return (
     <div>
@@ -421,24 +426,48 @@ function buildCadastral(parcels: Props["geometry"]["cadastral"]): THREE.Group | 
   return g;
 }
 
-// 도로 외곽선(R1a): 각 도로 폴리곤의 링(외곽+구멍)을 LineLoop로. z는 백엔드가 지형 표고로 드레이프.
+// 도로 노면(R1b): DEM 드레이프한 삼각 메시(회색 면) + 외곽선(짙은 라인). z-fighting 방지 리프트.
 function buildRoads(roads: Props["geometry"]["roads"]): THREE.Group | null {
-  if (!roads || !roads.length) return null;
+  if (!roads) return null;
   const g = new THREE.Group();
-  const mat = new THREE.LineBasicMaterial({ color: C_ROAD });
-  for (const f of roads) {
-    for (const ring of f.rings || []) {
-      if (!ring || ring.length < 3) continue;
-      const pos = new Float32Array(ring.length * 3);
-      for (let i = 0; i < ring.length; i++) {
-        pos[3 * i] = ring[i][0];
-        pos[3 * i + 1] = ring[i][1];
-        pos[3 * i + 2] = ring[i][2] + ROAD_LIFT;
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-      g.add(new THREE.LineLoop(geo, mat));
+
+  // 노면 메시
+  if (roads.vertices?.length && roads.triangles?.length) {
+    const pos = new Float32Array(roads.vertices.length * 3);
+    for (let i = 0; i < roads.vertices.length; i++) {
+      pos[3 * i] = roads.vertices[i][0];
+      pos[3 * i + 1] = roads.vertices[i][1];
+      pos[3 * i + 2] = roads.vertices[i][2] + ROAD_LIFT;
     }
+    const idx = new Uint32Array(roads.triangles.length * 3);
+    for (let i = 0; i < roads.triangles.length; i++) {
+      idx[3 * i] = roads.triangles[i][0];
+      idx[3 * i + 1] = roads.triangles[i][1];
+      idx[3 * i + 2] = roads.triangles[i][2];
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ color: C_ROAD_FILL, roughness: 0.96, metalness: 0, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = true;
+    g.add(mesh);
+  }
+
+  // 외곽선(면 위에 살짝 더 띄워 크리스프하게)
+  const lmat = new THREE.LineBasicMaterial({ color: C_ROAD_EDGE, transparent: true, opacity: 0.55 });
+  for (const ring of roads.outlines || []) {
+    if (!ring || ring.length < 3) continue;
+    const pos = new Float32Array(ring.length * 3);
+    for (let i = 0; i < ring.length; i++) {
+      pos[3 * i] = ring[i][0];
+      pos[3 * i + 1] = ring[i][1];
+      pos[3 * i + 2] = ring[i][2] + ROAD_LIFT + 0.08;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.add(new THREE.LineLoop(geo, lmat));
   }
   return g;
 }

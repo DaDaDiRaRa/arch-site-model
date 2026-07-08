@@ -77,3 +77,109 @@ def clip_roads(geojson_path: str | Path, bbox_5186, offset) -> list[RoadFeature]
             ]
             out.append(RoadFeature(rings=[ext] + holes))
     return out
+
+
+# --- R1b: 노면 드레이프 메시 ------------------------------------------------
+
+def _z(dem, x: float, y: float) -> float:
+    """로컬 (x,y) → DEM 표고. dem 없으면 0.0(평면)."""
+    return float(dem.elev_at(x, y)) if dem is not None else 0.0
+
+
+def _densify_ring(ring, cell: float):
+    """링 각 변을 cell 간격 이하로 잘게 나눈 점 목록(닫힘점 없이 순회)."""
+    import math
+
+    out = []
+    n = len(ring)
+    for i in range(n):
+        x0, y0 = ring[i]
+        x1, y1 = ring[(i + 1) % n]  # 마지막→처음으로 폐합
+        out.append((x0, y0))
+        seg = math.hypot(x1 - x0, y1 - y0)
+        if seg > cell:
+            steps = int(seg // cell)
+            for k in range(1, steps + 1):
+                t = k / (steps + 1)
+                out.append((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t))
+    return out
+
+
+def _drape_polygon(rings, dem, cell: float):
+    """폴리곤(외곽+구멍) 하나 → DEM 드레이프 삼각 메시 (정점[(x,y,z)], 삼각형[(i,j,k)]).
+
+    경계(densify) + 내부 격자점을 모아 Delaunay 후, 삼각형 중심이 폴리곤 밖(또는 구멍
+    안)이면 컬링한다(오목·구멍 지원). 정점 z = DEM 표고. scipy/shapely 실패 시 빈 메시.
+    """
+    import numpy as np
+    from scipy.spatial import Delaunay
+    from shapely.geometry import Point, Polygon
+    from shapely.prepared import prep
+
+    ext = rings[0]
+    holes = [r for r in rings[1:] if len(r) >= 3]
+    try:
+        poly = Polygon(ext, holes)
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+    except Exception:  # noqa: BLE001
+        return [], []
+    if poly.is_empty or poly.area <= 0.0 or poly.geom_type != "Polygon":
+        return [], []
+
+    pae = prep(poly)
+    pts: set[tuple[float, float]] = set()
+    for ring in rings:  # 경계점(잘게)
+        for px, py in _densify_ring(ring, cell):
+            pts.add((round(px, 3), round(py, 3)))
+    minx, miny, maxx, maxy = poly.bounds  # 내부 격자점
+    for x in np.arange(minx, maxx + cell, cell):
+        for y in np.arange(miny, maxy + cell, cell):
+            if pae.contains(Point(x, y)):
+                pts.add((round(float(x), 3), round(float(y), 3)))
+
+    pt_list = list(pts)
+    if len(pt_list) < 3:
+        return [], []
+    arr = np.array(pt_list, dtype=float)
+    try:
+        d = Delaunay(arr)
+    except Exception:  # noqa: BLE001 — 공선점 등
+        return [], []
+
+    tris = []
+    for s in d.simplices:
+        a, b, c = int(s[0]), int(s[1]), int(s[2])
+        cx = (arr[a, 0] + arr[b, 0] + arr[c, 0]) / 3.0
+        cy = (arr[a, 1] + arr[b, 1] + arr[c, 1]) / 3.0
+        if pae.contains(Point(cx, cy)):  # 폴리곤 밖/구멍 삼각형 컬링
+            tris.append((a, b, c))
+    verts = [(px, py, _z(dem, px, py)) for px, py in pt_list]
+    return verts, tris
+
+
+def build_road_geometry(features, dem, cell: float = 2.5) -> dict | None:
+    """RoadFeature 목록 → 병합 노면 메시 + 외곽선(F2 geometry.roads).
+
+    반환: {"vertices": [[x,y,z]], "triangles": [[i,j,k]], "outlines": [[[x,y,z]]]} 또는 None.
+    삼각화 실패 폴리곤도 외곽선은 남는다(조용한 열화).
+    """
+    verts: list = []
+    tris: list = []
+    outlines: list = []
+    for f in features:
+        v, t = _drape_polygon(f.rings, dem, cell)
+        base = len(verts)
+        verts.extend(v)
+        tris.extend([a + base, b + base, c + base] for a, b, c in t)
+        for ring in f.rings:
+            if len(ring) >= 3:
+                outlines.append([[round(x, 2), round(y, 2), round(_z(dem, x, y), 2)] for x, y in ring])
+
+    if not verts and not outlines:
+        return None
+    return {
+        "vertices": [[round(x, 2), round(y, 2), round(z, 2)] for x, y, z in verts],
+        "triangles": tris,
+        "outlines": outlines,
+    }
