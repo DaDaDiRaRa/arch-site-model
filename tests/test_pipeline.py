@@ -480,6 +480,66 @@ def test_generate_geometry_cadastral_none_when_not_requested(monkeypatch):
     assert out["geometry"]["cadastral"] is None
 
 
+def _patch_synth_roads(monkeypatch):
+    """실 도로 GeoJSON 없이 합성 도로를 주입. 파이프라인의 함수-로컬 import 대상 패치."""
+    import src.geometry.road as road_mod
+    import src.terrain.store as store_mod
+    from src.geometry.road import RoadFeature
+
+    monkeypatch.setattr(
+        store_mod, "find_road_file",
+        lambda bbox, manifest=None: {"file": "roads_synth.geojson", "region": "합성"},
+    )
+    monkeypatch.setattr(
+        road_mod, "clip_roads",
+        lambda path, bbox_5186, offset: [
+            RoadFeature(rings=[[(5.0, 5.0), (25.0, 5.0), (25.0, 25.0), (5.0, 25.0)]])
+        ],
+    )
+
+
+def test_generate_geometry_roads(monkeypatch):
+    """roads 레이어 + include_geometry → geometry.roads 링이 지형 표고로 드레이프."""
+    import json
+
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
+    )
+    _patch_synth_dem(monkeypatch)
+    _patch_synth_roads(monkeypatch)
+    out = generate(
+        "대전광역시 서구 괴정동 358",
+        layers={"buildings": True, "terrain": True, "roads": True},
+        client=FakeClient(_daejeon_features()),
+        include_geometry=True,
+    )
+    g = out["geometry"]
+    assert g["roads"], "도로 링이 있어야 함"
+    assert out["stats"]["roads"] == 1
+    ring = g["roads"][0]["rings"][0]
+    assert len(ring) >= 3
+    assert all(len(v) == 3 for v in ring)  # [x,y,z]
+    # 지형이 있으니 z가 표고(50~60m)로 드레이프 — 0이 아님.
+    assert any(v[2] != 0.0 for v in ring)
+    json.dumps(g)  # 직렬화 회귀 가드
+
+
+def test_generate_geometry_roads_none_when_not_requested(monkeypatch):
+    """roads 미요청 → geometry.roads is None, stats.roads == 0."""
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
+    )
+    _patch_synth_dem(monkeypatch)
+    out = generate(
+        "대전광역시 서구 괴정동 358",
+        layers={"buildings": True, "terrain": True},
+        client=FakeClient(_daejeon_features()),
+        include_geometry=True,
+    )
+    assert out["geometry"]["roads"] is None
+    assert out["stats"]["roads"] == 0
+
+
 def test_generate_geometry_omitted_by_default(monkeypatch):
     """기본(include_geometry=False)은 geometry=None — MCP 응답 비대화 방지."""
     monkeypatch.setattr(

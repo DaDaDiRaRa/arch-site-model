@@ -66,3 +66,20 @@ def dem_tile_path(filename: str) -> str:
     if base.startswith("/vsi") or "://" in base:
         return base.rstrip("/") + "/" + filename
     return str(Path(base) / filename)
+
+
+# --- 도로(Phase R) ---
+# 도로 노면 벡터(수치지도 A0010000 도로경계)를 오프라인 굽기로 지역별 GeoJSON(EPSG:5186)에
+# 담아 geo_store에 두고, road_manifest.json으로 조회한다. 런타임은 json+shapely로 읽어(DEM처럼
+# geopandas 런타임 의존 없이) bbox 클립·지형 드레이프한다. 배포 서빙은 DEM과 동일 패턴으로 추후.
+ROAD_BASE = os.environ.get("ROAD_BASE", str(GEO_STORE))
+
+
+def road_file_path(filename: str) -> str:
+    """road_manifest의 도로 파일명 → 실제 읽기 경로. dem_tile_path와 동형(로컬↔원격)."""
+    base = ROAD_BASE
+    if base.startswith("gs://"):
+        base = "/vsigs/" + base[len("gs://"):]
+    if base.startswith("/vsi") or "://" in base:
+        return base.rstrip("/") + "/" + filename
+    return str(Path(base) / filename)

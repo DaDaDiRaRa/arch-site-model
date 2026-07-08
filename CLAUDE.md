@@ -28,6 +28,23 @@
       폴더도 dedup) — 아직 베이크 안 함, 경기권 폴더 모이면 일괄 베이크, (c) 인천·광주(자치구 개편으로
       지오코딩 불안정 — 개편 확정 후), 울산 서부(신불산) 도엽 갭, (d) 과거 115MB 히스토리 purge(보류).
       상세 [[nationwide-dem-ngii-source]].
+- [ ] **도로 노면 자동화 (Phase R)**: KBS 로드맵 1순위. 수치지형도 A0010000 도로경계 폴리곤 →
+      **DEM 드레이프**(표면도로는 DEM이라 이미 실제). **R1a(도로 외곽선) 완료(2026-07-08)**: 오프라인
+      `src/terrain/road_bake.py`(A0010000 폴리곤→지역 GeoJSON EPSG:5186 + `road_manifest.json`, 도엽
+      dedup·5187→5186 재투영은 contour_bake 헬퍼 재사용) → 런타임 `src/geometry/road.py::clip_roads`
+      (json+shapely, geopandas 런타임 무의존) + `store.find_road_file` → `pipeline` `layers.roads`
+      → `geometry.roads`(링 DEM 드레이프) → `Viewer3D` LineLoop + 앱 `도로(노면)` 토글 + 뷰어 `도로`
+      토글. **대전 4984폴리곤 베이크 실증**(250m bbox→37폴리곤 클립). `roads_*.geojson` gitignore
+      (road_manifest.json만 추적), 서빙은 DEM처럼 추후 GCS. **남은 것**: R1b 노면 메시(`drape_polygon`
+      폴리곤 내부 삼각화) → R2 평탄화(종단평활+크라운) → R3 보도(A0033320)·차선(A0020000 폭원/차선수).
+      입체(고가/교량/지하/터널 A0070000/A0090000/A0110020)는 `구분` 필드로 분류: 고가/교량 데크=T0
+      휴리스틱(abutment+통과높이), 지하/터널=생략/포털, 복층3+=자동 QA 플래그. 계획
+      `docs/road_surface_plan.md`.
+- [ ] **DEM/DSM 이원화(데크 실측 realism) — 블로커**: 원리 = 지면 DEM, 공중 구조물 DSM. 고가/교량
+      데크 실측높이·경사 + 건물높이 누락 보정 + 계단현상 해소까지 가능하나, **고해상도 DSM이 민간
+      취득 불가**(2026-07-08 확정): NGII 라이다=공문/기관 한정, 지자체 DSM=₩10M+"민간 제공 불가",
+      무료 글로벌=30m라 데크·건물에 무용. → **T0 휴리스틱으로 도로 착수**, DSM은 **기관 접근/데이터
+      협약 생기면 승격**(정사영상·setback과 같은 블로커 대기). 상세 `docs/dem_dsm_strategy.md`.
 - [ ] **Phase B — SketchUp 확장(.rbz)**: `sketchup_ext/`. **B1(지형+건물, 텍스처 없음) 데스크톱
       검증 완료(2026-07-07)** — 신반포 150/250m에서 크래시 없이 깨끗한 면 렌더 확인. 건물은 **실제
       면**(벽=수직 쿼드·윗면=n각형, `add_face`; pushpull·삼각메쉬 아님 → 밀집지 렉/크래시 해결).

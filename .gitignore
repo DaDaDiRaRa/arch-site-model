@@ -7,6 +7,10 @@
 # 또는 DEM_TILE_BASE=/vsicurl/… 로.
 geo_store/*.tif
 
+# 도로 노면 벡터(Phase R). road_manifest.json만 git 추적(작은 index). 지역 GeoJSON은
+# DEM 타일과 동일 원칙으로 git·이미지에서 제외(서빙은 추후 GCS, 로컬 개발은 road_bake로 생성).
+geo_store/*.geojson
+
 # 출력물 (런타임 생성물 — API 잡 폴더·데모 등)
 # 주의: 앞에 / 필수 — 없으면 모든 깊이에서 매치돼 src/output/(코드!)까지 제외되는 사고가
 # 남(실제 발생: gcloud run deploy --source 가 .gcloudignore 없으면 .gitignore를 그대로 써서

@@ -24,6 +24,7 @@ export default function App() {
   const [terrain, setTerrain] = useState(true);
   const [orthophoto, setOrthophoto] = useState(true);
   const [cadastral, setCadastral] = useState(false);
+  const [roads, setRoads] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +42,7 @@ export default function App() {
         body: JSON.stringify({
           address,
           radius_m: radius,
-          layers: { buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral },
+          layers: { buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral, roads },
           outputs: ["3dm"],
         }),
       });
@@ -125,6 +126,15 @@ export default function App() {
                 className="h-4 w-4 rounded border-slate-300"
               />
               지적(대지경계)
+            </label>
+            <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={roads}
+                onChange={(e) => setRoads(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              도로(노면)
             </label>
           </div>
 

@@ -89,3 +89,46 @@ def find_tile(bbox, manifest: list[dict] | None = None) -> dict | None:
     """
     hits = find_tiles(bbox, manifest)
     return hits[0] if hits else None
+
+
+# --- 도로(Phase R) — DEM manifest와 분리된 road_manifest.json ---
+
+def _road_manifest_path() -> Path:
+    return config.GEO_STORE / "road_manifest.json"
+
+
+def load_road_manifest(path: Path | None = None) -> list[dict]:
+    """road_manifest.json의 도로 지역 목록. 파일 없으면 빈 목록(도로 비축 없음)."""
+    path = path or _road_manifest_path()
+    if not path.exists():
+        return []
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, dict):
+        return data.get("roads", [])
+    if isinstance(data, list):
+        return data
+    return []
+
+
+def find_road_files(bbox, manifest: list[dict] | None = None) -> list[dict]:
+    """질의 bbox(EPSG:4326)와 겹치는 도로 지역 파일 전부(겹침 큰 순)."""
+    entries = manifest if manifest is not None else load_road_manifest()
+    query = box(*bbox)
+    hits: list[tuple[dict, float]] = []
+    for e in entries:
+        bounds = e.get("bounds_4326")
+        if not bounds or len(bounds) != 4:
+            continue
+        overlap = box(*bounds).intersection(query).area
+        if overlap <= 0.0:
+            continue
+        hits.append((e, overlap))
+    hits.sort(key=lambda h: -h[1])
+    return [e for e, _ in hits]
+
+
+def find_road_file(bbox, manifest: list[dict] | None = None) -> dict | None:
+    """질의 bbox와 겹치는 대표 도로 파일 1개(겹침 큰 것). 없으면 None."""
+    hits = find_road_files(bbox, manifest)
+    return hits[0] if hits else None

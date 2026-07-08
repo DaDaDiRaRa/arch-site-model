@@ -13,6 +13,7 @@ export interface SiteGeometry {
   }[];
   terrain: { vertices: [number, number, number][]; triangles: [number, number, number][] } | null;
   cadastral?: { pnu: string; ring: [number, number, number][] }[] | null;
+  roads?: { rings: [number, number, number][][] }[] | null;
   ortho_extent_m: [number, number, number, number] | null;
 }
 
@@ -30,6 +31,8 @@ const C_TERRAIN = 0x6a9a55; // olive green
 const C_EDGE = 0x27303a; // 건물 외곽선 (짙은 슬레이트)
 const C_CADASTRAL = 0xd9a441; // sandy yellow — 대지경계 (.3dm cadastral 레이어와 통일)
 const CADASTRAL_LIFT = 0.5; // 지형 위로 살짝 띄워 z-fighting 방지 (m)
+const C_ROAD = 0x5b6169; // 아스팔트 그레이 — 도로 외곽선 (R1a)
+const ROAD_LIFT = 0.15; // 도로는 지면 위 → 아주 살짝만 띄움 (m)
 // 높이 그라디언트: 낮음(연한 스틸) → 높음(짙은 네이비). 스틸블루 정체성 유지.
 const RAMP_LO = new THREE.Color(0xa9cfe8);
 const RAMP_HI = new THREE.Color(0x1f3a5f);
@@ -41,6 +44,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
     buildings?: THREE.Group | null;
     terrain?: THREE.Object3D | null;
     cadastral?: THREE.Object3D | null;
+    roads?: THREE.Object3D | null;
     buildingMeshes: THREE.Mesh[];
     edges: THREE.LineSegments[];
     sun?: THREE.DirectionalLight;
@@ -48,6 +52,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
   const [showBuildings, setShowBuildings] = useState(true);
   const [showTerrain, setShowTerrain] = useState(true);
   const [showCadastral, setShowCadastral] = useState(true);
+  const [showRoads, setShowRoads] = useState(true);
   const [colorMode, setColorMode] = useState<ColorMode>("height");
   const [viewMode, setViewMode] = useState<ViewMode>("solid");
   const [showEdges, setShowEdges] = useState(true);
@@ -98,9 +103,11 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
       const { group: buildings, meshes, edges } = buildBuildings(geometry.buildings, heightRange);
       const terrain = buildTerrain(geometry.terrain, orthoUrl, geometry.ortho_extent_m);
       const cadastral = buildCadastral(geometry.cadastral);
+      const roads = buildRoads(geometry.roads);
       if (buildings) root.add(buildings);
       if (terrain) root.add(terrain);
       if (cadastral) root.add(cadastral);
+      if (roads) root.add(roads);
 
       root.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(root);
@@ -108,7 +115,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
       // 지형이 없으면 그림자를 받을 바닥면을 깔아 건물 그림자가 보이게 한다.
       if (!terrain && !box.isEmpty()) root.add(shadowGround(box));
 
-      sceneRefs.current = { buildings, terrain, cadastral, buildingMeshes: meshes, edges, sun };
+      sceneRefs.current = { buildings, terrain, cadastral, roads, buildingMeshes: meshes, edges, sun };
       if (!box.isEmpty()) {
         fitCamera(camera, controls, box);
         frameSunShadow(sun, box);
@@ -157,7 +164,8 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
     if (sceneRefs.current.buildings) sceneRefs.current.buildings.visible = showBuildings;
     if (sceneRefs.current.terrain) sceneRefs.current.terrain.visible = showTerrain;
     if (sceneRefs.current.cadastral) sceneRefs.current.cadastral.visible = showCadastral;
-  }, [showBuildings, showTerrain, showCadastral]);
+    if (sceneRefs.current.roads) sceneRefs.current.roads.visible = showRoads;
+  }, [showBuildings, showTerrain, showCadastral, showRoads]);
 
   // 색상 모드: 높이별 그라디언트 ↔ 단색 (미확인 건물은 항상 주황)
   useEffect(() => {
@@ -210,6 +218,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
   const nB = geometry.buildings.length;
   const nT = geometry.terrain?.triangles.length ?? 0;
   const nC = geometry.cadastral?.length ?? 0;
+  const nR = geometry.roads?.length ?? 0;
 
   return (
     <div>
@@ -226,6 +235,10 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
         <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={showCadastral} onChange={(e) => setShowCadastral(e.target.checked)} className="h-4 w-4" disabled={!nC} />
           지적 <span className="text-xs text-slate-400">({nC})</span>
+        </label>
+        <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={showRoads} onChange={(e) => setShowRoads(e.target.checked)} className="h-4 w-4" disabled={!nR} />
+          도로 <span className="text-xs text-slate-400">({nR})</span>
         </label>
         <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={showEdges} onChange={(e) => setShowEdges(e.target.checked)} className="h-4 w-4" />
@@ -404,6 +417,28 @@ function buildCadastral(parcels: Props["geometry"]["cadastral"]): THREE.Group | 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     g.add(new THREE.LineLoop(geo, mat));
+  }
+  return g;
+}
+
+// 도로 외곽선(R1a): 각 도로 폴리곤의 링(외곽+구멍)을 LineLoop로. z는 백엔드가 지형 표고로 드레이프.
+function buildRoads(roads: Props["geometry"]["roads"]): THREE.Group | null {
+  if (!roads || !roads.length) return null;
+  const g = new THREE.Group();
+  const mat = new THREE.LineBasicMaterial({ color: C_ROAD });
+  for (const f of roads) {
+    for (const ring of f.rings || []) {
+      if (!ring || ring.length < 3) continue;
+      const pos = new Float32Array(ring.length * 3);
+      for (let i = 0; i < ring.length; i++) {
+        pos[3 * i] = ring[i][0];
+        pos[3 * i + 1] = ring[i][1];
+        pos[3 * i + 2] = ring[i][2] + ROAD_LIFT;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      g.add(new THREE.LineLoop(geo, mat));
+    }
   }
   return g;
 }

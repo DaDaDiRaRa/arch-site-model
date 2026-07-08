@@ -65,7 +65,7 @@ def _resolve_ortho_source():
     return VWORLD_SATELLITE, config.VWORLD_KEY, "VWorld Satellite"
 
 
-def _build_geometry(solids, terrain_mesh, ortho_info, cadastral=None, dem=None) -> dict:
+def _build_geometry(solids, terrain_mesh, ortho_info, cadastral=None, dem=None, roads=None) -> dict:
     """브라우저 3D 미리보기용 경량 지오메트리 JSON (F2).
 
     모두 로컬 미터 좌표. 건물 footprint는 이미 미터, 지형 vertices는 인치(SketchUp)
@@ -114,10 +114,28 @@ def _build_geometry(solids, terrain_mesh, ortho_info, cadastral=None, dem=None) 
                 pts = [[round(x, 2), round(y, 2), 0.0] for x, y in ring]
             cadastral_out.append({"pnu": p.pnu, "ring": pts})
 
+    # 도로(Phase R, R1a): 각 폴리곤 링을 DEM 표고로 드레이프(없으면 z=0). 프론트가 LineLoop로.
+    roads_out = None
+    if roads:
+        roads_out = []
+        for rf in roads:
+            rings3d = []
+            for ring in rf.rings:
+                if len(ring) < 3:
+                    continue
+                if dem is not None:
+                    pts = [[round(x, 2), round(y, 2), round(dem.elev_at(x, y), 2)] for x, y in ring]
+                else:
+                    pts = [[round(x, 2), round(y, 2), 0.0] for x, y in ring]
+                rings3d.append(pts)
+            if rings3d:
+                roads_out.append({"rings": rings3d})
+
     return {
         "buildings": buildings,
         "terrain": terrain,
         "cadastral": cadastral_out,
+        "roads": roads_out,
         "ortho_extent_m": list(ortho_info["extent_local_m"]) if ortho_info else None,
     }
 
@@ -287,6 +305,29 @@ def generate(
         else:
             warnings.append("반경 내 지적 피처 없음 (LP_PA_CBND_BUBUN)")
 
+    # 7.3 도로 노면 (Phase R, R1a: 외곽선) — 지역 GeoJSON을 bbox 클립 후 지형 드레이프.
+    #     도로는 실시간 API가 없어 오프라인 굽기(road_bake)한 GeoJSON을 road_manifest로 조회.
+    road_features: list | None = None
+    road_count = 0
+    if layers.get("roads"):
+        from src.geometry.road import clip_roads
+        from src.terrain.store import find_road_file
+
+        rf = find_road_file(bbox)
+        if rf is None:
+            warnings.append(
+                "도로 비축 없음: 반경이 도로 GeoJSON 밖입니다 "
+                "(road_manifest.json 확인 또는 road_bake 실행 필요)."
+            )
+        else:
+            bbox_5186_road = _bbox_4326_to_5186(bbox)
+            road_features = clip_roads(
+                config.road_file_path(rf["file"]), bbox_5186_road, offset
+            )
+            road_count = len(road_features)
+            if road_count == 0:
+                warnings.append("반경 내 도로 폴리곤 없음 (A0010000).")
+
     # setback stub (arch-law-diagnose 연동은 [목표])
     if setback:
         warnings.append(
@@ -399,7 +440,10 @@ def generate(
     # 브라우저 3D 미리보기용 지오메트리 JSON (F2). 로컬 미터 좌표로 통일.
     # MCP 응답 비대화 방지를 위해 include_geometry=True(웹 백엔드)일 때만 포함.
     geometry = (
-        _build_geometry(solids, terrain_mesh, ortho_info, cadastral=cadastral_parcels, dem=dem)
+        _build_geometry(
+            solids, terrain_mesh, ortho_info,
+            cadastral=cadastral_parcels, dem=dem, roads=road_features,
+        )
         if include_geometry
         else None
     )
@@ -417,6 +461,7 @@ def generate(
             "with_floors": with_floors,
             "flagged": flagged_count,
             "cadastral_parcels": cadastral_count,
+            "roads": road_count,
             "origin_offset": list(offset),   # 복원용 — 필수 저장 (사양서 §6.1)
             "elev_range_m": elev_range,
         },
