@@ -76,6 +76,21 @@ def test_build_code_no_roads_omits_block():
     assert "ROAD_VERTS" not in build_skp_code(_solids())
 
 
+def test_build_code_with_sidewalks():
+    """sidewalks 지정 시 SIDEWALK 리터럴 + 보도 그룹, 유효 파이썬."""
+    from src.geometry.road import RoadMesh
+
+    sw = RoadMesh(
+        vertices=[(0.0, 0.0, 1.0), (10.0, 0.0, 1.0), (10.0, 10.0, 1.0)],
+        triangles=[(0, 1, 2)],
+        outlines=[],
+    )
+    code = build_skp_code(_solids(), sidewalks=sw)
+    assert "SIDEWALK_VERTS = [" in code
+    assert 'set_name("sidewalks")' in code
+    compile(code, "<skp>", "exec")
+
+
 def test_generated_code_is_valid_python():
     """build_model 전송 전 — 생성 코드가 구문상 유효한 Python 인지."""
     code = build_skp_code(_solids())

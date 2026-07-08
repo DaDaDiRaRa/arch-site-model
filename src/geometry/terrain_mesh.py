@@ -100,15 +100,11 @@ def _fill_nan_nearest(h: np.ndarray) -> np.ndarray:
     return h[tuple(idx)]
 
 
-def adaptive_tin(
-    dem: DEMPatch, max_error_m: float, max_iters: int = 25
-) -> TerrainMesh:
-    """오차 한계 적응형 TIN (greedy insertion, Garland–Heckbert 계열).
+def adaptive_select(dem: DEMPatch, max_error_m: float, max_iters: int = 25):
+    """오차 한계 적응형으로 고른 DEM 점 집합. 반환 (pts_pixel[N,2 col,row], z[N]) 또는 None.
 
-    격자 네 모서리에서 시작해, 현재 삼각망이 실제 표고를 max_error_m 넘게 벗어나는
-    셀을 반복 삽입한다(삼각형마다 최악 오차 점 1개씩 → 군집 방지). 평지·완경사는
-    큰 삼각형 몇 개로 오차 0에 수렴하고, 능선·급경사에만 삼각형이 촘촘해진다.
-    출력 좌표 = 로컬 미터 × M2I (grid_to_tin과 동일 계약).
+    격자 네 모서리에서 시작해, 삼각망이 실제 표고를 max_error_m 넘게 벗어나는 셀을 반복
+    삽입한다(삼각형마다 최악 오차 점 1개). 격자가 너무 작으면 None(호출측이 격자 폴백).
     """
     from scipy.interpolate import LinearNDInterpolator
     from scipy.spatial import Delaunay
@@ -116,7 +112,7 @@ def adaptive_tin(
     grid = dem.grid
     rows, cols = grid.shape
     if rows < 3 or cols < 3:
-        return grid_to_tin(dem)
+        return None
 
     h = _fill_nan_nearest(grid).astype(np.float64)
     cc, rr = np.meshgrid(np.arange(cols), np.arange(rows))
@@ -124,7 +120,6 @@ def adaptive_tin(
     z_all = h.ravel()
     n = pts_all.shape[0]
 
-    # 시작 = 네 모서리. 상한(cap): 절반 넘으면 적응 이득이 없어 중단.
     selected = list(dict.fromkeys([0, cols - 1, (rows - 1) * cols, n - 1]))
     cap = max(4, int(n * 0.5))
 
@@ -141,7 +136,6 @@ def adaptive_tin(
         cand = np.where(over)[0]
         if cand.size == 0:
             break
-        # 삼각형마다 오차 최대 점 1개(벡터화): (simplex asc, err desc) 정렬 후 각 그룹 첫 점
         s = simp[cand]
         order = np.lexsort((-err[cand], s))
         s_sorted, cand_sorted = s[order], cand[order]
@@ -152,14 +146,38 @@ def adaptive_tin(
         selected = list(dict.fromkeys(selected))
 
     sel = np.array(selected)
-    pts = pts_all[sel]
-    zsel = z_all[sel]
+    return pts_all[sel], z_all[sel]
+
+
+def pixel_to_local_m(pts_pixel: np.ndarray, dem: DEMPatch) -> np.ndarray:
+    """(col,row) 픽셀 좌표 → 로컬 미터 (x,y). dem.transform·offset 사용."""
+    tf = dem.transform
+    ox, oy = dem.offset
+    x = (tf.c + tf.a * pts_pixel[:, 0]) - ox
+    y = (tf.f + tf.e * pts_pixel[:, 1]) - oy
+    return np.column_stack([x, y])
+
+
+def adaptive_tin(
+    dem: DEMPatch, max_error_m: float, max_iters: int = 25
+) -> TerrainMesh:
+    """오차 한계 적응형 TIN (greedy insertion, Garland–Heckbert 계열).
+
+    평지·완경사는 큰 삼각형 몇 개로 오차 0에 수렴하고, 능선·급경사에만 삼각형이 촘촘해진다.
+    출력 좌표 = 로컬 미터 × M2I (grid_to_tin과 동일 계약).
+    """
+    from scipy.spatial import Delaunay
+
+    sel = adaptive_select(dem, max_error_m, max_iters)
+    if sel is None:
+        return grid_to_tin(dem)
+    pts, zsel = sel
     tri = Delaunay(pts)
 
     tf = dem.transform
     ox, oy = dem.offset
     vertices: list[tuple[float, float, float]] = []
-    for k in range(sel.size):
+    for k in range(pts.shape[0]):
         col, row = pts[k]
         x_abs = tf.c + tf.a * col
         y_abs = tf.f + tf.e * row

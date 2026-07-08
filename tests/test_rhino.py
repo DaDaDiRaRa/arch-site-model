@@ -137,6 +137,18 @@ def test_write_3dm_with_roads_adds_mesh_on_roads_layer():
         assert any(m.Layers[o.Attributes.LayerIndex].Name == "roads" for o in meshes)
 
 
+def test_write_3dm_with_sidewalks_layer():
+    """sidewalks 지정 → 'sidewalks' 레이어에 Mesh."""
+    sw = _make_road_mesh()
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "site.3dm"
+        write_3dm([_make_solid()], None, path, offset=(0.0, 0.0), sidewalks=sw)
+        m = rhino3dm.File3dm.Read(str(path))
+        assert any(layer.Name == "sidewalks" for layer in m.Layers)
+        meshes = [o for o in m.Objects if type(o.Geometry).__name__ == "Mesh"]
+        assert any(m.Layers[o.Attributes.LayerIndex].Name == "sidewalks" for o in meshes)
+
+
 # ---------------------------------------------------------------------------
 # 정사영상 텍스처 (Tier 1)
 # ---------------------------------------------------------------------------

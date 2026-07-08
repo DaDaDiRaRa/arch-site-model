@@ -31,6 +31,7 @@ def write_3dm(
     offset: tuple[float, float],
     cadastral: list[CadastralParcel] | None = None,
     roads: RoadMesh | None = None,
+    sidewalks: RoadMesh | None = None,
     ortho_image: str | Path | None = None,
     ortho_extent_m: tuple[float, float, float, float] | None = None,
 ) -> str:
@@ -75,6 +76,11 @@ def write_3dm(
     l_road.Color = (116, 121, 127, 255)        # asphalt gray
     idx_road = model.Layers.Add(l_road)
 
+    l_sw = rhino3dm.Layer()
+    l_sw.Name = "sidewalks"
+    l_sw.Color = (176, 172, 160, 255)          # concrete beige-gray
+    idx_sw = model.Layers.Add(l_sw)
+
     # origin_offset → 문서 수준 Strings (좌표 복원용, 사양서 §6.1)
     ox, oy = offset
     model.Strings["origin_offset_x"] = str(ox)
@@ -94,9 +100,11 @@ def write_3dm(
         for parcel in cadastral:
             _add_cadastral(model, parcel, idx_cada)
 
-    # 도로 노면 Mesh (Phase R)
+    # 도로 노면 / 보도 Mesh (Phase R)
     if roads is not None:
-        _add_roads(model, roads, idx_road)
+        _add_roads(model, roads, idx_road, "roads")
+    if sidewalks is not None:
+        _add_roads(model, sidewalks, idx_sw, "sidewalks")
 
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -248,6 +256,7 @@ def _add_roads(
     model: rhino3dm.File3dm,
     roads: RoadMesh,
     layer_idx: int,
+    name: str = "roads",
 ) -> None:
     """RoadMesh → rhino3dm Mesh (로컬 미터, 노면 살짝 리프트). 삼각화 없으면 생략."""
     from src.geometry.road import ROAD_LIFT_M
@@ -264,7 +273,7 @@ def _add_roads(
 
     attrs = rhino3dm.ObjectAttributes()
     attrs.LayerIndex = layer_idx
-    attrs.Name = "roads"
+    attrs.Name = name
     model.Objects.AddMesh(mesh, attrs)
 
 

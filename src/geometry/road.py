@@ -42,8 +42,9 @@ class RoadMesh:
         }
 
 
-# 노면을 지형 바로 위로 살짝 띄우는 리프트(m) — .3dm/.skp z-fighting 방지(F2는 뷰어에서 별도).
-ROAD_LIFT_M = 0.1
+# 노면을 지형 바로 위로 살짝 띄우는 리프트(m) — 경계선 z-fighting 방지용 소량. 제약 삼각화로
+# 지형이 도로 경계에 맞물리므로(밑 지형 컬링) 크게 띄우면 도로가 떠 보인다. F2는 뷰어에서 별도.
+ROAD_LIFT_M = 0.03
 
 
 def _ring_local(coords, offset) -> list[tuple[float, float]]:
@@ -65,11 +66,11 @@ def _iter_polys(geom):
             yield from _iter_polys(g)
 
 
-def clip_roads(geojson_path: str | Path, bbox_5186, offset) -> list[RoadFeature]:
-    """지역 도로 GeoJSON을 bbox_5186으로 클립 → 로컬 미터 RoadFeature 목록.
+def _clip_polys(geojson_path, bbox_5186, offset, want_sidewalk: bool) -> list[RoadFeature]:
+    """지역 GeoJSON 폴리곤을 bbox 클립 → 로컬 미터 RoadFeature. 보도(sw)/도로 구분 필터.
 
-    bbox_5186: (minx, miny, maxx, maxy) EPSG:5186. offset: origin_offset(건물·지형과 공통 기준).
-    bbox와 겹치는 폴리곤만, bbox로 잘라서 반환. 파일 없으면 빈 목록.
+    want_sidewalk=False: 보도(properties.sw) 제외한 도로 폴리곤. True: 보도만.
+    bbox_5186: (minx,miny,maxx,maxy) EPSG:5186. offset: origin_offset. 파일 없으면 빈 목록.
     """
     path = Path(geojson_path)
     if not path.exists():
@@ -80,7 +81,9 @@ def clip_roads(geojson_path: str | Path, bbox_5186, offset) -> list[RoadFeature]
     out: list[RoadFeature] = []
     for f in feats:
         geom = f.get("geometry")
-        if not geom:
+        if not geom or geom.get("type") not in ("Polygon", "MultiPolygon"):
+            continue
+        if bool((f.get("properties") or {}).get("sw")) != want_sidewalk:
             continue
         try:
             g = shape(geom)
@@ -101,6 +104,16 @@ def clip_roads(geojson_path: str | Path, bbox_5186, offset) -> list[RoadFeature]
             ]
             out.append(RoadFeature(rings=[ext] + holes))
     return out
+
+
+def clip_roads(geojson_path: str | Path, bbox_5186, offset) -> list[RoadFeature]:
+    """지역 GeoJSON의 도로 폴리곤(보도 제외)을 bbox 클립 → 로컬 미터 RoadFeature 목록."""
+    return _clip_polys(geojson_path, bbox_5186, offset, want_sidewalk=False)
+
+
+def clip_sidewalks(geojson_path: str | Path, bbox_5186, offset) -> list[RoadFeature]:
+    """지역 GeoJSON의 보도(A0033320) 폴리곤을 bbox 클립 → 로컬 미터 RoadFeature 목록."""
+    return _clip_polys(geojson_path, bbox_5186, offset, want_sidewalk=True)
 
 
 # --- R1b: 노면 드레이프 메시 ------------------------------------------------
@@ -243,6 +256,21 @@ def clip_centerlines(geojson_path: str | Path, bbox_5186, offset) -> list[list[t
             coords = [(float(x) - ox, float(y) - oy) for x, y in ls.coords]
             if len(coords) >= 2:
                 out.append(coords)
+    return out
+
+
+def drape_centerlines(centerlines, dem):
+    """중심선 폴리라인을 DEM에 드레이프 → 로컬 미터 [[(x,y,z)]] 목록(차선/중심선 마킹용).
+
+    dem 없으면 z=0. 노면 위에 얹히도록 렌더 측에서 살짝 리프트한다.
+    """
+    if not centerlines:
+        return []
+    out = []
+    for line in centerlines:
+        pts = [(x, y, _z(dem, x, y)) for x, y in line]
+        if len(pts) >= 2:
+            out.append(pts)
     return out
 
 
@@ -392,8 +420,10 @@ def apply_crown(mesh, centerlines, crown_pct=2.0, sample_m=5.0, cap_m=15.0):
 def carve_terrain(terrain_mesh, road_features, m2i):
     """도로 footprint 안의 지형 삼각형을 제거한다(적응형 TIN이 도로 위를 덮는 초록 겹침 제거).
 
-    지형 정점은 인치(×m2i) — /m2i로 미터 환산해 도로 폴리곤(로컬 미터) 포함 여부를 삼각형
-    중심점으로 판정, 안쪽이면 버린다. 남은 정점만 재색인(compact). 도로 없으면 원본 그대로.
+    **세 꼭짓점이 모두** 도로 폴리곤 안인 삼각형만 제거한다. 중심점 기준으로 하면 도로보다 큰
+    삼각형이 통째로 지워져 도로 밖에 '검은 구멍'이 생기므로, 경계를 걸친 삼각형은 유지하고(구멍
+    방지) 완전 내부만 제거해 도로 메시가 확실히 덮게 한다. 지형 정점은 인치(×m2i) → /m2i 환산.
+    남은 정점만 재색인(compact). 도로 없으면 원본 그대로.
     """
     if not road_features or terrain_mesh is None or not terrain_mesh.triangles:
         return terrain_mesh
@@ -418,12 +448,19 @@ def carve_terrain(terrain_mesh, road_features, m2i):
     pae = prep(unary_union(polys))
 
     V = terrain_mesh.vertices
-    keep = []
-    for a, b, c in terrain_mesh.triangles:
-        cx = (V[a][0] + V[b][0] + V[c][0]) / 3.0 / m2i
-        cy = (V[a][1] + V[b][1] + V[c][1]) / 3.0 / m2i
-        if not pae.contains(Point(cx, cy)):
-            keep.append((a, b, c))
+    inside: dict[int, bool] = {}
+
+    def _in(i):
+        v = inside.get(i)
+        if v is None:
+            v = pae.contains(Point(V[i][0] / m2i, V[i][1] / m2i))
+            inside[i] = v
+        return v
+
+    keep = [
+        (a, b, c) for a, b, c in terrain_mesh.triangles
+        if not (_in(a) and _in(b) and _in(c))   # 완전 내부만 제거(경계 삼각형 유지→구멍 방지)
+    ]
     if len(keep) == len(terrain_mesh.triangles):
         return terrain_mesh  # 잘린 것 없음
 
@@ -433,6 +470,231 @@ def carve_terrain(terrain_mesh, road_features, m2i):
         vertices=[terrain_mesh.vertices[i] for i in used],
         triangles=[(remap[a], remap[b], remap[c]) for a, b, c in keep],
     )
+
+
+def _polygon_sample_points(rings, cell: float):
+    """폴리곤(외곽+구멍) → 경계 densify + 내부 격자 (x,y) 샘플점 목록(통합 삼각화 입력용)."""
+    import numpy as np
+    from shapely import contains_xy
+    from shapely.geometry import Polygon
+
+    ext = rings[0]
+    holes = [r for r in rings[1:] if len(r) >= 3]
+    try:
+        poly = Polygon(ext, holes)
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+    except Exception:  # noqa: BLE001
+        return []
+    if poly.is_empty or poly.area <= 0.0 or poly.geom_type != "Polygon":
+        return []
+    pts: set[tuple[float, float]] = set()
+    for ring in rings:
+        for px, py in _densify_ring(ring, cell):
+            pts.add((round(px, 3), round(py, 3)))
+    minx, miny, maxx, maxy = poly.bounds
+    xs = np.arange(minx, maxx + cell, cell)
+    ys = np.arange(miny, maxy + cell, cell)
+    gx, gy = np.meshgrid(xs, ys)
+    gx = gx.ravel()
+    gy = gy.ravel()
+    ins = contains_xy(poly, gx, gy)
+    for x, y in zip(gx[ins], gy[ins]):
+        pts.add((round(float(x), 3), round(float(y), 3)))
+    return list(pts)
+
+
+def build_unified_surface(
+    dem, max_error_m, road_features, sidewalk_features, cell, m2i,
+    centerlines=None, crown_pct=0.0, crown_cap=15.0,
+):
+    """지형+도로+보도를 **한 번의 Delaunay**로 삼각화해 재질별 3메시로 분리한다.
+
+    지형 DEM 점(도로/보도 밖) + 도로/보도 경계·내부 샘플점을 한 점집합으로 삼각화 → 삼각형을
+    중심점 재질(도로>보도>지형)로 분류 → 각 클래스를 재색인해 (TerrainMesh, RoadMesh road,
+    RoadMesh sidewalk)로 낸다. **모든 메시가 같은 정점 위치를 공유**하므로 경계가 100% 일치 —
+    구멍·뜸·z-fighting·겹침이 구조적으로 불가능하다. z는 (버닝된) DEM 표고 + 도로 크라운.
+    road/sidewalk 둘 다 없으면 (build_tin, None, None). 좌표: 지형=인치(×m2i), 도로/보도=미터.
+    """
+    from src.geometry.terrain_mesh import (
+        TerrainMesh,
+        adaptive_select,
+        build_tin,
+        pixel_to_local_m,
+    )
+
+    road_features = road_features or []
+    sidewalk_features = sidewalk_features or []
+    if not road_features and not sidewalk_features:
+        return build_tin(dem, max_error_m), None, None
+
+    import numpy as np
+    from scipy.spatial import Delaunay
+    from shapely import contains_xy
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    def _union(feats):
+        polys = []
+        for f in feats:
+            try:
+                p = Polygon(f.rings[0], [r for r in f.rings[1:] if len(r) >= 3])
+                if not p.is_valid:
+                    p = p.buffer(0)
+                if not p.is_empty:
+                    polys.append(p)
+            except Exception:  # noqa: BLE001
+                continue
+        return unary_union(polys) if polys else None
+
+    road_u = _union(road_features)
+    sw_u = _union(sidewalk_features)
+
+    sel = adaptive_select(dem, max_error_m)
+    if sel is None:
+        # 드문 폴백: 분리 방식(제약 TIN + 드레이프 메시)
+        terr = build_terrain_conformed(dem, max_error_m, road_features + sidewalk_features, cell, m2i)
+        rm = build_road_mesh(road_features, dem, cell) if road_features else None
+        sm = build_road_mesh(sidewalk_features, dem, cell) if sidewalk_features else None
+        return terr, rm, sm
+    pts_pixel, zsel = sel
+    local = pixel_to_local_m(pts_pixel, dem)   # (N,2) 로컬 미터
+
+    all_polys = [u for u in (road_u, sw_u) if u is not None]
+    all_u = unary_union(all_polys) if all_polys else None
+    outside = (
+        ~contains_xy(all_u, local[:, 0], local[:, 1]) if all_u is not None
+        else np.ones(len(local), dtype=bool)
+    )
+    Px = list(local[outside, 0])
+    Py = list(local[outside, 1])
+    Pz = list(zsel[outside])
+
+    for f in road_features + sidewalk_features:      # 도로/보도 경계+내부 샘플점
+        for x, y in _polygon_sample_points(f.rings, cell):
+            Px.append(x)
+            Py.append(y)
+            Pz.append(_z(dem, x, y))
+
+    P = np.column_stack([Px, Py]).astype(float)
+    Z = np.asarray(Pz, dtype=float)
+    if len(P) < 3:
+        return build_tin(dem, max_error_m), None, None
+
+    # 크라운: 도로 영역 정점 z를 중심선 거리만큼 낮춤(공유 정점이라 지형 경계도 함께 따라감)
+    if centerlines and crown_pct > 0 and road_u is not None:
+        tree = _centerline_points_tree(centerlines, cell)
+        if tree is not None:
+            in_road_v = contains_xy(road_u, P[:, 0], P[:, 1])
+            d, _ = tree.query(P)
+            Z = Z - np.where(in_road_v, np.minimum(d, crown_cap) * (crown_pct / 100.0), 0.0)
+
+    tri = Delaunay(P)
+    simp = tri.simplices
+    cx = (P[simp[:, 0], 0] + P[simp[:, 1], 0] + P[simp[:, 2], 0]) / 3.0
+    cy = (P[simp[:, 0], 1] + P[simp[:, 1], 1] + P[simp[:, 2], 1]) / 3.0
+    in_road = contains_xy(road_u, cx, cy) if road_u is not None else np.zeros(len(simp), bool)
+    in_sw = contains_xy(sw_u, cx, cy) if sw_u is not None else np.zeros(len(simp), bool)
+    road_t = simp[in_road]
+    sw_t = simp[in_sw & ~in_road]           # 도로 우선(겹침 드묾)
+    terr_t = simp[~in_road & ~in_sw]
+
+    def _split(tris_idx, scale):
+        used = np.unique(tris_idx)
+        remap = {int(o): n for n, o in enumerate(used)}
+        verts = [(float(P[i, 0]) * scale, float(P[i, 1]) * scale, float(Z[i]) * scale) for i in used]
+        tris = [(remap[int(a)], remap[int(b)], remap[int(c)]) for a, b, c in tris_idx]
+        return verts, tris
+
+    tv, tt = _split(terr_t, m2i) if len(terr_t) else ([], [])
+    terrain = TerrainMesh(vertices=tv, triangles=tt)
+
+    def _road_mesh(tris_idx, feats):
+        if len(tris_idx) == 0:
+            return None
+        verts, tris = _split(tris_idx, 1.0)   # 미터
+        outlines = [
+            [(x, y, _z(dem, x, y)) for x, y in ring]
+            for f in feats for ring in f.rings if len(ring) >= 3
+        ]
+        return RoadMesh(vertices=verts, triangles=tris, outlines=outlines)
+
+    return terrain, _road_mesh(road_t, road_features), _road_mesh(sw_t, sidewalk_features)
+
+
+def build_terrain_conformed(dem, max_error_m, road_features, cell, m2i):
+    """도로/보도 경계를 제약으로 넣은 지형 TIN — 지형이 도로 경계에 정확히 맞물려 구멍·겹침 제거.
+
+    적응형으로 고른 DEM 점 중 도로 '안' 점은 빼고, 도로/보도 경계를 cell 간격으로 조밀화한
+    정점을 더해 Delaunay 삼각화 후 도로 안 삼각형(중심점 기준)을 컬링한다. 경계 정점이 도로
+    메시 경계와 같은 링·간격(_densify_ring)이라 이음매 없이 맞물린다. carve의 상위호환 —
+    road_features 없으면 일반 build_tin.
+    """
+    from src.geometry.terrain_mesh import (
+        TerrainMesh,
+        adaptive_select,
+        build_tin,
+        pixel_to_local_m,
+    )
+
+    if not road_features:
+        return build_tin(dem, max_error_m)
+    import numpy as np
+    from scipy.spatial import Delaunay
+    from shapely import contains_xy
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    sel = adaptive_select(dem, max_error_m)
+    if sel is None:
+        return build_tin(dem, max_error_m)
+    pts_pixel, zsel = sel
+    local = pixel_to_local_m(pts_pixel, dem)   # (N,2) 로컬 미터
+
+    polys = []
+    for f in road_features:
+        try:
+            p = Polygon(f.rings[0], [r for r in f.rings[1:] if len(r) >= 3])
+            if not p.is_valid:
+                p = p.buffer(0)
+            if not p.is_empty:
+                polys.append(p)
+        except Exception:  # noqa: BLE001
+            continue
+    if not polys:
+        return build_tin(dem, max_error_m)
+    union = unary_union(polys)
+
+    # DEM 점: 도로 밖만 (벡터화 contains)
+    outside = ~contains_xy(union, local[:, 0], local[:, 1])
+    P = local[outside]
+    Z = zsel[outside]
+
+    # 도로/보도 경계(조밀화) 정점 추가 — z는 DEM 표고. 도로 메시와 동일 링·간격 → 이음매 없음.
+    bx, by, bz = [], [], []
+    for f in road_features:
+        for ring in f.rings:
+            for x, y in _densify_ring(ring, cell):
+                bx.append(x)
+                by.append(y)
+                bz.append(_z(dem, x, y))
+    if bx:
+        P = np.vstack([P, np.column_stack([bx, by])])
+        Z = np.concatenate([Z, np.asarray(bz, dtype=float)])
+    if len(P) < 3:
+        return build_tin(dem, max_error_m)
+
+    tri = Delaunay(P)
+    simp = tri.simplices
+    cx = (P[simp[:, 0], 0] + P[simp[:, 1], 0] + P[simp[:, 2], 0]) / 3.0
+    cy = (P[simp[:, 0], 1] + P[simp[:, 1], 1] + P[simp[:, 2], 1]) / 3.0
+    keep = simp[~contains_xy(union, cx, cy)]   # 도로 안 삼각형 컬링
+
+    used = np.unique(keep)
+    remap = {int(o): n for n, o in enumerate(used)}
+    verts = [(float(P[i, 0]) * m2i, float(P[i, 1]) * m2i, float(Z[i]) * m2i) for i in used]
+    tris = [(remap[int(a)], remap[int(b)], remap[int(c)]) for a, b, c in keep]
+    return TerrainMesh(vertices=verts, triangles=tris)
 
 
 def burn_roads(

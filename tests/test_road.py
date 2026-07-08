@@ -76,6 +76,37 @@ def test_clip_roads_missing_file(tmp_path):
     assert clip_roads(tmp_path / "nope.geojson", (0, 0, 1, 1), (0.0, 0.0)) == []
 
 
+def test_clip_roads_and_sidewalks_separation(tmp_path):
+    """도로(properties {})와 보도(sw) 폴리곤 분리 — clip_roads는 도로만, clip_sidewalks는 보도만."""
+    from src.geometry.road import clip_sidewalks
+
+    fc = {
+        "type": "FeatureCollection",
+        "features": [
+            {"type": "Feature", "properties": {},
+             "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [10, 0], [10, 10], [0, 0]]]}},
+            {"type": "Feature", "properties": {"sw": 1},
+             "geometry": {"type": "Polygon", "coordinates": [[[20, 0], [30, 0], [30, 10], [20, 0]]]}},
+        ],
+    }
+    p = tmp_path / "r.geojson"
+    p.write_text(json.dumps(fc), encoding="utf-8")
+    roads = clip_roads(p, (-5, -5, 35, 15), (0.0, 0.0))
+    sws = clip_sidewalks(p, (-5, -5, 35, 15), (0.0, 0.0))
+    assert len(roads) == 1 and len(sws) == 1
+    assert max(x for x, _ in roads[0].rings[0]) < 15      # 도로는 x<15
+    assert min(x for x, _ in sws[0].rings[0]) > 15        # 보도는 x>15
+
+
+def test_drape_centerlines():
+    """중심선 폴리라인 → DEM 드레이프 [(x,y,z)]. 평평 DEM이면 z=10."""
+    from src.geometry.road import drape_centerlines
+
+    out = drape_centerlines([[(0.0, 0.0), (10.0, 0.0)]], _FlatDem())
+    assert len(out) == 1 and len(out[0]) == 2
+    assert all(len(p) == 3 and abs(p[2] - 10.0) < 1e-6 for p in out[0])
+
+
 def test_build_road_mesh():
     """RoadFeature → DEM 드레이프 RoadMesh(정점 z=표고, 유효 인덱스) + 외곽선 + to_geometry."""
     square = [(0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0)]
@@ -254,21 +285,83 @@ def test_apply_crown_cambers_cross_section():
     assert abs((zc - ze) - 0.2) < 0.05          # 편측 10m × 2% = 0.2m
 
 
-def test_carve_terrain_removes_road_triangles():
-    """도로 footprint 안의 지형 삼각형 제거 — 지형이 도로 위 덮는 초록 겹침 제거."""
+def test_carve_terrain_removes_fully_inside_triangles():
+    """도로 안에 **완전히** 든 삼각형만 제거(경계 걸친 것은 유지 — 검은 구멍 방지)."""
     from src.config import M2I
     from src.geometry.road import carve_terrain
     from src.geometry.terrain_mesh import TerrainMesh
 
     m = M2I  # 지형 정점은 인치
-    V = [(0, 0, 0), (20 * m, 0, 0), (20 * m, 20 * m, 0), (0, 20 * m, 0), (10 * m, 10 * m, 0)]
-    T = [(0, 1, 4), (1, 2, 4), (2, 3, 4), (3, 0, 4)]  # 중심(10,10) 부채꼴 4삼각형
+    # 도로 안(quad 2삼각형, 모두 [5,25]²) + 도로 밖(1삼각형) + 경계 걸침(1삼각형)
+    V = [
+        (10 * m, 10 * m, 0), (20 * m, 10 * m, 0), (20 * m, 20 * m, 0), (10 * m, 20 * m, 0),  # 내부 quad
+        (40 * m, 40 * m, 0), (50 * m, 40 * m, 0), (45 * m, 50 * m, 0),                        # 외부
+        (0 * m, 10 * m, 0), (10 * m, 10 * m, 0), (5 * m, 20 * m, 0),                          # 경계 걸침(정점 하나 밖)
+    ]
+    T = [(0, 1, 2), (0, 2, 3), (4, 5, 6), (7, 8, 9)]
     terr = TerrainMesh(vertices=V, triangles=T)
-    # 도로: 가로 띠 y∈[8,12] → 좌우 삼각형(중심 (3.3,10),(16.7,10)) 제거, 상하는 유지
-    road = RoadFeature(rings=[[(0.0, 8.0), (20.0, 8.0), (20.0, 12.0), (0.0, 12.0)]])
+    road = RoadFeature(rings=[[(5.0, 5.0), (25.0, 5.0), (25.0, 25.0), (5.0, 25.0)]])
     carved = carve_terrain(terr, [road], M2I)
 
+    # 완전 내부 2개 제거 → 외부 1 + 경계 1 = 2개 유지
     assert len(carved.triangles) == 2
-    for a, b, c in carved.triangles:                      # 남은 삼각형 중심은 도로 밖
-        cy = (carved.vertices[a][1] + carved.vertices[b][1] + carved.vertices[c][1]) / 3.0 / m
-        assert not (8.0 <= cy <= 12.0)
+
+
+def test_build_terrain_conformed_excludes_road_interior():
+    """제약 TIN — 어떤 지형 삼각형도 도로 안(centroid)에 없어야 함(구멍·겹침 제거)."""
+    import numpy as np
+    from affine import Affine
+    from shapely import contains_xy
+    from shapely.geometry import Polygon
+
+    from src.config import M2I
+    from src.geometry.road import build_terrain_conformed
+    from src.terrain.dem import DEMPatch
+
+    n, cell = 30, 5.0
+    tf = Affine(cell, 0, 0.0, 0, -cell, n * cell)
+    grid = np.array([[0.1 * (cell * c) for c in range(n)] for _ in range(n)], dtype=np.float32)
+    dem = DEMPatch(grid=grid, transform=tf, offset=(0.0, 0.0))
+    road = RoadFeature(rings=[[(40.0, 40.0), (80.0, 40.0), (80.0, 80.0), (40.0, 80.0)]])
+
+    terr = build_terrain_conformed(dem, 0.25, [road], 2.5, M2I)
+    assert terr.vertices and terr.triangles
+    poly = Polygon([(40, 40), (80, 40), (80, 80), (40, 80)])
+    V = terr.vertices
+    for a, b, c in terr.triangles:
+        cx = (V[a][0] + V[b][0] + V[c][0]) / 3.0 / M2I
+        cy = (V[a][1] + V[b][1] + V[c][1]) / 3.0 / M2I
+        assert not contains_xy(poly, cx, cy)   # 도로 안엔 지형 삼각형 없음
+
+
+def test_build_unified_surface_shares_boundary_vertices():
+    """통합 표면 — 지형·도로가 같은 정점 위치를 공유(이음매 0), 지형 삼각형은 도로 밖."""
+    import numpy as np
+    from affine import Affine
+    from shapely import contains_xy
+    from shapely.geometry import Polygon
+
+    from src.config import M2I
+    from src.geometry.road import build_unified_surface
+    from src.terrain.dem import DEMPatch
+
+    n, cell = 30, 5.0
+    tf = Affine(cell, 0, 0.0, 0, -cell, n * cell)
+    grid = np.array([[0.1 * (cell * c) for c in range(n)] for _ in range(n)], dtype=np.float32)
+    dem = DEMPatch(grid=grid, transform=tf, offset=(0.0, 0.0))
+    road = RoadFeature(rings=[[(40.0, 40.0), (80.0, 40.0), (80.0, 80.0), (40.0, 80.0)]])
+
+    terrain, rm, sm = build_unified_surface(dem, 0.25, [road], [], 2.5, M2I, centerlines=None, crown_pct=0.0)
+    assert terrain.triangles and rm is not None and rm.triangles
+
+    poly = Polygon([(40, 40), (80, 40), (80, 80), (40, 80)])
+    V = terrain.vertices
+    for a, b, c in terrain.triangles:
+        cx = (V[a][0] + V[b][0] + V[c][0]) / 3.0 / M2I
+        cy = (V[a][1] + V[b][1] + V[c][1]) / 3.0 / M2I
+        assert not contains_xy(poly, cx, cy)
+
+    # 지형(인치/M2I)과 도로(미터) 정점 위치가 경계에서 공유됨 → 이음매 없음
+    terr_xy = {(round(x / M2I, 2), round(y / M2I, 2)) for x, y, _ in terrain.vertices}
+    road_xy = {(round(x, 2), round(y, 2)) for x, y, _ in rm.vertices}
+    assert len(terr_xy & road_xy) >= 4

@@ -18,6 +18,12 @@ export interface SiteGeometry {
     triangles: [number, number, number][];
     outlines: [number, number, number][][];
   } | null;
+  sidewalks?: {
+    vertices: [number, number, number][];
+    triangles: [number, number, number][];
+    outlines: [number, number, number][][];
+  } | null;
+  lanes?: [number, number, number][][] | null;
   ortho_extent_m: [number, number, number, number] | null;
 }
 
@@ -37,7 +43,13 @@ const C_CADASTRAL = 0xd9a441; // sandy yellow — 대지경계 (.3dm cadastral �
 const CADASTRAL_LIFT = 0.5; // 지형 위로 살짝 띄워 z-fighting 방지 (m)
 const C_ROAD_FILL = 0x74797f; // 아스팔트 그레이 — 도로 노면 (R1b)
 const C_ROAD_EDGE = 0x3a3f45; // 짙은 그레이 — 도로 외곽선
-const ROAD_LIFT = 0.12; // 도로 노면은 지형 바로 위(살짝) → z-fighting 방지 (m)
+const C_SIDEWALK = 0xb0aca0; // 콘크리트 베이지그레이 — 보도 (R3)
+const C_LANE = 0xe8c84a; // 노랑 — 차선/중심선 마킹 (R3)
+// 지형이 제약 삼각화로 도로 경계에 정확히 맞물리므로(도로 밑 지형은 컬링) 리프트는 경계선
+// z-fighting 방지용 아주 작은 값만. 크면 도로가 떠 보인다.
+const ROAD_LIFT = 0.03; // 도로 노면 — 지면에 거의 flush
+const SIDEWALK_LIFT = 0.08; // 보도는 도로보다 살짝 위(연석 느낌)
+const LANE_LIFT = 0.12; // 차선은 노면 위
 // 높이 그라디언트: 낮음(연한 스틸) → 높음(짙은 네이비). 스틸블루 정체성 유지.
 const RAMP_LO = new THREE.Color(0xa9cfe8);
 const RAMP_HI = new THREE.Color(0x1f3a5f);
@@ -50,6 +62,8 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
     terrain?: THREE.Object3D | null;
     cadastral?: THREE.Object3D | null;
     roads?: THREE.Object3D | null;
+    sidewalks?: THREE.Object3D | null;
+    lanes?: THREE.Object3D | null;
     buildingMeshes: THREE.Mesh[];
     edges: THREE.LineSegments[];
     sun?: THREE.DirectionalLight;
@@ -58,6 +72,8 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
   const [showTerrain, setShowTerrain] = useState(true);
   const [showCadastral, setShowCadastral] = useState(true);
   const [showRoads, setShowRoads] = useState(true);
+  const [showSidewalks, setShowSidewalks] = useState(true);
+  const [showLanes, setShowLanes] = useState(true);
   const [colorMode, setColorMode] = useState<ColorMode>("height");
   const [viewMode, setViewMode] = useState<ViewMode>("solid");
   const [showEdges, setShowEdges] = useState(true);
@@ -109,10 +125,14 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
       const terrain = buildTerrain(geometry.terrain, orthoUrl, geometry.ortho_extent_m);
       const cadastral = buildCadastral(geometry.cadastral);
       const roads = buildRoads(geometry.roads);
+      const sidewalks = buildSurfaceMesh(geometry.sidewalks, C_SIDEWALK, SIDEWALK_LIFT);
+      const lanes = buildLanes(geometry.lanes);
       if (buildings) root.add(buildings);
       if (terrain) root.add(terrain);
       if (cadastral) root.add(cadastral);
       if (roads) root.add(roads);
+      if (sidewalks) root.add(sidewalks);
+      if (lanes) root.add(lanes);
 
       root.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(root);
@@ -120,7 +140,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
       // 지형이 없으면 그림자를 받을 바닥면을 깔아 건물 그림자가 보이게 한다.
       if (!terrain && !box.isEmpty()) root.add(shadowGround(box));
 
-      sceneRefs.current = { buildings, terrain, cadastral, roads, buildingMeshes: meshes, edges, sun };
+      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, buildingMeshes: meshes, edges, sun };
       if (!box.isEmpty()) {
         fitCamera(camera, controls, box);
         frameSunShadow(sun, box);
@@ -170,7 +190,9 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
     if (sceneRefs.current.terrain) sceneRefs.current.terrain.visible = showTerrain;
     if (sceneRefs.current.cadastral) sceneRefs.current.cadastral.visible = showCadastral;
     if (sceneRefs.current.roads) sceneRefs.current.roads.visible = showRoads;
-  }, [showBuildings, showTerrain, showCadastral, showRoads]);
+    if (sceneRefs.current.sidewalks) sceneRefs.current.sidewalks.visible = showSidewalks;
+    if (sceneRefs.current.lanes) sceneRefs.current.lanes.visible = showLanes;
+  }, [showBuildings, showTerrain, showCadastral, showRoads, showSidewalks, showLanes]);
 
   // 색상 모드: 높이별 그라디언트 ↔ 단색 (미확인 건물은 항상 주황)
   useEffect(() => {
@@ -224,6 +246,8 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
   const nT = geometry.terrain?.triangles.length ?? 0;
   const nC = geometry.cadastral?.length ?? 0;
   const nR = geometry.roads?.outlines?.length ?? 0;
+  const nSW = geometry.sidewalks?.outlines?.length ?? 0;
+  const nL = geometry.lanes?.length ?? 0;
 
   return (
     <div>
@@ -244,6 +268,14 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
         <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={showRoads} onChange={(e) => setShowRoads(e.target.checked)} className="h-4 w-4" disabled={!nR} />
           도로 <span className="text-xs text-slate-400">({nR})</span>
+        </label>
+        <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={showSidewalks} onChange={(e) => setShowSidewalks(e.target.checked)} className="h-4 w-4" disabled={!nSW} />
+          보도 <span className="text-xs text-slate-400">({nSW})</span>
+        </label>
+        <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={showLanes} onChange={(e) => setShowLanes(e.target.checked)} className="h-4 w-4" disabled={!nL} />
+          차선 <span className="text-xs text-slate-400">({nL})</span>
         </label>
         <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={showEdges} onChange={(e) => setShowEdges(e.target.checked)} className="h-4 w-4" />
@@ -468,6 +500,56 @@ function buildRoads(roads: Props["geometry"]["roads"]): THREE.Group | null {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     g.add(new THREE.LineLoop(geo, lmat));
+  }
+  return g;
+}
+
+// 보도(R3): DEM 드레이프 삼각 메시(콘크리트 색). 외곽선 없이 깔끔하게.
+function buildSurfaceMesh(
+  data: { vertices: [number, number, number][]; triangles: [number, number, number][] } | null | undefined,
+  fillColor: number,
+  lift: number
+): THREE.Group | null {
+  if (!data || !data.vertices?.length || !data.triangles?.length) return null;
+  const g = new THREE.Group();
+  const pos = new Float32Array(data.vertices.length * 3);
+  for (let i = 0; i < data.vertices.length; i++) {
+    pos[3 * i] = data.vertices[i][0];
+    pos[3 * i + 1] = data.vertices[i][1];
+    pos[3 * i + 2] = data.vertices[i][2] + lift;
+  }
+  const idx = new Uint32Array(data.triangles.length * 3);
+  for (let i = 0; i < data.triangles.length; i++) {
+    idx[3 * i] = data.triangles[i][0];
+    idx[3 * i + 1] = data.triangles[i][1];
+    idx[3 * i + 2] = data.triangles[i][2];
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: fillColor, roughness: 0.97, metalness: 0, side: THREE.DoubleSide }));
+  mesh.receiveShadow = true;
+  g.add(mesh);
+  return g;
+}
+
+// 차선/중심선 마킹(R3): 드레이프된 폴리라인을 노란 라인으로.
+function buildLanes(lanes: Props["geometry"]["lanes"]): THREE.Group | null {
+  if (!lanes || !lanes.length) return null;
+  const g = new THREE.Group();
+  const mat = new THREE.LineBasicMaterial({ color: C_LANE });
+  for (const line of lanes) {
+    if (!line || line.length < 2) continue;
+    const pos = new Float32Array(line.length * 3);
+    for (let i = 0; i < line.length; i++) {
+      pos[3 * i] = line[i][0];
+      pos[3 * i + 1] = line[i][1];
+      pos[3 * i + 2] = line[i][2] + LANE_LIFT;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.add(new THREE.Line(geo, mat));
   }
   return g;
 }

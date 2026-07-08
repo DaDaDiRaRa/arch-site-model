@@ -31,6 +31,8 @@ log = logging.getLogger(__name__)
 _ROAD_POLY_PAT = re.compile(r"A0010000", re.IGNORECASE)
 # 도로중심선 레이어코드(A0020000). 선은 N3L 접두 — 면(N3A)/점(N3P)은 제외한다.
 _ROAD_CL_PAT = re.compile(r"A0020000", re.IGNORECASE)
+# 보도(인도) 레이어코드(A0033320). 폴리곤(N3A) — 선/점 제외.
+_SIDEWALK_PAT = re.compile(r"A0033320", re.IGNORECASE)
 
 
 def _find_shp_dedup(shp_dir: Path, pat: re.Pattern, skip_prefixes: tuple[str, ...]) -> list[Path]:
@@ -62,6 +64,24 @@ def read_road_polygons(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> li
     files = _find_road_shp(shp_dir)
     if not files:
         raise FileNotFoundError(f"도로경계 SHP(A0010000 폴리곤)를 찾을 수 없습니다: {shp_dir}")
+    polys = []
+    for f in files:
+        gdf = gpd.read_file(f, encoding="euc-kr")
+        gdf = _to_target_crs(gdf, target_crs)
+        for geom in gdf.geometry:
+            if geom is None or geom.is_empty:
+                continue
+            if geom.geom_type == "Polygon":
+                polys.append(geom)
+            elif geom.geom_type == "MultiPolygon":
+                polys.extend(g for g in geom.geoms if not g.is_empty)
+    return polys
+
+
+def read_sidewalks(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> list:
+    """보도(A0033320) 폴리곤을 target_crs로 통일한 shapely Polygon 목록. 없으면 빈 목록."""
+    shp_dir = Path(shp_dir)
+    files = _find_shp_dedup(shp_dir, _SIDEWALK_PAT, ("N3L", "N3P"))
     polys = []
     for f in files:
         gdf = gpd.read_file(f, encoding="euc-kr")
@@ -112,6 +132,7 @@ def bake_roads(
     if not polys:
         raise ValueError("유효 도로 폴리곤이 없습니다(슬리버 제거 후 0).")
     centerlines = read_road_centerlines(shp_dir, target_crs)
+    sidewalks = [p for p in read_sidewalks(shp_dir, target_crs) if p.area >= min_area_m2]
 
     from shapely.geometry import mapping
 
@@ -120,6 +141,10 @@ def bake_roads(
     features += [
         {"type": "Feature", "properties": {"cl": 1}, "geometry": mapping(ls)}
         for ls in centerlines
+    ]
+    features += [
+        {"type": "Feature", "properties": {"sw": 1}, "geometry": mapping(p)}
+        for p in sidewalks
     ]
     fc = {"type": "FeatureCollection", "crs_epsg": epsg, "features": features}
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,13 +156,14 @@ def bake_roads(
 
     _update_road_manifest(region, out_path.name, b4326, len(polys))
     log.info(
-        "도로 %d개 + 중심선 %d개 → %s (region=%s)",
-        len(polys), len(centerlines), out_path.name, region,
+        "도로 %d개 + 중심선 %d개 + 보도 %d개 → %s (region=%s)",
+        len(polys), len(centerlines), len(sidewalks), out_path.name, region,
     )
     return {
         "file": out_path.name,
         "polygons": len(polys),
         "centerlines": len(centerlines),
+        "sidewalks": len(sidewalks),
         "bounds_4326": b4326,
     }
 

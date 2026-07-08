@@ -65,7 +65,10 @@ def _resolve_ortho_source():
     return VWORLD_SATELLITE, config.VWORLD_KEY, "VWorld Satellite"
 
 
-def _build_geometry(solids, terrain_mesh, ortho_info, cadastral=None, dem=None, roads=None) -> dict:
+def _build_geometry(
+    solids, terrain_mesh, ortho_info,
+    cadastral=None, dem=None, roads=None, sidewalks=None, lanes=None,
+) -> dict:
     """브라우저 3D 미리보기용 경량 지오메트리 JSON (F2).
 
     모두 로컬 미터 좌표. 건물 footprint는 이미 미터, 지형 vertices는 인치(SketchUp)
@@ -114,14 +117,22 @@ def _build_geometry(solids, terrain_mesh, ortho_info, cadastral=None, dem=None, 
                 pts = [[round(x, 2), round(y, 2), 0.0] for x, y in ring]
             cadastral_out.append({"pnu": p.pnu, "ring": pts})
 
-    # 도로(Phase R): 이미 만든 RoadMesh(로컬 미터)를 F2 JSON으로 직렬화. dem 없으면 z=0 평면.
+    # 도로/보도(Phase R): RoadMesh(로컬 미터)를 F2 JSON으로. 차선(R3): 드레이프된 폴리라인.
     roads_out = roads.to_geometry() if roads is not None else None
+    sidewalks_out = sidewalks.to_geometry() if sidewalks is not None else None
+    lanes_out = (
+        [[[round(x, 2), round(y, 2), round(z, 2)] for x, y, z in line] for line in lanes]
+        if lanes
+        else None
+    )
 
     return {
         "buildings": buildings,
         "terrain": terrain,
         "cadastral": cadastral_out,
         "roads": roads_out,
+        "sidewalks": sidewalks_out,
+        "lanes": lanes_out,
         "ortho_extent_m": list(ortho_info["extent_local_m"]) if ortho_info else None,
     }
 
@@ -294,16 +305,21 @@ def generate(
     # 7.3 도로 노면 (Phase R) — 지역 GeoJSON을 bbox 클립 → 폴리곤 삼각화·DEM 드레이프한 노면 메시.
     #     도로는 실시간 API가 없어 오프라인 굽기(road_bake)한 GeoJSON을 road_manifest로 조회.
     #     road_mesh는 F2/.3dm/.skp 3소비자 공용(로컬 미터).
+    #     클립 + 버닝 + 차선만 여기서. 지형·도로·보도 메시는 §6b에서 **한 번의 통합 삼각화**로.
     road_mesh = None
-    road_features = None  # 6b 지형 carve에서도 씀 — 함수 스코프로 유지
+    sidewalk_mesh = None
+    lanes = None
+    road_features = None
+    sidewalk_features = None
+    road_centerlines = None
     road_count = 0
     if layers.get("roads"):
         from src.geometry.road import (
-            apply_crown,
-            build_road_mesh,
             burn_roads,
             clip_centerlines,
             clip_roads,
+            clip_sidewalks,
+            drape_centerlines,
         )
         from src.terrain.store import find_road_file
 
@@ -317,41 +333,57 @@ def generate(
             bbox_5186_road = _bbox_4326_to_5186(bbox)
             road_path = config.road_file_path(rf["file"])
             road_features = clip_roads(road_path, bbox_5186_road, offset)
+            sidewalk_features = clip_sidewalks(road_path, bbox_5186_road, offset)
             road_count = len(road_features)
-            if road_count == 0:
-                warnings.append("반경 내 도로 폴리곤 없음 (A0010000).")
+            if road_count == 0 and not sidewalk_features:
+                warnings.append("반경 내 도로/보도 폴리곤 없음 (A0010000/A0033320).")
             else:
-                cls = clip_centerlines(road_path, bbox_5186_road, offset) if dem is not None else []
-                # R2b 버닝: 지형을 도로에 맞게 절토/성토(뚫림·먹힘 제거). 이후 TIN은 §6b에서 이 DEM으로.
-                if dem is not None and cls:
+                road_centerlines = clip_centerlines(road_path, bbox_5186_road, offset) if dem is not None else []
+                # R2b 버닝: 지형을 도로에 맞게 절토/성토(뚫림·먹힘 제거). §6b 통합표면이 이 DEM을 씀.
+                if dem is not None and road_features and road_centerlines:
                     dem = burn_roads(
-                        dem, road_features, cls,
+                        dem, road_features, road_centerlines,
                         win_m=config.ROAD_SMOOTH_WIN_M,
                         sample_m=config.ROAD_CL_SAMPLE_M,
                         max_dist_m=config.ROAD_CL_MAX_DIST_M,
                         skirt_m=config.ROAD_SKIRT_M,
                         max_dev=config.ROAD_MAX_DEV_M,
                     )
-                # 노면 = 버닝(절토/성토·자기지면±dev 클램프)된 DEM 위 드레이프 → 지형과 동일 표면 →
-                #   이음매·큰 뜸/파임 없음. 버닝 후 별도 flatten을 걸면 클램프가 풀리므로 걸지 않는다.
-                road_mesh = build_road_mesh(road_features, dem, config.ROAD_CELL_M)
-                # R2b 정제: 크라운(횡단구배) — 중심선에서 가장자리로 살짝 낮춰 볼록한 배수형상.
-                if road_mesh is not None and cls and config.ROAD_CROWN_PCT > 0:
-                    road_mesh = apply_crown(
-                        road_mesh, cls, config.ROAD_CROWN_PCT,
-                        config.ROAD_CL_SAMPLE_M, config.ROAD_CROWN_CAP_M,
-                    )
+                # R3 차선(경량): 중심선을 노면에 드레이프한 폴리라인.
+                if road_centerlines:
+                    lanes = drape_centerlines(road_centerlines, dem)
 
-    # 6b. 지형 TIN — 도로 버닝(R2b) 후의 DEM으로 생성 → 지형이 도로에 맞게 절토/성토된다.
-    #     이후 도로 footprint 안 지형 삼각형을 잘라내(carve) 지형이 도로 위를 덮는 초록 겹침 제거.
+    # 6b. 통합 표면 — 지형·도로·보도를 **한 번의 삼각화**로 만들어 재질별 3메시로 분리(정점 공유 →
+    #     구멍·뜸·z-fighting·겹침 구조적 제거). 도로/보도 없으면 일반 build_tin.
     if layers.get("terrain") and dem is not None and elev_range is not None:
-        from src.geometry.terrain_mesh import build_tin
+        if road_features or sidewalk_features:
+            from src.geometry.road import build_unified_surface
 
-        terrain_mesh = build_tin(dem, config.TERRAIN_MAX_ERROR_M)
-        if road_features:
-            from src.geometry.road import carve_terrain
+            terrain_mesh, road_mesh, sidewalk_mesh = build_unified_surface(
+                dem, config.TERRAIN_MAX_ERROR_M, road_features, sidewalk_features,
+                config.ROAD_CELL_M, config.M2I,
+                centerlines=road_centerlines,
+                crown_pct=config.ROAD_CROWN_PCT, crown_cap=config.ROAD_CROWN_CAP_M,
+            )
+        else:
+            from src.geometry.terrain_mesh import build_tin
 
-            terrain_mesh = carve_terrain(terrain_mesh, road_features, config.M2I)
+            terrain_mesh = build_tin(dem, config.TERRAIN_MAX_ERROR_M)
+
+    # 통합표면이 안 만들어진 경우(지형 미요청/DEM 없음) 도로/보도는 드레이프 메시로 폴백.
+    if road_mesh is None and road_features:
+        from src.geometry.road import apply_crown, build_road_mesh
+
+        road_mesh = build_road_mesh(road_features, dem, config.ROAD_CELL_M)
+        if road_mesh is not None and road_centerlines and config.ROAD_CROWN_PCT > 0:
+            road_mesh = apply_crown(
+                road_mesh, road_centerlines, config.ROAD_CROWN_PCT,
+                config.ROAD_CL_SAMPLE_M, config.ROAD_CROWN_CAP_M,
+            )
+    if sidewalk_mesh is None and sidewalk_features:
+        from src.geometry.road import build_road_mesh
+
+        sidewalk_mesh = build_road_mesh(sidewalk_features, dem, config.ROAD_CELL_M)
 
     # setback stub (arch-law-diagnose 연동은 [목표])
     if setback:
@@ -412,7 +444,8 @@ def generate(
     if "skp" in outputs:
         out["skp"] = {
             "code": build_skp_code(
-                solids, terrain=terrain_mesh, cadastral=cadastral_parcels, roads=road_mesh
+                solids, terrain=terrain_mesh, cadastral=cadastral_parcels,
+                roads=road_mesh, sidewalks=sidewalk_mesh,
             ),
             "solids": len(solids),
             "terrain_triangles": len(terrain_mesh.triangles) if terrain_mesh else 0,
@@ -427,6 +460,7 @@ def generate(
             solids, terrain_mesh, odir / fname, offset,
             cadastral=cadastral_parcels,
             roads=road_mesh,
+            sidewalks=sidewalk_mesh,
             ortho_image=ortho_info["image_path"] if ortho_info else None,
             ortho_extent_m=ortho_info["extent_local_m"] if ortho_info else None,
         )
@@ -471,6 +505,7 @@ def generate(
         _build_geometry(
             solids, terrain_mesh, ortho_info,
             cadastral=cadastral_parcels, dem=dem, roads=road_mesh,
+            sidewalks=sidewalk_mesh, lanes=lanes,
         )
         if include_geometry
         else None
