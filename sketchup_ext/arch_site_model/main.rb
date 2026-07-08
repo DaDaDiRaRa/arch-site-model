@@ -188,6 +188,7 @@ module ArchSiteModel
       rescue StandardError
         nil
       end
+      Builder.hide_profiles(model) # 타일 지형 그룹 외곽선(검은 선) 제거
       warns = []
       warns << "첫 실패 사유: #{state[:first_error]}" if state[:first_error]
       done = {

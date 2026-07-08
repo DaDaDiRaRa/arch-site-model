@@ -32,7 +32,17 @@ module ArchSiteModel
         UI.messagebox("모델 조립 오류: #{e.message}")
         raise
       end
+      hide_profiles(model)
       count
+    end
+
+    # 프로파일(그룹 외곽선) 표시 끄기 — 타일 지형이 타일마다 별도 그룹이라 SketchUp이
+    # 각 그룹 외곽을 프로파일로 그려 타일 경계에 선이 보인다(소프트 엣지로도 안 지워짐).
+    # 이걸 끄면 그 선이 사라진다. 건물은 일반 엣지가 그대로라 잘 보인다.
+    def self.hide_profiles(model)
+      model.rendering_options["DrawSilhouettes"] = false
+    rescue StandardError
+      nil
     end
 
     # 지형 + 건물을 주어진 entities에 조립(단일/타일 공통). 반환: 건물 수.
