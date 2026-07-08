@@ -19,6 +19,8 @@ module ArchSiteModel
 
     # 노면을 지형 바로 위로 살짝 띄우는 리프트(m) — 경계선 z-fighting 방지(src road.py ROAD_LIFT_M와 동일).
     ROAD_LIFT_M = 0.03
+    # 차선 마킹 반폭(m) — 얇은 노란 면 리본(0.3m 폭). 엣지 대신 면이라 색이 확실히 노랑.
+    LANE_HALF_W_M = 0.15
 
     # 단일 조립(소반경): root 그룹 생성 + 전체 조립 + zoom. 반환: 생성된 건물 수.
     # geometry: {"buildings"=>[...], "terrain"=>{...}|nil}
@@ -213,27 +215,48 @@ module ArchSiteModel
       puts "[road] #{tag_name} 조립 오류: #{e.message}"
     end
 
-    # 차선/중심선 마킹(Phase R3) → 노면 위 얇은 폴리라인(엣지). 노면보다 조금 더 띄워 얹는다.
-    # 엣지 material은 best-effort로 지정(모델의 "재질별 엣지색"이 켜져야 노랑; 기본 검정도 마킹으로
-    # 무해). 전역 렌더 옵션은 건드리지 않는다(건물·지형 엣지에 영향 방지). lanes 없으면 생략.
+    # 차선/중심선 마킹(Phase R3) → 노면 위 **얇은 노란 면 리본**. 엣지 대신 면이라 "재질별 엣지색"
+    # 전역모드 없이도 색이 확실히 노랑(엣지는 기본 검정이라 안 됨). 각 세그먼트를 XY 수직으로 ±반폭
+    # 오프셋한 쿼드로 만든다(차로수 기반 다차선 마킹은 백엔드가 여러 폴리라인으로 전달). lanes 없으면 생략.
     def self.build_lanes(model, parent_ents, lanes)
       return unless lanes && !lanes.empty?
       grp = parent_ents.add_group
       grp.name = "lanes"
       grp.layer = tag(model, "lanes")
       lift = (ROAD_LIFT_M + 0.02) * M2I  # 노면보다 살짝 위
+      hw = LANE_HALF_W_M * M2I           # 반폭(인치)
       mat = material(model, "asm_lanes", C_LANE)
+      ents = grp.entities
       lanes.each do |line|
         next unless line && line.length >= 2
-        pts = line.map { |p| Geom::Point3d.new(p[0] * M2I, p[1] * M2I, p[2] * M2I + lift) }
-        (0...(pts.length - 1)).each do |i|
+        (0...(line.length - 1)).each do |i|
+          x0, y0, z0 = line[i]
+          x1, y1, z1 = line[i + 1]
+          dx = x1 - x0; dy = y1 - y0
+          len = Math.sqrt(dx * dx + dy * dy)
+          next if len < 1e-6
+          px = (-dy / len) * hw          # XY 수직 단위 × 반폭(인치)
+          py = (dx / len) * hw
+          a0 = Geom::Point3d.new(x0 * M2I + px, y0 * M2I + py, z0 * M2I + lift)
+          b0 = Geom::Point3d.new(x0 * M2I - px, y0 * M2I - py, z0 * M2I + lift)
+          b1 = Geom::Point3d.new(x1 * M2I - px, y1 * M2I - py, z1 * M2I + lift)
+          a1 = Geom::Point3d.new(x1 * M2I + px, y1 * M2I + py, z1 * M2I + lift)
           begin
-            edge = grp.entities.add_line(pts[i], pts[i + 1])
-            edge.material = mat if edge && edge.respond_to?(:material=)
+            f = ents.add_face(a0, b0, b1, a1)
+            if f && !f.deleted?
+              f.material = mat
+              f.back_material = mat
+            end
           rescue StandardError
             next
           end
         end
+      end
+      # 리본 엣지(검정 테두리) 숨김 — 면(노랑)만 남기고 매끈하게.
+      begin
+        ents.grep(Sketchup::Edge).each { |e| e.soft = true; e.smooth = true }
+      rescue StandardError
+        nil
       end
     rescue StandardError => e
       puts "[road] lanes 조립 오류: #{e.message}"

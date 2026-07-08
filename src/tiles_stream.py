@@ -242,6 +242,7 @@ def generate_tile(
         from src.geometry.road import (
             burn_roads,
             clip_centerlines,
+            clip_lane_markings,
             clip_roads,
             clip_sidewalks,
             drape_centerlines,
@@ -264,8 +265,10 @@ def generate_tile(
                         skirt_m=config.ROAD_SKIRT_M,
                         max_dev=config.ROAD_MAX_DEV_M,
                     )
-                if centerlines:
-                    lanes = drape_centerlines(centerlines, dem)
+                # 표시용 다차선 마킹(차로수·도로폭 기반)은 별도로 — 버닝은 위 중심선으로.
+                lanes = drape_centerlines(
+                    clip_lane_markings(road_path, clip_5186, offset), dem
+                )
 
     # 지형·도로·보도 메시: 도로/보도 있으면 통합 삼각화(정점 공유 → 이음매·구멍·겹침 0),
     # 없으면 일반 TIN. 버닝된 dem을 쓴다(도로에 맞게 절토/성토된 지형).

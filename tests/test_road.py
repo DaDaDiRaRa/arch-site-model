@@ -163,6 +163,47 @@ def test_clip_roads_and_sidewalks_separation(tmp_path):
     assert min(x for x, _ in sws[0].rings[0]) > 15        # 보도는 x>15
 
 
+def test_lane_offsets():
+    """차로수·도로폭 → 차선 구분선 횡오프셋. n<2 또는 w없음이면 중심선 1개([0])."""
+    from src.geometry.road import _lane_offsets
+
+    assert _lane_offsets(4, 20.0) == [-5.0, 0.0, 5.0]   # 4차로 20m → 구분선 3개
+    assert _lane_offsets(2, 8.0) == [0.0]               # 2차로 → 중앙 1개
+    assert _lane_offsets(1, 6.0) == [0.0]               # 1차로 → 중심선
+    assert _lane_offsets(None, 20.0) == [0.0]           # 차로수 없음
+    assert _lane_offsets(4, None) == [0.0]              # 도로폭 없음
+
+
+def test_clip_lane_markings_multilane(tmp_path):
+    """cl feature의 n=4,w=20 → 평행 구분선 3개(y=-5,0,+5)."""
+    from src.geometry.road import clip_lane_markings
+
+    fc = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"cl": 1, "n": 4, "w": 20},
+         "geometry": {"type": "LineString", "coordinates": [[0, 0], [40, 0]]}},
+    ]}
+    p = tmp_path / "cl.geojson"
+    p.write_text(json.dumps(fc), encoding="utf-8")
+    lines = clip_lane_markings(p, (-10, -20, 50, 20), (0.0, 0.0))
+    assert len(lines) == 3
+    ys = sorted(round(sum(y for _, y in ln) / len(ln)) for ln in lines)
+    assert ys == [-5, 0, 5]
+
+
+def test_clip_lane_markings_single_line(tmp_path):
+    """n/w 없는 소로 cl feature → 중심선 1개만."""
+    from src.geometry.road import clip_lane_markings
+
+    fc = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"cl": 1},
+         "geometry": {"type": "LineString", "coordinates": [[0, 0], [40, 0]]}},
+    ]}
+    p = tmp_path / "cl.geojson"
+    p.write_text(json.dumps(fc), encoding="utf-8")
+    lines = clip_lane_markings(p, (-10, -20, 50, 20), (0.0, 0.0))
+    assert len(lines) == 1
+
+
 def test_drape_centerlines():
     """중심선 폴리라인 → DEM 드레이프 [(x,y,z)]. 평평 DEM이면 z=10."""
     from src.geometry.road import drape_centerlines

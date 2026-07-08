@@ -17,7 +17,7 @@ def test_synthesize_fills_only_gap_outside_polygon():
     # A0010000 도로경계: x∈[0,10]. 중심선: x∈[0,30] → 10~30 구간(폴리곤 밖)만 합성해야 한다.
     poly = Polygon([(0, -5), (10, -5), (10, 5), (0, 5)])
     cl = LineString([(0, 0), (30, 0)])
-    synth = synthesize_gap_roads([poly], [(cl, 4.0, "소로")], min_area_m2=1.0)
+    synth = synthesize_gap_roads([poly], [(cl, 4.0, "소로", 1)], min_area_m2=1.0)
     assert synth
     u = unary_union(synth)
     # 폴리곤 밖(x>10)을 실제로 채운다.
@@ -31,7 +31,7 @@ def test_synthesize_fills_only_gap_outside_polygon():
 
 def test_synthesize_no_polygons_buffers_whole_line():
     cl = LineString([(0, 0), (20, 0)])
-    synth = synthesize_gap_roads([], [(cl, 6.0, "소로")], min_area_m2=1.0)
+    synth = synthesize_gap_roads([], [(cl, 6.0, "소로", 1)], min_area_m2=1.0)
     assert synth
     area = unary_union(synth).area
     assert 90 < area < 160  # 20m × 6m ≈ 120 (끝 라운드캡 포함)
@@ -41,7 +41,7 @@ def test_synthesize_skips_fully_covered_centerline():
     # 중심선이 폴리곤 안에 완전히 있으면(경계 폴리곤이 이미 덮음) 합성 없음.
     poly = Polygon([(0, -10), (30, -10), (30, 10), (0, 10)])
     cl = LineString([(5, 0), (25, 0)])
-    assert synthesize_gap_roads([poly], [(cl, 4.0, "소로")], min_area_m2=1.0) == []
+    assert synthesize_gap_roads([poly], [(cl, 4.0, "소로", 1)], min_area_m2=1.0) == []
 
 
 def test_synthesize_empty_centerlines():

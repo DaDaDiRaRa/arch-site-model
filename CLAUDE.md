@@ -19,9 +19,11 @@
       (타일마다 도로/보도/중심선 클립→버닝→통합표면, `test_generate_tile_roads`) + **SketchUp 확장
       builder가 도로/보도/차선 렌더**(단일+타일, 데스크톱 실기 렌더 검증 대기). **경계 폴리곤 없는
       도로(소로·골목) 실측폭 합성 완료**: A0010000이 빠뜨린 도로를 A0020000 중심선의 실측 `도로폭`으로
-      버퍼링해 노면 채움(`road_bake.synthesize_gap_roads`, 커버리지 89%→100% 실측). 남은 정교화 — 차선
-      다차선·대시(A0020000 `차선수`), 보도 표현 강화(도로 겹침 구간은 도로우선이라 콘크리트색 축소),
-      도로 경계 샤프닝. **클라우드 도로 서빙 구현 완료**(DEM과 동일 원칙): `roads_*.geojson`(gitignore)을
+      버퍼링해 노면 채움(`road_bake.synthesize_gap_roads`, 커버리지 89%→100% 실측). **차선 다차선 완료**:
+      A0020000 실측 `차로수`·`도로폭`을 중심선 props(`{"cl":1,"n","w"}`)에 담아(road_bake) 런타임이 차로수
+      만큼 평행 차선 구분선 생성(`road.clip_lane_markings`, 소로는 중심선 1개, 실측 65→96선), 확장은 차선을
+      **노란 얇은 면 리본**으로 렌더(엣지색 전역모드 불필요). 남은 정교화 — 차선 대시(점선), 보도 표현 강화
+      (도로 겹침 구간은 도로우선이라 콘크리트색 축소), 도로 경계 샤프닝. **클라우드 도로 서빙 구현 완료**(DEM과 동일 원칙): `roads_*.geojson`(gitignore)을
       공개 GCS에 올리고 `ROAD_BASE=gs://<버킷>/roads`로 두면 앱이 HTTP로 fetch+캐시해 읽는다
       (`config.road_file_path` gs→https 변환, `road._read_geojson_text` fetch, DEM은 GDAL /vsicurl이라 도로만
       HTTP). **남은 건 실제 배포 액션**(당신 GCP): `gcloud storage cp geo_store/roads_*.geojson
@@ -146,14 +148,14 @@ src/
     terrain_mesh.py      DEMPatch → TerrainMesh (TIN 삼각망, Phase 3B). grid_to_tin(균일) + adaptive_tin(오차 한계 적응형, scipy greedy insertion) + adaptive_select/pixel_to_local_m(통합표면용 분리) + build_tin(디스패처, config.TERRAIN_MAX_ERROR_M)
     seating.py           BuildingSolid + DEMPatch → base_z 앉힘 (Phase 3B)
     cadastral.py         LP_PA_CBND_BUBUN features → CadastralParcel (Phase 5)
-    road.py              도로/보도 런타임 (Phase R). clip_roads/clip_sidewalks/clip_centerlines(GeoJSON→로컬미터, json+shapely) + burn_roads(도로를 DEM에 소각: footprint 절토/성토·스커트·IDW교차블렌딩·자기지면 클램프) + build_unified_surface(★지형·도로·보도를 1번 Delaunay로 삼각화→재질별 3메시, 정점공유로 이음매0) + apply_crown/drape_centerlines(차선) + build_road_mesh/carve_terrain/build_terrain_conformed(폴백·구버전)
+    road.py              도로/보도 런타임 (Phase R). clip_roads/clip_sidewalks/clip_centerlines(GeoJSON→로컬미터, json+shapely) + burn_roads(도로를 DEM에 소각: footprint 절토/성토·스커트·IDW교차블렌딩·자기지면 클램프) + build_unified_surface(★지형·도로·보도를 1번 Delaunay로 삼각화→재질별 3메시, 정점공유로 이음매0) + clip_lane_markings(중심선 props 차로수·도로폭→평행 차선 구분선, offset_curve)/drape_centerlines(차선 드레이프) + _read_geojson_text(로컬/HTTP fetch+캐시 — 클라우드 도로 서빙) + apply_crown + build_road_mesh/carve_terrain/build_terrain_conformed(폴백·구버전)
   output/
     skp_mcp.py           BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk) → SketchUp MCP 코드 문자열
     rhino.py             BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk) → .3dm (Phase 4-R)
   terrain/
     store.py             manifest.json/road_manifest.json 조회 (find_tiles/find_road_file)
     contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A) + bake_tiled(대용량 지역 타일 배치) + 좌표대 재투영(5187→5186)·도엽 중복제거·거리제한 채움(fill_dist_m)
-    road_bake.py         수치지도 A0010000 도로경계·A0020000 중심선(+실측 `도로폭`)·A0033320 보도 SHP → 지역 GeoJSON(EPSG:5186) 오프라인 굽기 (Phase R) + road_manifest.json 갱신 (contour_bake 헬퍼 재사용) + synthesize_gap_roads(경계 폴리곤 없는 도로를 실측 도로폭으로 버퍼해 노면 합성 {"syn":1}, --no-fill-gaps로 끔)
+    road_bake.py         수치지도 A0010000 도로경계·A0020000 중심선(+실측 `도로폭`·`차로수`)·A0033320 보도 SHP → 지역 GeoJSON(EPSG:5186) 오프라인 굽기 (Phase R) + road_manifest.json 갱신 (contour_bake 헬퍼 재사용) + synthesize_gap_roads(경계 폴리곤 없는 도로를 실측 도로폭으로 버퍼해 노면 합성 {"syn":1}, --no-fill-gaps로 끔) + 중심선 props에 도로폭/차로수 담음(다차선 마킹용)
     dem.py               DEM 타일 클립 + 표고 보간 (Phase 3B) + clip_dem_mosaic(다중 타일 rasterio.merge 병합)
 
 geo_store/

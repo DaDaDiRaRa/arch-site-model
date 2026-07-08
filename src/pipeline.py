@@ -317,6 +317,7 @@ def generate(
         from src.geometry.road import (
             burn_roads,
             clip_centerlines,
+            clip_lane_markings,
             clip_roads,
             clip_sidewalks,
             drape_centerlines,
@@ -349,9 +350,12 @@ def generate(
                         skirt_m=config.ROAD_SKIRT_M,
                         max_dev=config.ROAD_MAX_DEV_M,
                     )
-                # R3 차선(경량): 중심선을 노면에 드레이프한 폴리라인.
-                if road_centerlines:
-                    lanes = drape_centerlines(road_centerlines, dem)
+                # R3 차선: 차로수·도로폭 기반 다차선 마킹(단선 소로는 중심선 1개)을 노면에 드레이프.
+                #   버닝은 중심선(clip_centerlines)으로, 표시는 다차선 마킹(clip_lane_markings)으로 분리.
+                if dem is not None:
+                    lanes = drape_centerlines(
+                        clip_lane_markings(road_path, bbox_5186_road, offset), dem
+                    )
 
     # 6b. 통합 표면 — 지형·도로·보도를 **한 번의 삼각화**로 만들어 재질별 3메시로 분리(정점 공유 →
     #     구멍·뜸·z-fighting·겹침 구조적 제거). 도로/보도 없으면 일반 build_tin.

@@ -291,6 +291,63 @@ def clip_centerlines(geojson_path: str | Path, bbox_5186, offset) -> list[list[t
     return out
 
 
+def _lane_offsets(n, w) -> list[float]:
+    """차로수 n·도로폭 w → 차선 구분선의 횡오프셋(m) 목록.
+
+    n>=2 & w>0: 폭을 n등분해 차선 사이 구분선 n-1개(예: 4차로 20m → -5,0,+5). 그 외: [0](중심선 1개).
+    """
+    if not n or n < 2 or not w or w <= 0:
+        return [0.0]
+    return [-w / 2.0 + k * (w / n) for k in range(1, n)]
+
+
+def _offset_lines(line, dist: float):
+    """LineString을 dist만큼 평행이동(부호=좌/우). 실패/복합형은 조각 LineString들로. dist=0이면 원본."""
+    if dist == 0.0:
+        return [line]
+    try:
+        oc = line.offset_curve(dist)
+    except Exception:  # noqa: BLE001 — 자기교차·급커브 등에서 실패 가능
+        return []
+    return list(_iter_lines(oc))
+
+
+def clip_lane_markings(geojson_path: str | Path, bbox_5186, offset) -> list[list[tuple[float, float]]]:
+    """중심선(cl) feature의 도로폭(w)·차로수(n)로 **다차선 마킹** 폴리라인 생성 → bbox 클립 → 로컬 미터.
+
+    차로수>=2면 차선 사이 구분선 n-1개를 도로폭에 맞춰 오프셋 생성(다차로 도로), 아니면 중심선 1개
+    (소로·폭/차로수 없음). z는 drape_centerlines에서 노면에 드레이프. 표시 전용 — 버닝은 clip_centerlines가.
+    """
+    text = _read_geojson_text(geojson_path)
+    if text is None:
+        return []
+    data = json.loads(text)
+    feats = data.get("features", []) if isinstance(data, dict) else []
+    clip = box(*bbox_5186)
+    ox, oy = offset
+    out: list[list[tuple[float, float]]] = []
+    for f in feats:
+        geom = f.get("geometry")
+        props = f.get("properties") or {}
+        if not geom or geom.get("type") not in ("LineString", "MultiLineString"):
+            continue
+        if not props.get("cl"):  # 중심선 feature만(합성 도로 폴리곤 등 제외)
+            continue
+        try:
+            g = shape(geom)
+        except Exception:  # noqa: BLE001
+            continue
+        if g.is_empty or not g.intersects(clip):
+            continue
+        for d in _lane_offsets(props.get("n"), props.get("w")):
+            for ls in _offset_lines(g, d):
+                for part in _iter_lines(ls.intersection(clip)):
+                    coords = [(float(x) - ox, float(y) - oy) for x, y in part.coords]
+                    if len(coords) >= 2:
+                        out.append(coords)
+    return out
+
+
 def drape_centerlines(centerlines, dem):
     """중심선 폴리라인을 DEM에 드레이프 → 로컬 미터 [[(x,y,z)]] 목록(차선/중심선 마킹용).
 

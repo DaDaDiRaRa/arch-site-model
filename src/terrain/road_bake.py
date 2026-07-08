@@ -56,6 +56,16 @@ def _iter_poly_geoms(geom):
             yield from _iter_poly_geoms(g)
 
 
+def _cl_props(width, n_lanes) -> dict:
+    """중심선 feature properties: {"cl":1} + 유효한 도로폭('w')·차로수('n')만(다차선 마킹용)."""
+    p = {"cl": 1}
+    if width is not None and width > 0:
+        p["w"] = round(float(width), 2)
+    if n_lanes is not None and n_lanes >= 1:
+        p["n"] = int(n_lanes)
+    return p
+
+
 def _find_shp_dedup(shp_dir: Path, pat: re.Pattern, skip_prefixes: tuple[str, ...]) -> list[Path]:
     """pat 일치 SHP(도엽 중복 제거). skip_prefixes(대문자) 접두 파일은 제외."""
     matched = sorted(
@@ -118,10 +128,10 @@ def read_sidewalks(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> list:
 
 
 def read_road_centerlines(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> list:
-    """도로중심선(A0020000) → (LineString, 도로폭[m]|None, 도로구분|None) 튜플 목록.
+    """도로중심선(A0020000) → (LineString, 도로폭[m]|None, 도로구분|None, 차로수[int]|None) 튜플 목록.
 
-    도로폭·도로구분 속성을 함께 읽어, 경계 폴리곤(A0010000)이 없는 도로(소로·골목)를 실측
-    폭으로 버퍼링해 노면을 합성(synthesize_gap_roads)하는 데 쓴다. 속성 없는 도엽은 None.
+    도로폭·도로구분은 경계 없는 도로 합성(synthesize_gap_roads)에, 도로폭·차로수는 다차선 마킹
+    (bake_roads가 centerline feature props에 담아 런타임 clip_lane_markings가 사용)에 쓴다. 없으면 None.
     """
     shp_dir = Path(shp_dir)
     files = _find_shp_dedup(shp_dir, _ROAD_CL_PAT, ("N3A", "N3P"))
@@ -131,6 +141,7 @@ def read_road_centerlines(shp_dir: str | Path, target_crs: str = "EPSG:5186") ->
         gdf = _to_target_crs(gdf, target_crs)
         has_w = "도로폭" in gdf.columns
         has_c = "도로구분" in gdf.columns
+        has_n = "차로수" in gdf.columns
         for _, r in gdf.iterrows():
             geom = r.geometry
             if geom is None or geom.is_empty:
@@ -143,10 +154,17 @@ def read_road_centerlines(shp_dir: str | Path, target_crs: str = "EPSG:5186") ->
                 except (TypeError, ValueError):
                     w = None
             cls = r["도로구분"] if has_c else None
+            n = None
+            if has_n:
+                nv = r["차로수"]
+                try:
+                    n = int(float(nv)) if nv is not None and str(nv) != "" else None
+                except (TypeError, ValueError):
+                    n = None
             parts = geom.geoms if geom.geom_type == "MultiLineString" else [geom]
             for g in parts:
                 if not g.is_empty and g.geom_type == "LineString":
-                    out.append((g, w, cls))
+                    out.append((g, w, cls, n))
     return out
 
 
@@ -166,7 +184,7 @@ def synthesize_gap_roads(polys, centerlines, min_area_m2: float = 1.0) -> list:
     prep_u = prep(poly_union) if poly_union is not None else None
 
     buffers = []
-    for g, w, cls in centerlines:
+    for g, w, cls, _n in centerlines:
         if poly_union is None or not prep_u.intersects(g):
             outside = g                       # 폴리곤과 안 겹침 → 통째로 합성 대상
         else:
@@ -216,8 +234,10 @@ def bake_roads(
         {"type": "Feature", "properties": {"syn": 1}, "geometry": mapping(p)} for p in synth
     ]
     features += [
-        {"type": "Feature", "properties": {"cl": 1}, "geometry": mapping(g)}
-        for g, _w, _c in centerlines
+        {"type": "Feature",
+         "properties": _cl_props(w, n),
+         "geometry": mapping(g)}
+        for g, w, _c, n in centerlines
     ]
     features += [
         {"type": "Feature", "properties": {"sw": 1}, "geometry": mapping(p)}
