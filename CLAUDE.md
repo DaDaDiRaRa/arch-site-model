@@ -22,8 +22,11 @@
       버퍼링해 노면 채움(`road_bake.synthesize_gap_roads`, 커버리지 89%→100% 실측). **차선 다차선 완료**:
       A0020000 실측 `차로수`·`도로폭`을 중심선 props(`{"cl":1,"n","w"}`)에 담아(road_bake) 런타임이 차로수
       만큼 평행 차선 구분선 생성(`road.clip_lane_markings`, 소로는 중심선 1개, 실측 65→96선), 확장은 차선을
-      **노란 얇은 면 리본**으로 렌더(엣지색 전역모드 불필요). 남은 정교화 — 차선 대시(점선), 보도 표현 강화
-      (도로 겹침 구간은 도로우선이라 콘크리트색 축소), 도로 경계 샤프닝. **클라우드 도로 서빙 구현 완료**(DEM과 동일 원칙): `roads_*.geojson`(gitignore)을
+      **노란 얇은 면 리본**으로 렌더(엣지색 전역모드 불필요). **정교화 3종 완료**(전부 백엔드 → 확장/F2/.3dm/.skp
+      자동 반영): ⓐ **차선 대시**(구분선은 점선 `_dash_line` 칠3·공백5m, 중앙선 median은 실선 유지), ⓑ **보도 표현
+      강화**(A0033320 보도가 A0010000 도로경계에 97% 겹쳐 도로우선이면 거의 컬링→**보도 우선으로 뒤집어** 인도가
+      제대로 보임, 도로는 보도 몫만 빠짐, 실측 보도 삼각형 110→5637), ⓒ **도로 경계 샤프닝**(통합표면 경계 densify를
+      내부 격자(`ROAD_CELL_M` 2.5m)보다 촘촘한 `ROAD_EDGE_CELL_M`(1m)로 → 경계가 곡선 정밀 추종). **클라우드 도로 서빙 구현 완료**(DEM과 동일 원칙): `roads_*.geojson`(gitignore)을
       공개 GCS에 올리고 `ROAD_BASE=gs://<버킷>/roads`로 두면 앱이 HTTP로 fetch+캐시해 읽는다
       (`config.road_file_path` gs→https 변환, `road._read_geojson_text` fetch, DEM은 GDAL /vsicurl이라 도로만
       HTTP). **남은 건 실제 배포 액션**(당신 GCP): `gcloud storage cp geo_store/roads_*.geojson
@@ -148,7 +151,7 @@ src/
     terrain_mesh.py      DEMPatch → TerrainMesh (TIN 삼각망, Phase 3B). grid_to_tin(균일) + adaptive_tin(오차 한계 적응형, scipy greedy insertion) + adaptive_select/pixel_to_local_m(통합표면용 분리) + build_tin(디스패처, config.TERRAIN_MAX_ERROR_M)
     seating.py           BuildingSolid + DEMPatch → base_z 앉힘 (Phase 3B)
     cadastral.py         LP_PA_CBND_BUBUN features → CadastralParcel (Phase 5)
-    road.py              도로/보도 런타임 (Phase R). clip_roads/clip_sidewalks/clip_centerlines(GeoJSON→로컬미터, json+shapely) + burn_roads(도로를 DEM에 소각: footprint 절토/성토·스커트·IDW교차블렌딩·자기지면 클램프) + build_unified_surface(★지형·도로·보도를 1번 Delaunay로 삼각화→재질별 3메시, 정점공유로 이음매0) + clip_lane_markings(중심선 props 차로수·도로폭→평행 차선 구분선, offset_curve)/drape_centerlines(차선 드레이프) + _read_geojson_text(로컬/HTTP fetch+캐시 — 클라우드 도로 서빙) + apply_crown + build_road_mesh/carve_terrain/build_terrain_conformed(폴백·구버전)
+    road.py              도로/보도 런타임 (Phase R). clip_roads/clip_sidewalks/clip_centerlines(GeoJSON→로컬미터, json+shapely) + burn_roads(도로를 DEM에 소각: footprint 절토/성토·스커트·IDW교차블렌딩·자기지면 클램프) + build_unified_surface(★지형·도로·보도를 1번 Delaunay로 삼각화→재질별 3메시, 정점공유로 이음매0. 보도우선(도로겹침 컬링 방지)·경계 edge_cell 샤프닝) + clip_lane_markings(중심선 props 차로수·도로폭→평행 차선 구분선, offset_curve, 구분선은 _dash_line 점선·중앙선 실선)/drape_centerlines(차선 드레이프) + _read_geojson_text(로컬/HTTP fetch+캐시 — 클라우드 도로 서빙) + apply_crown + build_road_mesh/carve_terrain/build_terrain_conformed(폴백·구버전)
   output/
     skp_mcp.py           BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk) → SketchUp MCP 코드 문자열
     rhino.py             BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk) → .3dm (Phase 4-R)

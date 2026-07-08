@@ -185,8 +185,8 @@ def test_clip_lane_markings_multilane(tmp_path):
     p = tmp_path / "cl.geojson"
     p.write_text(json.dumps(fc), encoding="utf-8")
     lines = clip_lane_markings(p, (-10, -20, 50, 20), (0.0, 0.0))
-    assert len(lines) == 3
-    ys = sorted(round(sum(y for _, y in ln) / len(ln)) for ln in lines)
+    # 중앙선(y=0) 실선 + ±5 구분선(점선 대시로 쪼개짐) → 오프셋 위치만 검증(개수 아님).
+    ys = sorted({round(sum(y for _, y in ln) / len(ln)) for ln in lines})
     assert ys == [-5, 0, 5]
 
 
@@ -202,6 +202,53 @@ def test_clip_lane_markings_single_line(tmp_path):
     p.write_text(json.dumps(fc), encoding="utf-8")
     lines = clip_lane_markings(p, (-10, -20, 50, 20), (0.0, 0.0))
     assert len(lines) == 1
+
+
+def test_dash_line():
+    """직선 40m, 칠3·공백5(period8) → 대시 5개(각 2점, 길이~3, 시작 0/8/16…)."""
+    import math
+
+    from src.geometry.road import _dash_line
+
+    dashes = _dash_line([(0, 0), (40, 0)], 3.0, 5.0)
+    assert len(dashes) == 5
+    for d in dashes:
+        assert len(d) == 2
+        assert abs(math.hypot(d[1][0] - d[0][0], d[1][1] - d[0][1]) - 3.0) < 0.01
+    assert abs(dashes[0][0][0] - 0.0) < 1e-6
+    assert abs(dashes[1][0][0] - 8.0) < 1e-6
+
+
+def test_clip_lane_markings_dividers_dashed(tmp_path):
+    """4차로 20m 직선 → 중앙선 1개(실선, 김) + 차선 구분선은 점선(짧은 대시 다수)."""
+    import math
+
+    from src.geometry.road import clip_lane_markings
+
+    fc = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"cl": 1, "n": 4, "w": 20},
+         "geometry": {"type": "LineString", "coordinates": [[0, 0], [100, 0]]}}]}
+    p = tmp_path / "c.geojson"
+    p.write_text(json.dumps(fc), encoding="utf-8")
+    lines = clip_lane_markings(p, (-20, -30, 120, 30), (0.0, 0.0))
+
+    def length(ln):
+        return math.hypot(ln[-1][0] - ln[0][0], ln[-1][1] - ln[0][1])
+
+    long_lines = [ln for ln in lines if length(ln) > 50]
+    short = [ln for ln in lines if length(ln) < 10]
+    assert len(long_lines) == 1   # 중앙선(median) 실선 1개
+    assert len(short) > 15        # 구분선 2개가 점선 대시 다수로
+
+
+def test_polygon_sample_points_edge_cell_denser():
+    """edge_cell(경계 간격)을 작게 하면 경계 샘플점이 늘어 경계가 촘촘(샤프닝)."""
+    from src.geometry.road import _polygon_sample_points
+
+    ring = [(0, 0), (20, 0), (20, 20), (0, 20)]
+    coarse = _polygon_sample_points([ring], 2.5, edge_cell=None)
+    fine = _polygon_sample_points([ring], 2.5, edge_cell=0.5)
+    assert len(fine) > len(coarse)
 
 
 def test_drape_centerlines():

@@ -281,6 +281,7 @@ def generate_tile(
                 config.ROAD_CELL_M, config.M2I,
                 centerlines=centerlines,
                 crown_pct=config.ROAD_CROWN_PCT, crown_cap=config.ROAD_CROWN_CAP_M,
+                edge_cell=config.ROAD_EDGE_CELL_M,
             )
         else:
             from src.geometry.terrain_mesh import build_tin

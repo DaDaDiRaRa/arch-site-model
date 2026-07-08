@@ -112,6 +112,10 @@ ROAD_MAX_DEV_M = _envf("ROAD_MAX_DEV_M", 2.0)
 ROAD_CROWN_PCT = _envf("ROAD_CROWN_PCT", 2.0)
 ROAD_CROWN_CAP_M = _envf("ROAD_CROWN_CAP_M", 15.0)
 
+# 도로/보도 경계 densify 간격(m) — 내부 격자(ROAD_CELL_M)보다 촘촘히 해 경계가 곡선을 정밀히
+# 따라가게(경계 샤프닝). 작을수록 경계 선명·삼각형↑. 통합표면 경계에만 적용(내부는 ROAD_CELL_M).
+ROAD_EDGE_CELL_M = _envf("ROAD_EDGE_CELL_M", 1.0)
+
 
 def road_file_path(filename: str) -> str:
     """road_manifest의 도로 파일명 → 실제 읽기 위치(로컬 경로 또는 HTTP(S) URL).

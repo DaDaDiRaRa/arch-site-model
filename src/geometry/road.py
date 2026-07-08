@@ -291,6 +291,41 @@ def clip_centerlines(geojson_path: str | Path, bbox_5186, offset) -> list[list[t
     return out
 
 
+# 차선 점선(구분선) 대시: 칠 길이 / 공백 길이(m). 중앙선(median, offset 0)은 실선 유지.
+LANE_DASH_PAINT_M = 3.0
+LANE_DASH_GAP_M = 5.0
+
+
+def _dash_line(coords, paint_m: float, gap_m: float) -> list[list[tuple[float, float]]]:
+    """폴리라인을 점선(칠 paint_m / 공백 gap_m)으로 → 짧은 2점 폴리라인(대시) 목록.
+
+    세그먼트별로 시작에서 period(=paint+gap) 간격으로 대시를 찍는다(정점서 위상 리셋 — 시각차 미미).
+    """
+    import math
+
+    period = paint_m + gap_m
+    out: list[list[tuple[float, float]]] = []
+    for i in range(len(coords) - 1):
+        x0, y0 = coords[i]
+        x1, y1 = coords[i + 1]
+        seg = math.hypot(x1 - x0, y1 - y0)
+        if seg <= 1e-9:
+            continue
+        k = 0
+        while True:
+            a = k * period
+            if a >= seg:
+                break
+            b = min(a + paint_m, seg)
+            t0, t1 = a / seg, b / seg
+            out.append([
+                (x0 + (x1 - x0) * t0, y0 + (y1 - y0) * t0),
+                (x0 + (x1 - x0) * t1, y0 + (y1 - y0) * t1),
+            ])
+            k += 1
+    return out
+
+
 def _lane_offsets(n, w) -> list[float]:
     """차로수 n·도로폭 w → 차선 구분선의 횡오프셋(m) 목록.
 
@@ -340,11 +375,16 @@ def clip_lane_markings(geojson_path: str | Path, bbox_5186, offset) -> list[list
         if g.is_empty or not g.intersects(clip):
             continue
         for d in _lane_offsets(props.get("n"), props.get("w")):
+            solid = d == 0.0  # 중앙선(median)은 실선, 차선 구분선은 점선
             for ls in _offset_lines(g, d):
                 for part in _iter_lines(ls.intersection(clip)):
                     coords = [(float(x) - ox, float(y) - oy) for x, y in part.coords]
-                    if len(coords) >= 2:
+                    if len(coords) < 2:
+                        continue
+                    if solid:
                         out.append(coords)
+                    else:
+                        out.extend(_dash_line(coords, LANE_DASH_PAINT_M, LANE_DASH_GAP_M))
     return out
 
 
@@ -561,8 +601,12 @@ def carve_terrain(terrain_mesh, road_features, m2i):
     )
 
 
-def _polygon_sample_points(rings, cell: float):
-    """폴리곤(외곽+구멍) → 경계 densify + 내부 격자 (x,y) 샘플점 목록(통합 삼각화 입력용)."""
+def _polygon_sample_points(rings, cell: float, edge_cell: float | None = None):
+    """폴리곤(외곽+구멍) → 경계 densify + 내부 격자 (x,y) 샘플점 목록(통합 삼각화 입력용).
+
+    edge_cell 지정 시 경계 densify를 그 간격(더 촘촘)으로 → 도로/보도 경계가 곡선을 더 정밀히
+    따라가 선명해진다(경계 샤프닝). 내부 격자는 cell 유지(삼각형 폭주 방지).
+    """
     import numpy as np
     from shapely import contains_xy
     from shapely.geometry import Polygon
@@ -578,8 +622,9 @@ def _polygon_sample_points(rings, cell: float):
     if poly.is_empty or poly.area <= 0.0 or poly.geom_type != "Polygon":
         return []
     pts: set[tuple[float, float]] = set()
+    ecell = edge_cell if (edge_cell and edge_cell > 0) else cell
     for ring in rings:
-        for px, py in _densify_ring(ring, cell):
+        for px, py in _densify_ring(ring, ecell):
             pts.add((round(px, 3), round(py, 3)))
     minx, miny, maxx, maxy = poly.bounds
     xs = np.arange(minx, maxx + cell, cell)
@@ -595,7 +640,7 @@ def _polygon_sample_points(rings, cell: float):
 
 def build_unified_surface(
     dem, max_error_m, road_features, sidewalk_features, cell, m2i,
-    centerlines=None, crown_pct=0.0, crown_cap=15.0,
+    centerlines=None, crown_pct=0.0, crown_cap=15.0, edge_cell=None,
 ):
     """지형+도로+보도를 **한 번의 Delaunay**로 삼각화해 재질별 3메시로 분리한다.
 
@@ -659,8 +704,8 @@ def build_unified_surface(
     Py = list(local[outside, 1])
     Pz = list(zsel[outside])
 
-    for f in road_features + sidewalk_features:      # 도로/보도 경계+내부 샘플점
-        for x, y in _polygon_sample_points(f.rings, cell):
+    for f in road_features + sidewalk_features:      # 도로/보도 경계+내부 샘플점(경계는 edge_cell로 촘촘)
+        for x, y in _polygon_sample_points(f.rings, cell, edge_cell):
             Px.append(x)
             Py.append(y)
             Pz.append(_z(dem, x, y))
@@ -684,8 +729,11 @@ def build_unified_surface(
     cy = (P[simp[:, 0], 1] + P[simp[:, 1], 1] + P[simp[:, 2], 1]) / 3.0
     in_road = contains_xy(road_u, cx, cy) if road_u is not None else np.zeros(len(simp), bool)
     in_sw = contains_xy(sw_u, cx, cy) if sw_u is not None else np.zeros(len(simp), bool)
-    road_t = simp[in_road]
-    sw_t = simp[in_sw & ~in_road]           # 도로 우선(겹침 드묾)
+    # 보도 우선(겹침 구간): 수치지도 A0033320 보도가 A0010000 도로경계 안에 크게 들어가 있어
+    # 도로우선이면 보도가 거의 컬링된다(실측 97% 겹침). 보도를 우선해 인도가 제대로 보이게 하고
+    # 도로는 보도 몫만 뺀다(도로우선→보도우선 뒤집기).
+    sw_t = simp[in_sw]
+    road_t = simp[in_road & ~in_sw]
     terr_t = simp[~in_road & ~in_sw]
 
     def _split(tris_idx, scale):
