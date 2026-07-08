@@ -38,9 +38,13 @@
       확인됨 2026-07-07), **(b) B2 정사영상 텍스처 드레이프**
       (`Face#position_material` 평면투영). 상세 `docs/sketchup_extension.md`,
       KBS 대조·로드맵 `docs/kbs_topomap_reference.md`, 텍스처 `docs/orthophoto_texture_plan.md` §5.
-- [ ] **F2 뷰어 색상·표현 개선(폴리시)**: 현재 `Viewer3D.tsx`는 건물=단색 steel blue(미확인=주황),
-      지형=정사영상/올리브. 기능은 동작 — 표현만 개선 여지: 층수별 색/높이 그라디언트, 반투명·와이어,
-      건물 외곽선(edges), 그림자·AO, 지적 경계 표시, 배경/조명 튜닝 등. 우선순위 낮음(동작 우선).
+- [ ] **F2 뷰어 색상·표현 개선(폴리시)**: **1차 개선 완료(2026-07-08)** — `Viewer3D.tsx`에
+      **높이별 색상 그라디언트**(연한 스틸→짙은 네이비, 미확인=주황 유지, 범례 + 높이별/단색 토글),
+      **건물 외곽선**(EdgesGeometry, thresholdAngle 20° — 밀집지 건물 구분, on/off), **그림자**
+      (PCFSoft shadow map, 태양 프레이밍, 지형 수광 + 지형 없을 때 ShadowMaterial 바닥면, on/off),
+      **하늘 그라디언트 배경 + 조명 튜닝** 추가. **남은 것**: 반투명·와이어프레임 뷰모드, SSAO,
+      **지적 경계 표시**(백엔드가 F2 geometry에 cadastral 폴리곤 미포함 — `_build_geometry`에 추가
+      필요). 우선순위 낮음(동작 우선). 데스크톱 브라우저 실기 확인은 사용자 몫(빌드·타입체크는 통과).
 - [ ] **지형 계단현상 — 격자 솔버로 완전제거(선택)**: 1차 개선 완료(guarded CloughTocher,
       quant 25.2→22.3%·flat 55.2→48.5%, 무인공물·봉우리 보존 — 2026-07-02 승격). 남은 건 **부분 개선**
       한계 돌파: 라플라스 harmonic 인필 또는 ANUDEM류 반복 격자 솔버(등고선 셀 고정 → 최대원리로
