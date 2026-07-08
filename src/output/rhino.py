@@ -20,6 +20,7 @@ from src.config import M2I
 if TYPE_CHECKING:
     from src.geometry.building import BuildingSolid
     from src.geometry.cadastral import CadastralParcel
+    from src.geometry.road import RoadMesh
     from src.geometry.terrain_mesh import TerrainMesh
 
 
@@ -29,6 +30,7 @@ def write_3dm(
     path: str | Path,
     offset: tuple[float, float],
     cadastral: list[CadastralParcel] | None = None,
+    roads: RoadMesh | None = None,
     ortho_image: str | Path | None = None,
     ortho_extent_m: tuple[float, float, float, float] | None = None,
 ) -> str:
@@ -68,6 +70,11 @@ def write_3dm(
     l_cada.Color = (220, 200, 100, 255)        # sandy yellow
     idx_cada = model.Layers.Add(l_cada)
 
+    l_road = rhino3dm.Layer()
+    l_road.Name = "roads"
+    l_road.Color = (116, 121, 127, 255)        # asphalt gray
+    idx_road = model.Layers.Add(l_road)
+
     # origin_offset → 문서 수준 Strings (좌표 복원용, 사양서 §6.1)
     ox, oy = offset
     model.Strings["origin_offset_x"] = str(ox)
@@ -86,6 +93,10 @@ def write_3dm(
     if cadastral:
         for parcel in cadastral:
             _add_cadastral(model, parcel, idx_cada)
+
+    # 도로 노면 Mesh (Phase R)
+    if roads is not None:
+        _add_roads(model, roads, idx_road)
 
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -231,6 +242,30 @@ def _apply_ortho_texture(
     mat_idx = model.Materials.Add(mat)
     attrs.MaterialSource = rhino3dm.ObjectMaterialSource.MaterialFromObject
     attrs.MaterialIndex = mat_idx
+
+
+def _add_roads(
+    model: rhino3dm.File3dm,
+    roads: RoadMesh,
+    layer_idx: int,
+) -> None:
+    """RoadMesh → rhino3dm Mesh (로컬 미터, 노면 살짝 리프트). 삼각화 없으면 생략."""
+    from src.geometry.road import ROAD_LIFT_M
+
+    if not roads.vertices or not roads.triangles:
+        return
+    mesh = rhino3dm.Mesh()
+    for x, y, z in roads.vertices:
+        mesh.Vertices.Add(x, y, z + ROAD_LIFT_M)
+    for a, b, c in roads.triangles:
+        mesh.Faces.AddFace(a, b, c)
+    mesh.Normals.ComputeNormals()
+    mesh.Compact()
+
+    attrs = rhino3dm.ObjectAttributes()
+    attrs.LayerIndex = layer_idx
+    attrs.Name = "roads"
+    model.Objects.AddMesh(mesh, attrs)
 
 
 def _add_cadastral(

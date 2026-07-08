@@ -38,8 +38,12 @@
       노면 메시(vertices/triangles) + 외곽선 → `Viewer3D` 회색 면(receiveShadow)+엣지 + 앱 `도로(노면)`
       토글 + 뷰어 `도로` 토글. **대전 실증**: 250m bbox 37폴리곤 → 정점6923·삼각형11503(0실패). cell
       `config.ROAD_CELL_M`(기본 2.5m). `roads_*.geojson` gitignore(road_manifest.json만 추적), 서빙은
-      DEM처럼 추후 GCS. **남은 것**: R2 평탄화(종단평활+크라운, 리플 제거) → R3 보도(A0033320)·차선
-      (A0020000 폭원/차선수) → .3dm/.skp 출력에 도로 레이어 추가(현재 F2 geometry 전용).
+      DEM처럼 추후 GCS. **출력 확장 완료(2026-07-08)**: RoadMesh를 F2/.3dm/.skp 3소비자 공용으로 —
+      `.3dm` `roads` 레이어(아스팔트 그레이 Mesh, `rhino._add_roads`), `.skp` 도로 그룹(`_road_literal`
+      +`_ROAD_BUILD`, 미터→인치 변환+리프트), F2 회색 면. `pipeline`이 `build_road_mesh` 1회 →
+      세 출력 공유(`stats.road_triangles`). 대전 실증: 250m 37폴리곤→11503삼각형이 .3dm roads 레이어·
+      .skp ROAD_VERTS로. **남은 것**: R2 평탄화(종단평활+크라운, 리플 제거) → R3 보도(A0033320)·차선
+      (A0020000 폭원/차선수). 대반경 타일경로(`generate_tile`)는 도로 미포함(후속).
       입체(고가/교량/지하/터널 A0070000/A0090000/A0110020)는 `구분` 필드로 분류: 고가/교량 데크=T0
       휴리스틱(abutment+통과높이), 지하/터널=생략/포털, 복층3+=자동 QA 플래그. 계획
       `docs/road_surface_plan.md`.
@@ -243,6 +247,7 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 | `{"buildings": true}` | 건물 매싱만 (기본값, Phase 2) |
 | `{"buildings": true, "terrain": true}` | 지형 TIN + 건물 앉힘 (Phase 3B) |
 | `{"buildings": true, "cadastral": true}` | 건물 + 대지 경계 폴리곤 (Phase 5) |
+| `{"buildings": true, "terrain": true, "roads": true}` | 지형 + 도로 노면(A0010000 DEM 드레이프 메시, Phase R). 도로는 `road_manifest.json`/GeoJSON 비축 필요 — 없으면 조용히 생략+warnings |
 | `{"buildings": true, "terrain": true, "orthophoto": true}` | 지형에 정사영상 텍스처 (.3dm=Rhino 텍스처 / .skp=데스크톱 확장 B2 드레이프) |
 
 지형 활성화 시 추가 응답 필드:

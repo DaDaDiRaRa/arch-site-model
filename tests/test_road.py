@@ -2,7 +2,7 @@
 
 import json
 
-from src.geometry.road import RoadFeature, build_road_geometry, clip_roads
+from src.geometry.road import RoadFeature, RoadMesh, build_road_mesh, clip_roads
 
 
 class _FlatDem:
@@ -69,37 +69,38 @@ def test_clip_roads_missing_file(tmp_path):
     assert clip_roads(tmp_path / "nope.geojson", (0, 0, 1, 1), (0.0, 0.0)) == []
 
 
-def test_build_road_geometry_mesh():
-    """RoadFeature → DEM 드레이프 노면 메시(정점 z=표고, 유효 인덱스) + 외곽선."""
+def test_build_road_mesh():
+    """RoadFeature → DEM 드레이프 RoadMesh(정점 z=표고, 유효 인덱스) + 외곽선 + to_geometry."""
     square = [(0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0)]
-    geom = build_road_geometry([RoadFeature(rings=[square])], _FlatDem(), cell=5.0)
+    mesh = build_road_mesh([RoadFeature(rings=[square])], _FlatDem(), cell=5.0)
 
-    assert geom is not None
-    assert geom["vertices"] and geom["triangles"]
+    assert isinstance(mesh, RoadMesh)
+    assert mesh.vertices and mesh.triangles
     # 평평 DEM → 모든 z == 10
-    assert all(abs(v[2] - 10.0) < 1e-6 for v in geom["vertices"])
+    assert all(abs(v[2] - 10.0) < 1e-6 for v in mesh.vertices)
     # 삼각형 인덱스 유효
-    nv = len(geom["vertices"])
-    assert all(0 <= i < nv for tri in geom["triangles"] for i in tri)
+    nv = len(mesh.vertices)
+    assert all(0 <= i < nv for tri in mesh.triangles for i in tri)
     # 외곽선 1개(사각형)
-    assert len(geom["outlines"]) == 1
-    assert len(geom["outlines"][0]) >= 3
+    assert len(mesh.outlines) == 1 and len(mesh.outlines[0]) >= 3
+    # F2 직렬화(JSON 가능)
+    g = mesh.to_geometry()
+    assert g["vertices"] and g["triangles"] and g["outlines"]
+    json.dumps(g)
 
 
-def test_build_road_geometry_hole_culled():
+def test_build_road_mesh_hole_culled():
     """구멍이 있으면 구멍 안 삼각형은 컬링(중심점이 폴리곤 밖) → 구멍 중앙 미포함."""
     ext = [(0.0, 0.0), (40.0, 0.0), (40.0, 40.0), (0.0, 40.0)]
     hole = [(15.0, 15.0), (25.0, 15.0), (25.0, 25.0), (15.0, 25.0)]
-    geom = build_road_geometry([RoadFeature(rings=[ext, hole])], _FlatDem(), cell=5.0)
+    mesh = build_road_mesh([RoadFeature(rings=[ext, hole])], _FlatDem(), cell=5.0)
 
-    assert geom and geom["triangles"]
-    # 구멍 중앙(20,20) 위를 덮는 삼각형이 없어야 한다.
-    verts = geom["vertices"]
+    assert mesh and mesh.triangles
+    verts = mesh.vertices
 
     def _covers_hole_center(tri):
-        # 삼각형 중심이 구멍 중앙 근처면 실패
         cx = sum(verts[i][0] for i in tri) / 3.0
         cy = sum(verts[i][1] for i in tri) / 3.0
         return 16.0 < cx < 24.0 and 16.0 < cy < 24.0
 
-    assert not any(_covers_hole_center(t) for t in geom["triangles"])
+    assert not any(_covers_hole_center(t) for t in mesh.triangles)

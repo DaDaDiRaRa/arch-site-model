@@ -141,6 +141,31 @@ if TERRAIN_VERTS:
         pass
 '''
 
+# Phase R: 도로 노면 — DEM 드레이프 삼각 메시(인치, 소프트 엣지)
+_ROAD_BUILD = '''\
+if ROAD_VERTS and ROAD_TRIS:
+    grp_r = Group()
+    model.get_entities().add_group(grp_r)
+    g_r = GeometryInput()
+    g_r.set_vertices([SUPoint3D(x, y, z) for (x, y, z) in ROAD_VERTS])
+    for tri in ROAD_TRIS:
+        lp = LoopInput()
+        for vi in tri:
+            lp.add_vertex_index(vi)
+        _, g_r = g_r.add_face(lp)
+    grp_r.get_entities().fill(g_r, weld_vertices=True)
+    try:
+        grp_r.set_name("roads")
+    except Exception:
+        pass
+    try:
+        for edge in grp_r.get_entities().edges():
+            edge.set_soft(True)
+            edge.set_smooth(True)
+    except Exception:
+        pass
+'''
+
 # Phase 5: 지적 경계 — Z=0 평면 폴리곤 (면 생성)
 _CADASTRAL_BUILD = '''\
 for p in CADASTRAL:
@@ -211,15 +236,28 @@ def _cadastral_literal(parcels) -> str:
     return "CADASTRAL = [\n" + "\n".join(items) + "\n]\n"
 
 
-def build_skp_code(solids, terrain=None, cadastral=None, camera: bool = True) -> str:
+def _road_literal(road) -> str:
+    """RoadMesh(로컬 미터) → build_model 코드 리터럴. 미터→인치(×M2I) + 노면 리프트."""
+    from src.geometry.road import ROAD_LIFT_M
+
+    verts = ", ".join(
+        f"({x * M2I!r}, {y * M2I!r}, {(z + ROAD_LIFT_M) * M2I!r})" for x, y, z in road.vertices
+    )
+    tris = ", ".join(f"({a}, {b}, {c})" for a, b, c in road.triangles)
+    return f"ROAD_VERTS = [{verts}]\nROAD_TRIS = [{tris}]\n"
+
+
+def build_skp_code(solids, terrain=None, cadastral=None, roads=None, camera: bool = True) -> str:
     """solids → SketchUp MCP build_model 에 넣을 완전한 Python 코드 문자열.
 
     terrain: TerrainMesh (Phase 3B). None 이면 건물만 출력(Phase 2 호환).
     cadastral: list[CadastralParcel] (Phase 5). None 이면 지적 레이어 생략.
+    roads: RoadMesh (Phase R). None/삼각형 없음이면 도로 생략.
     camera=True 면 상공 시점 카메라를 설정한다.
     """
     has_terrain = terrain is not None
     has_cadastral = cadastral is not None and len(cadastral) > 0
+    has_roads = roads is not None and bool(getattr(roads, "triangles", None))
     if has_terrain and has_cadastral:
         phase = "Phase 5"
     elif has_terrain:
@@ -238,6 +276,9 @@ def build_skp_code(solids, terrain=None, cadastral=None, camera: bool = True) ->
     if has_terrain:
         parts.append(_terrain_literal(terrain))
         parts.append(_TERRAIN_BUILD)
+    if has_roads:
+        parts.append(_road_literal(roads))
+        parts.append(_ROAD_BUILD)
     if has_cadastral:
         parts.append(_cadastral_literal(cadastral))
         parts.append(_CADASTRAL_BUILD)

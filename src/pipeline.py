@@ -114,12 +114,8 @@ def _build_geometry(solids, terrain_mesh, ortho_info, cadastral=None, dem=None, 
                 pts = [[round(x, 2), round(y, 2), 0.0] for x, y in ring]
             cadastral_out.append({"pnu": p.pnu, "ring": pts})
 
-    # 도로(Phase R): 폴리곤을 DEM 드레이프한 노면 메시(R1b) + 외곽선. dem 없으면 z=0 평면.
-    roads_out = None
-    if roads:
-        from src.geometry.road import build_road_geometry
-
-        roads_out = build_road_geometry(roads, dem, config.ROAD_CELL_M)
+    # 도로(Phase R): 이미 만든 RoadMesh(로컬 미터)를 F2 JSON으로 직렬화. dem 없으면 z=0 평면.
+    roads_out = roads.to_geometry() if roads is not None else None
 
     return {
         "buildings": buildings,
@@ -295,12 +291,13 @@ def generate(
         else:
             warnings.append("반경 내 지적 피처 없음 (LP_PA_CBND_BUBUN)")
 
-    # 7.3 도로 노면 (Phase R, R1a: 외곽선) — 지역 GeoJSON을 bbox 클립 후 지형 드레이프.
+    # 7.3 도로 노면 (Phase R) — 지역 GeoJSON을 bbox 클립 → 폴리곤 삼각화·DEM 드레이프한 노면 메시.
     #     도로는 실시간 API가 없어 오프라인 굽기(road_bake)한 GeoJSON을 road_manifest로 조회.
-    road_features: list | None = None
+    #     road_mesh는 F2/.3dm/.skp 3소비자 공용(로컬 미터).
+    road_mesh = None
     road_count = 0
     if layers.get("roads"):
-        from src.geometry.road import clip_roads
+        from src.geometry.road import build_road_mesh, clip_roads
         from src.terrain.store import find_road_file
 
         rf = find_road_file(bbox)
@@ -317,6 +314,8 @@ def generate(
             road_count = len(road_features)
             if road_count == 0:
                 warnings.append("반경 내 도로 폴리곤 없음 (A0010000).")
+            else:
+                road_mesh = build_road_mesh(road_features, dem, config.ROAD_CELL_M)
 
     # setback stub (arch-law-diagnose 연동은 [목표])
     if setback:
@@ -377,11 +376,12 @@ def generate(
     if "skp" in outputs:
         out["skp"] = {
             "code": build_skp_code(
-                solids, terrain=terrain_mesh, cadastral=cadastral_parcels
+                solids, terrain=terrain_mesh, cadastral=cadastral_parcels, roads=road_mesh
             ),
             "solids": len(solids),
             "terrain_triangles": len(terrain_mesh.triangles) if terrain_mesh else 0,
             "cadastral_parcels": cadastral_count,
+            "road_triangles": len(road_mesh.triangles) if road_mesh else 0,
         }
     if "3dm" in outputs:
         from src.output.rhino import write_3dm
@@ -390,6 +390,7 @@ def generate(
         saved = write_3dm(
             solids, terrain_mesh, odir / fname, offset,
             cadastral=cadastral_parcels,
+            roads=road_mesh,
             ortho_image=ortho_info["image_path"] if ortho_info else None,
             ortho_extent_m=ortho_info["extent_local_m"] if ortho_info else None,
         )
@@ -398,6 +399,7 @@ def generate(
             "solids": len(solids),
             "terrain_triangles": len(terrain_mesh.triangles) if terrain_mesh else 0,
             "cadastral_parcels": cadastral_count,
+            "road_triangles": len(road_mesh.triangles) if road_mesh else 0,
             "orthophoto": (
                 {
                     "image_path": ortho_info["image_path"],
@@ -432,7 +434,7 @@ def generate(
     geometry = (
         _build_geometry(
             solids, terrain_mesh, ortho_info,
-            cadastral=cadastral_parcels, dem=dem, roads=road_features,
+            cadastral=cadastral_parcels, dem=dem, roads=road_mesh,
         )
         if include_geometry
         else None

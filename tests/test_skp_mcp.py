@@ -48,6 +48,34 @@ def test_camera_toggle():
     assert "set_camera" not in build_skp_code(_solids(), camera=False)
 
 
+# --- 도로(Phase R) ---
+
+def _road_mesh():
+    from src.geometry.road import RoadMesh
+
+    return RoadMesh(
+        vertices=[(0.0, 0.0, 1.0), (10.0, 0.0, 1.0), (10.0, 10.0, 1.0), (0.0, 10.0, 1.0)],
+        triangles=[(0, 1, 2), (0, 2, 3)],
+        outlines=[[(0.0, 0.0, 1.0), (10.0, 0.0, 1.0), (10.0, 10.0, 1.0), (0.0, 10.0, 1.0)]],
+    )
+
+
+def test_build_code_with_roads():
+    """roads 지정 시 ROAD 리터럴 + 도로 그룹 코드가 박히고, 유효 파이썬·import 금지 유지."""
+    code = build_skp_code(_solids(), roads=_road_mesh())
+    assert "ROAD_VERTS = [" in code
+    assert "ROAD_TRIS = [" in code
+    assert 'set_name("roads")' in code
+    compile(code, "<skp>", "exec")  # 구문 유효
+    for line in code.splitlines():
+        assert not line.strip().startswith("import ")
+        assert not line.strip().startswith("from ")
+
+
+def test_build_code_no_roads_omits_block():
+    assert "ROAD_VERTS" not in build_skp_code(_solids())
+
+
 def test_generated_code_is_valid_python():
     """build_model 전송 전 — 생성 코드가 구문상 유효한 Python 인지."""
     code = build_skp_code(_solids())

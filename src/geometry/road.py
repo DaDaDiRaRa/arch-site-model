@@ -22,6 +22,30 @@ class RoadFeature:
     rings: list[list[tuple[float, float]]]
 
 
+@dataclass
+class RoadMesh:
+    """DEM 드레이프된 병합 노면 메시 + 외곽선. 좌표=로컬 미터. F2/.3dm/.skp 공용."""
+
+    vertices: list[tuple[float, float, float]]
+    triangles: list[tuple[int, int, int]]
+    outlines: list[list[tuple[float, float, float]]]
+
+    def to_geometry(self) -> dict:
+        """F2 뷰어용 JSON(cm 반올림)."""
+        return {
+            "vertices": [[round(x, 2), round(y, 2), round(z, 2)] for x, y, z in self.vertices],
+            "triangles": [[int(a), int(b), int(c)] for a, b, c in self.triangles],
+            "outlines": [
+                [[round(x, 2), round(y, 2), round(z, 2)] for x, y, z in ring]
+                for ring in self.outlines
+            ],
+        }
+
+
+# 노면을 지형 바로 위로 살짝 띄우는 리프트(m) — .3dm/.skp z-fighting 방지(F2는 뷰어에서 별도).
+ROAD_LIFT_M = 0.1
+
+
 def _ring_local(coords, offset) -> list[tuple[float, float]]:
     ox, oy = offset
     pts = [(float(x) - ox, float(y) - oy) for x, y in coords]
@@ -158,11 +182,12 @@ def _drape_polygon(rings, dem, cell: float):
     return verts, tris
 
 
-def build_road_geometry(features, dem, cell: float = 2.5) -> dict | None:
-    """RoadFeature 목록 → 병합 노면 메시 + 외곽선(F2 geometry.roads).
+def build_road_mesh(features, dem, cell: float = 2.5) -> RoadMesh | None:
+    """RoadFeature 목록 → 병합 노면 메시(RoadMesh, 로컬 미터). F2/.3dm/.skp 공용.
 
-    반환: {"vertices": [[x,y,z]], "triangles": [[i,j,k]], "outlines": [[[x,y,z]]]} 또는 None.
-    삼각화 실패 폴리곤도 외곽선은 남는다(조용한 열화).
+    각 폴리곤을 _drape_polygon으로 삼각화·드레이프해 하나의 정점/삼각형 버퍼로 병합하고,
+    외곽선(링)도 드레이프해 담는다. 삼각화 실패 폴리곤도 외곽선은 남는다(조용한 열화).
+    유효 지오메트리가 전혀 없으면 None.
     """
     verts: list = []
     tris: list = []
@@ -171,15 +196,11 @@ def build_road_geometry(features, dem, cell: float = 2.5) -> dict | None:
         v, t = _drape_polygon(f.rings, dem, cell)
         base = len(verts)
         verts.extend(v)
-        tris.extend([a + base, b + base, c + base] for a, b, c in t)
+        tris.extend((a + base, b + base, c + base) for a, b, c in t)
         for ring in f.rings:
             if len(ring) >= 3:
-                outlines.append([[round(x, 2), round(y, 2), round(_z(dem, x, y), 2)] for x, y in ring])
+                outlines.append([(x, y, _z(dem, x, y)) for x, y in ring])
 
     if not verts and not outlines:
         return None
-    return {
-        "vertices": [[round(x, 2), round(y, 2), round(z, 2)] for x, y, z in verts],
-        "triangles": tris,
-        "outlines": outlines,
-    }
+    return RoadMesh(vertices=verts, triangles=tris, outlines=outlines)

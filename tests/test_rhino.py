@@ -110,6 +110,33 @@ def test_write_3dm_geometry_types():
         assert "Mesh" in types
 
 
+def _make_road_mesh():
+    from src.geometry.road import RoadMesh
+
+    return RoadMesh(
+        vertices=[(0.0, 0.0, 1.0), (12.0, 0.0, 1.0), (12.0, 8.0, 1.0), (0.0, 8.0, 1.0)],
+        triangles=[(0, 1, 2), (0, 2, 3)],
+        outlines=[[(0.0, 0.0, 1.0), (12.0, 0.0, 1.0), (12.0, 8.0, 1.0), (0.0, 8.0, 1.0)]],
+    )
+
+
+def test_write_3dm_with_roads_adds_mesh_on_roads_layer():
+    """roads 지정 → 'roads' 레이어에 Mesh 객체 추가."""
+    solid = _make_solid()
+    road = _make_road_mesh()
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "site.3dm"
+        write_3dm([solid], None, path, offset=(0.0, 0.0), roads=road)
+        m = rhino3dm.File3dm.Read(str(path))
+        # 건물 Extrusion + 도로 Mesh = 2
+        assert len(m.Objects) == 2
+        assert any(layer.Name == "roads" for layer in m.Layers)
+        # Mesh 객체가 roads 레이어에 있어야 한다.
+        meshes = [o for o in m.Objects if type(o.Geometry).__name__ == "Mesh"]
+        assert meshes
+        assert any(m.Layers[o.Attributes.LayerIndex].Name == "roads" for o in meshes)
+
+
 # ---------------------------------------------------------------------------
 # 정사영상 텍스처 (Tier 1)
 # ---------------------------------------------------------------------------
