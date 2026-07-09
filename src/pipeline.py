@@ -558,7 +558,7 @@ def generate(
 
         qa_result = run_qa(solids, dem=dem, terrain_mesh=terrain_mesh, m2i=config.M2I)
 
-    return {
+    res = {
         "ok": True,
         "address": cleaned,
         "coord": coord,
@@ -580,3 +580,8 @@ def generate(
         "warnings": warnings,
         "qa": qa_result,
     }
+    # 데이터 신뢰도 리포트(A-1) — 조립된 결과 위의 순수 뷰. 소비자(웹/노트)가 렌더만.
+    from src.trust_report import build_trust_report
+
+    res["trust_report"] = build_trust_report(res)
+    return res
