@@ -154,6 +154,7 @@ def generate(
     include_geometry: bool = False,
     shadow_date: str | None = None,
     shadow_hours: list[int] | None = None,
+    proposed_height_m: float | None = None,
 ) -> dict:
     """건물 매싱(+ 선택적 지형/지적) 생성 결과를 반환.
 
@@ -620,6 +621,32 @@ def generate(
                     "rule": "건축법 시행령 §86 ① (참고용 봉투 — 판정은 arch-law-diagnose)",
                 }
 
+    # 조망·스카이라인 (B-2) — 제안 매스 + 조망점 + 스카이라인 프로파일. proposed_height_m 시.
+    skyline = None
+    if proposed_height_m and geometry is not None:
+        proposed = None
+        parcels = cadastral_parcels or []
+        if not parcels:
+            warnings.append("제안 매스 생략 — 지적(cadastral) 레이어 필요")
+        else:
+            from src.geometry.proposal import build_proposed_mass, standard_viewpoints
+            from src.geometry.setback import find_subject_parcel
+
+            px, py = to_5186(coord["lon"], coord["lat"])
+            subject = find_subject_parcel(parcels, (px - offset[0], py - offset[1]))
+            if subject is None:
+                warnings.append("제안 매스 생략 — 주소를 포함하는 지적 필지를 찾지 못함")
+            else:
+                proposed = build_proposed_mass(subject.footprint_m, proposed_height_m, dem, floor_h_m)
+                if proposed:
+                    geometry["proposed"] = proposed
+                    geometry["viewpoints"] = standard_viewpoints(
+                        subject.footprint_m, proposed["base_z"], proposed["height"]
+                    )
+        from src.geometry.skyline import build_skylines
+
+        skyline = build_skylines(solids, proposed) or None
+
     res = {
         "ok": True,
         "address": cleaned,
@@ -644,6 +671,7 @@ def generate(
         "shadows": shadows,
         "zoning": zoning,
         "setback": setback_env,
+        "skyline": skyline,
     }
     # 데이터 신뢰도 리포트(A-1) — 조립된 결과 위의 순수 뷰. 소비자(웹/노트)가 렌더만.
     from src.trust_report import build_trust_report

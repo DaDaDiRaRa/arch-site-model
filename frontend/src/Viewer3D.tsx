@@ -35,6 +35,8 @@ export interface SiteGeometry {
     outlines: [number, number, number][][];
   } | null;
   ortho_extent_m: [number, number, number, number] | null;
+  proposed?: { footprint: [number, number][]; base_z: number; height: number; floors: number; proposed: boolean } | null;
+  viewpoints?: { name: string; eye: [number, number, number]; target: [number, number, number] }[] | null;
 }
 
 export interface QaFinding {
@@ -83,6 +85,8 @@ const C_EDGE = 0x27303a; // 건물 외곽선 (짙은 슬레이트)
 const C_CADASTRAL = 0xd9a441; // sandy yellow — 대지경계 (.3dm cadastral 레이어와 통일)
 const C_SHADOW = 0x1b2733; // dark slate — 일조 그림자 오버레이 (B-3)
 const C_SETBACK = 0x6366f1; // indigo — 정북일조 사선 봉투 (B-1')
+const C_PROPOSED = 0x0ea5e9; // sky — 제안 매스 (B-2, before/after)
+const C_PROPOSED_EDGE = 0x0369a1;
 const CADASTRAL_LIFT = 0.5; // 지형 위로 살짝 띄워 z-fighting 방지 (m)
 const C_ROAD_FILL = 0x74797f; // 아스팔트 그레이 — 도로 노면 (R1b)
 const C_ROAD_EDGE = 0x3a3f45; // 짙은 그레이 — 도로 외곽선
@@ -112,7 +116,10 @@ export default function Viewer3D({ geometry, orthoUrl, qa, shadows, setback }: P
     qa?: THREE.Object3D | null;
     shadows?: THREE.Group | null;
     setback?: THREE.Group | null;
+    proposed?: THREE.Group | null;
     root?: THREE.Group | null;
+    camera?: THREE.PerspectiveCamera;
+    controls?: OrbitControls;
     buildingMeshes: THREE.Mesh[];
     edges: THREE.LineSegments[];
     sun?: THREE.DirectionalLight;
@@ -132,6 +139,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa, shadows, setback }: P
   const [showShadowAnalysis, setShowShadowAnalysis] = useState(true);
   const [shadowIdx, setShadowIdx] = useState(0);
   const [showSetback, setShowSetback] = useState(true);
+  const [showProposed, setShowProposed] = useState(true);
   const [ssao, setSsao] = useState(true); // 주변광 차폐(GTAO) — 틈·밑동 음영으로 입체감
   const ssaoRef = useRef(true); // 렌더 루프가 최신 토글값을 읽도록(재설정 없이)
   const [error, setError] = useState<string | null>(null);
@@ -214,6 +222,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa, shadows, setback }: P
       const lanes = buildLanes(geometry.lanes);
       const water = buildSurfaceMesh(geometry.water, C_WATER, 0);
       const qaMarkers = buildQaMarkers(qa, geometry);
+      const proposedGrp = buildProposedMass(geometry.proposed);
       if (buildings) root.add(buildings);
       if (terrain) root.add(terrain);
       if (cadastral) root.add(cadastral);
@@ -222,6 +231,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa, shadows, setback }: P
       if (lanes) root.add(lanes);
       if (water) root.add(water);
       if (qaMarkers) root.add(qaMarkers);
+      if (proposedGrp) root.add(proposedGrp);
 
       root.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(root);
@@ -229,7 +239,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa, shadows, setback }: P
       // 지형이 없으면 그림자를 받을 바닥면을 깔아 건물 그림자가 보이게 한다.
       if (!terrain && !box.isEmpty()) root.add(shadowGround(box));
 
-      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, water, qa: qaMarkers, buildingMeshes: meshes, edges, sun, root };
+      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, water, qa: qaMarkers, buildingMeshes: meshes, edges, sun, root, proposed: proposedGrp, camera, controls };
       if (!box.isEmpty()) {
         fitCamera(camera, controls, box);
         frameSunShadow(sun, box);
@@ -398,6 +408,23 @@ export default function Viewer3D({ geometry, orthoUrl, qa, shadows, setback }: P
     };
   }, [geometry, setback, groundZ, showSetback]);
 
+  // 제안 매스 표시/숨김 (before/after 토글).
+  useEffect(() => {
+    if (sceneRefs.current.proposed) sceneRefs.current.proposed.visible = showProposed;
+  }, [showProposed]);
+
+  // 조망점으로 카메라 이동 (경관심의 조망 시뮬레이션). 로컬(root) 좌표 → 월드 변환.
+  const gotoViewpoint = (vp: { eye: [number, number, number]; target: [number, number, number] }) => {
+    const root = sceneRefs.current.root;
+    const cam = sceneRefs.current.camera;
+    const ctr = sceneRefs.current.controls;
+    if (!root || !cam || !ctr) return;
+    root.updateMatrixWorld(true);
+    cam.position.copy(root.localToWorld(new THREE.Vector3(vp.eye[0], vp.eye[1], vp.eye[2])));
+    ctr.target.copy(root.localToWorld(new THREE.Vector3(vp.target[0], vp.target[1], vp.target[2])));
+    ctr.update();
+  };
+
   const nB = geometry.buildings.length;
   const nT = geometry.terrain?.triangles.length ?? 0;
   const nC = geometry.cadastral?.length ?? 0;
@@ -460,6 +487,10 @@ export default function Viewer3D({ geometry, orthoUrl, qa, shadows, setback }: P
           <span className="text-indigo-600">정북일조</span>
         </label>
         <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={showProposed} onChange={(e) => setShowProposed(e.target.checked)} className="h-4 w-4" disabled={!geometry.proposed} />
+          <span className="text-sky-600">제안</span> <span className="text-xs text-slate-400">(before/after)</span>
+        </label>
+        <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={ssao} onChange={(e) => setSsao(e.target.checked)} className="h-4 w-4" />
           음영(AO)
         </label>
@@ -503,6 +534,21 @@ export default function Viewer3D({ geometry, orthoUrl, qa, shadows, setback }: P
             {daylight[Math.min(shadowIdx, daylight.length - 1)]?.time} · 태양고도{" "}
             {daylight[Math.min(shadowIdx, daylight.length - 1)]?.sun_alt.toFixed(0)}°
           </span>
+        </div>
+      )}
+      {geometry.viewpoints && geometry.viewpoints.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-slate-500">조망점</span>
+          {geometry.viewpoints.map((vp) => (
+            <button
+              key={vp.name}
+              type="button"
+              onClick={() => gotoViewpoint(vp)}
+              className="rounded border border-sky-300 bg-sky-50 px-2 py-0.5 text-sky-700 hover:bg-sky-100"
+            >
+              {vp.name}
+            </button>
+          ))}
         </div>
       )}
       <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
@@ -737,6 +783,35 @@ function buildSetbackOverlay(
     mesh.renderOrder = 2;
     g.add(mesh);
   }
+  return g;
+}
+
+// 제안 매스(B-2): subject 대지 위 제안 건물을 반투명 하늘색 돌출로(before/after). z=지면 표고+높이.
+function buildProposedMass(proposed: SiteGeometry["proposed"]): THREE.Group | null {
+  if (!proposed || !proposed.footprint || proposed.footprint.length < 3 || proposed.height <= 0) {
+    return null;
+  }
+  const g = new THREE.Group();
+  g.name = "proposed";
+  const shape = new THREE.Shape(proposed.footprint.map(([x, y]) => new THREE.Vector2(x, y)));
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: proposed.height, bevelEnabled: false });
+  geo.translate(0, 0, proposed.base_z);
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({
+    color: C_PROPOSED,
+    transparent: true,
+    opacity: 0.72,
+    roughness: 0.6,
+    metalness: 0,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  g.add(mesh);
+  g.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 20), new THREE.LineBasicMaterial({ color: C_PROPOSED_EDGE })));
   return g;
 }
 

@@ -544,6 +544,29 @@ def test_generate_setback_envelope(monkeypatch):
     assert "north_azimuth_deg" in sb
 
 
+def test_generate_proposed_mass(monkeypatch):
+    """B-2: proposed_height_m → geometry.proposed(before/after) + 4 조망점."""
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
+    )
+    from src.geometry.cadastral import CadastralParcel
+
+    fake = CadastralParcel(pnu="1" * 19, footprint_m=[(0, 0), (30, 0), (30, 30), (0, 30)])
+    monkeypatch.setattr("src.geometry.setback.find_subject_parcel", lambda parcels, pt: fake)
+    out = generate(
+        "대전 …",
+        client=FakeClientMulti(_daejeon_features(), _cadastral_features()),
+        layers={"buildings": True, "cadastral": True},
+        include_geometry=True,
+        proposed_height_m=45.0,
+    )
+    g = out["geometry"]
+    assert g["proposed"]["height"] == 45.0
+    assert g["proposed"]["proposed"] is True
+    assert len(g["viewpoints"]) == 4
+    assert out["skyline"] and len(out["skyline"]) == 2   # 횡단·종단 스카이라인
+
+
 def test_generate_geometry_cadastral(monkeypatch):
     """cadastral 레이어 + include_geometry → geometry.cadastral 링이 지형 표고로 드레이프."""
     import json

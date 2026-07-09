@@ -155,10 +155,13 @@ Cadmapper                       arch-site-model                Autodesk Forma
 - *구현*: 태양 저차 천문식(외부 API 0) + footprint×높이 태양반대 투영. `Viewer3D.tsx` buildShadowOverlay.
   전체 313 green + 프론트 빌드 ✓. (진북≈격자북, 그림자 지면 평지 가정 — 슬라이더 옆 날짜 표기.)
 
-**B-2. 조망·스카이라인 3D 시뮬레이션 (경관심의)** — `노력 L · 임팩트 상 · 의존성: 제안 매스 입력`
-- *산출물(done)*: 핵심 조망점 카메라 렌더 + 스카이라인 종/횡단면 컷 + before/after 세트.
-- *경계*: `elevation-renderer`(2D 입면도)와 **상보** — 우리는 3D 맥락 속 스카이라인.
-- *의존성*: "제안 매스" 입력 프리미티브 필요(현재는 현황만 모델링). B-1의 subject-parcel과 공유.
+**B-2. 조망·스카이라인 (경관심의)** — `노력 L · 임팩트 상` — ✅ **완료**
+- *산출물(done)*: **제안 매스 입력 ✅**(`src/geometry/proposal.py` — subject 대지×제안높이 지형앉힘,
+  `proposed_height_m`, `geometry.proposed`, 현황 solids와 분리→통계·QA 무오염) · **before/after ✅**(뷰어 "제안"
+  토글) · **4방위 조망점 ✅**(`standard_viewpoints`, 뷰어 버튼→카메라 이동) · **스카이라인 종/횡단면 ✅**
+  (`src/geometry/skyline.py` `build_skylines` — 건물 상단 실루엣 투영, before/after, 웹 SVG 차트). 테스트 3+3+2, 336 green.
+- *경계*: `elevation-renderer`(2D 입면도)와 **상보** — 우리는 3D 맥락 속 매스+조망.
+- *시너지*: 제안 매스 + 정북일조 봉투(B-1') 함께 켜면 "제안이 사선 제한에 드나" 육안 검토.
 
 **밀도 지표**: 건폐율/용적률 *판정*은 `arch-law-diagnose` 소유 → 우리는 **주변 밀도 맥락 측정**만.
 
