@@ -142,6 +142,7 @@ src/
   tiles_stream.py        tile_plan + generate_tile — SketchUp 확장 대반경(1~2km) 순차조립용 타일별 geometry JSON (계획→타일별 fetch, centroid 중복제거, 타일별 정사영상·도로/보도/차선 통합표면)
   site_check.py          check_site_data 핵심 로직
   preview.py             preview_site 핵심 로직
+  qa.py                  생성물 자동 QA (검증 자동화) — 건물 앉힘(급경사/부유/침몰/지형밖)·건물 겹침(중복)·footprint 유효성(자기교차/슬리버)·지형 스파이크 검사 → findings{severity,kind,message,at,name}. layers.qa=True 시 pipeline이 호출, result.qa로 반환. 웹 UI가 결함 목록 + F2 3D가 결함 위치에 수직 핀 표시(KBS "눈검사→코드" 대체)
   config.py              전역 설정·환경변수 (+ dem_tile_path: DEM 타일 로컬↔GCS /vsicurl 경로 해석)
   geo/
     geocode.py           주소 → 좌표 (VWorld address API)
@@ -177,12 +178,12 @@ geo_store/
 
 frontend/                React + Vite + Tailwind 웹 UI (주소 입력 → /api/generate 호출 → .3dm/정사영상 다운로드)
   src/App.tsx            메인 폼·결과 화면
-  src/Viewer3D.tsx       브라우저 3D 미리보기 (three.js — 지형 mesh+건물 돌출+정사영상 드레이프 + 지적/도로/보도/차선 + 높이색 그라디언트·외곽선·그림자·뷰모드·레이어 토글·SSAO(EffectComposer+GTAOPass, 음영 토글)) [F2]
+  src/Viewer3D.tsx       브라우저 3D 미리보기 (three.js — 지형 mesh+건물 돌출+정사영상 드레이프 + 지적/도로/보도/차선 + 높이색 그라디언트·외곽선·그림자·뷰모드·레이어 토글·SSAO(EffectComposer+GTAOPass, 음영 토글)·QA 결함 수직 핀(경고=빨강/info=주황)) [F2]
   dist/                  빌드 산출물 (FastAPI가 루트에서 서빙)
 
 sketchup_ext/            SketchUp 확장(.rbz) — 주소→백엔드 geometry JSON→SketchUp 조립 (Phase B) [B1: 지형+건물]
   arch_site_model.rb     로더(SketchupExtension 등록)
-  arch_site_model/       main(메뉴·HtmlDialog)·api_client(Sketchup::Http)·builder(지형mesh+건물돌출+정사영상 드레이프+도로/보도 메시·차선 폴리라인)·settings·dialog.html
+  arch_site_model/       main(메뉴·HtmlDialog)·api_client(Sketchup::Http)·builder(지형mesh+건물돌출+정사영상 드레이프+도로/보도 메시·차선·수계 평면·QA 결함 핀)·settings·dialog.html
   build_rbz.py           확장 폴더 → dist/arch_site_model.rbz 패키징
 
 docs/
@@ -235,6 +236,7 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 | `{"buildings": true, "cadastral": true}` | 건물 + 대지 경계 폴리곤 (Phase 5) |
 | `{"buildings": true, "terrain": true, "roads": true}` | 지형 + 도로 노면(A0010000 DEM 드레이프 메시, Phase R). 도로는 `road_manifest.json`/GeoJSON 비축 필요 — 없으면 조용히 생략+warnings |
 | `{"buildings": true, "terrain": true, "water": true}` | 지형 + 수계(E계열 하천·호소 → 표고고정 평면 수면 + 지형 물 아래로 버닝). `water_manifest.json`/GeoJSON 비축 필요, 지형(DEM) 필요 — 없으면 조용히 생략+warnings |
+| `{..., "qa": true}` | 자동 QA(검증) 실행 → `result.qa = {findings, summary}` (건물 앉힘·겹침·지형 스파이크). 다른 레이어와 무관하게 켤 수 있음. 웹 UI가 결함 목록 표시 |
 | `{"buildings": true, "terrain": true, "orthophoto": true}` | 지형에 정사영상 텍스처 (.3dm=Rhino 텍스처 / .skp=데스크톱 확장 B2 드레이프) |
 
 지형 활성화 시 추가 응답 필드:
@@ -426,8 +428,12 @@ result = generate_site_model(
 | F2 | 뷰어 표현 — 높이별 색·건물 외곽선·그림자·뷰모드·지적/도로/보도/차선 표시·레이어 토글·SSAO(GTAO 음영) | ✅ 완료 |
 | R1 | 도로 노면 — A0010000 폴리곤 → DEM 드레이프 메시(외곽선+면) → F2/.3dm/.skp 3출력 | ✅ 완료 |
 | R2 | 도로 지형정합 — 버닝(절토/성토·스커트·IDW 교차블렌딩·자기지면 클램프) + 크라운(횡단구배) | ✅ 완료 |
-| R3 | 보도(A0033320)·차선(A0020000 중심선 경량 마킹) | ✅ 완료 (차선 다차선은 후속) |
+| R3 | 보도(A0033320)·차선(A0020000) — 차로수 기반 **다차선**(중앙선 실선/구분선 점선, 노란 면 리본) | ✅ 완료 |
 | R★ | 통합 표면 — 지형·도로·보도를 1번 Delaunay로(정점 공유) → 이음매·구멍·뜸·z-fighting 구조적 제거 | ✅ 완료 |
+| R4 | 도로 정교화 — 실측폭 갭채움(소로/골목)·경계 샤프닝·보도우선(도로겹침 컬링 방지)·타일경로/확장 렌더·**클라우드 서빙**(`WATER_BASE`처럼 `ROAD_BASE`=GCS) | ✅ 완료 |
+| 수계 | E계열 하천·호소 → 표고고정 평면 수면 + 지형 물아래 버닝 (`water_bake`·`water.py`, F2/.3dm/.skp/확장) | ✅ 완료 (클라우드 서빙 `WATER_BASE`) |
+| 지형솔버 | 계단현상 라플라스 조화 격자 솔버 `--method solver`(등고선 Dirichlet 제약+∇²z=0 완화, 오버슈트 없음, 힐셰이드 검증) | ✅ opt-in (기본 clough, ~10× 느림) |
+| QA | 자동 검증 — 건물 앉힘(급경사/부유/침몰/지형밖)·겹침·footprint 유효성·지형 스파이크 → findings, 웹 패널+F2/확장 3D 핀 | ✅ 완료 (KBS "눈검사→코드") |
 
 ---
 

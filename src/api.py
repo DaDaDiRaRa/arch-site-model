@@ -133,6 +133,7 @@ def generate_endpoint(req: GenerateRequest) -> dict:
         "stats": result.get("stats"),
         "provenance": result.get("provenance"),
         "warnings": result.get("warnings"),
+        "qa": result.get("qa"),   # 자동 QA findings (layers.qa=True 시)
     }
 
 

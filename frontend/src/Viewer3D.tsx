@@ -36,9 +36,22 @@ export interface SiteGeometry {
   ortho_extent_m: [number, number, number, number] | null;
 }
 
+export interface QaFinding {
+  severity: string;
+  kind: string;
+  message: string;
+  at: [number, number] | null;
+  name: string | null;
+}
+export interface QaResult {
+  findings: QaFinding[];
+  summary: { total: number; warnings: number; by_kind: Record<string, number> };
+}
+
 interface Props {
   geometry: SiteGeometry;
   orthoUrl?: string; // 정사영상 PNG (지형에 드레이프)
+  qa?: QaResult | null; // 자동 QA findings — 결함 위치에 수직 핀 표시
 }
 
 type ColorMode = "height" | "flat";
@@ -65,7 +78,7 @@ const RAMP_LO = new THREE.Color(0xa9cfe8);
 const RAMP_HI = new THREE.Color(0x1f3a5f);
 
 // three는 Y-up, 데이터는 Z-up(z=높이) → 루트 그룹을 X축 -90° 회전해 맞춘다.
-export default function Viewer3D({ geometry, orthoUrl }: Props) {
+export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRefs = useRef<{
     buildings?: THREE.Group | null;
@@ -75,6 +88,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
     sidewalks?: THREE.Object3D | null;
     lanes?: THREE.Object3D | null;
     water?: THREE.Object3D | null;
+    qa?: THREE.Object3D | null;
     buildingMeshes: THREE.Mesh[];
     edges: THREE.LineSegments[];
     sun?: THREE.DirectionalLight;
@@ -86,6 +100,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
   const [showSidewalks, setShowSidewalks] = useState(true);
   const [showLanes, setShowLanes] = useState(true);
   const [showWater, setShowWater] = useState(true);
+  const [showQa, setShowQa] = useState(true);
   const [colorMode, setColorMode] = useState<ColorMode>("height");
   const [viewMode, setViewMode] = useState<ViewMode>("solid");
   const [showEdges, setShowEdges] = useState(true);
@@ -158,6 +173,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
       const sidewalks = buildSurfaceMesh(geometry.sidewalks, C_SIDEWALK, SIDEWALK_LIFT);
       const lanes = buildLanes(geometry.lanes);
       const water = buildSurfaceMesh(geometry.water, C_WATER, 0);
+      const qaMarkers = buildQaMarkers(qa, geometry);
       if (buildings) root.add(buildings);
       if (terrain) root.add(terrain);
       if (cadastral) root.add(cadastral);
@@ -165,6 +181,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
       if (sidewalks) root.add(sidewalks);
       if (lanes) root.add(lanes);
       if (water) root.add(water);
+      if (qaMarkers) root.add(qaMarkers);
 
       root.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(root);
@@ -172,7 +189,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
       // 지형이 없으면 그림자를 받을 바닥면을 깔아 건물 그림자가 보이게 한다.
       if (!terrain && !box.isEmpty()) root.add(shadowGround(box));
 
-      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, water, buildingMeshes: meshes, edges, sun };
+      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, water, qa: qaMarkers, buildingMeshes: meshes, edges, sun };
       if (!box.isEmpty()) {
         fitCamera(camera, controls, box);
         frameSunShadow(sun, box);
@@ -228,7 +245,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
       renderer.dispose();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
-  }, [geometry, orthoUrl, heightRange]);
+  }, [geometry, orthoUrl, heightRange, qa]);
 
   // SSAO 토글 → 렌더 루프가 읽는 ref 동기화 (composer 재생성 없이 즉시 반영)
   useEffect(() => {
@@ -244,7 +261,8 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
     if (sceneRefs.current.sidewalks) sceneRefs.current.sidewalks.visible = showSidewalks;
     if (sceneRefs.current.lanes) sceneRefs.current.lanes.visible = showLanes;
     if (sceneRefs.current.water) sceneRefs.current.water.visible = showWater;
-  }, [showBuildings, showTerrain, showCadastral, showRoads, showSidewalks, showLanes, showWater]);
+    if (sceneRefs.current.qa) sceneRefs.current.qa.visible = showQa;
+  }, [showBuildings, showTerrain, showCadastral, showRoads, showSidewalks, showLanes, showWater, showQa]);
 
   // 색상 모드: 높이별 그라디언트 ↔ 단색 (미확인 건물은 항상 주황)
   useEffect(() => {
@@ -301,6 +319,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
   const nSW = geometry.sidewalks?.outlines?.length ?? 0;
   const nL = geometry.lanes?.length ?? 0;
   const nWater = geometry.water?.outlines?.length ?? 0;
+  const nQa = qa?.findings.length ?? 0;
 
   return (
     <div>
@@ -333,6 +352,10 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
         <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={showWater} onChange={(e) => setShowWater(e.target.checked)} className="h-4 w-4" disabled={!nWater} />
           수계 <span className="text-xs text-slate-400">({nWater})</span>
+        </label>
+        <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={showQa} onChange={(e) => setShowQa(e.target.checked)} className="h-4 w-4" disabled={!nQa} />
+          <span className="text-rose-600">QA</span> <span className="text-xs text-slate-400">({nQa})</span>
         </label>
         <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={showEdges} onChange={(e) => setShowEdges(e.target.checked)} className="h-4 w-4" />
@@ -611,6 +634,56 @@ function buildLanes(lanes: Props["geometry"]["lanes"]): THREE.Group | null {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     g.add(new THREE.Line(geo, mat));
+  }
+  return g;
+}
+
+// 자동 QA findings → 결함 위치(at)에 수직 핀 + 머리 마커. 경고=빨강, info=주황. z 스팬은 모델 범위.
+function buildQaMarkers(qa: QaResult | null | undefined, geometry: SiteGeometry): THREE.Group | null {
+  if (!qa || !qa.findings.length) return null;
+  let zLo = Infinity;
+  let zHi = -Infinity;
+  const tv = geometry.terrain?.vertices;
+  if (tv && tv.length) {
+    const step = Math.max(1, Math.floor(tv.length / 3000)); // 대량 정점 샘플링(min/max 스택 회피)
+    for (let i = 0; i < tv.length; i += step) {
+      const z = tv[i][2];
+      if (z < zLo) zLo = z;
+      if (z > zHi) zHi = z;
+    }
+  }
+  for (const b of geometry.buildings) {
+    if (b.base_z < zLo) zLo = b.base_z;
+    if (b.base_z + b.height > zHi) zHi = b.base_z + b.height;
+  }
+  if (!isFinite(zLo) || !isFinite(zHi)) {
+    zLo = 0;
+    zHi = 100;
+  }
+  const top = zHi + Math.max(zHi - zLo, 20) * 0.15; // 머리를 모델 위로 조금 띄움
+
+  const g = new THREE.Group();
+  const color: Record<string, number> = { warn: 0xdc2626, info: 0xf59e0b };
+  const lines: Record<string, number[]> = { warn: [], info: [] };
+  const heads: Record<string, number[]> = { warn: [], info: [] };
+  for (const f of qa.findings) {
+    if (!f.at) continue;
+    const [x, y] = f.at;
+    const sev = f.severity === "warn" ? "warn" : "info";
+    lines[sev].push(x, y, zLo, x, y, top); // 수직 핀(바닥~머리)
+    heads[sev].push(x, y, top);
+  }
+  for (const sev of ["info", "warn"] as const) {
+    if (lines[sev].length) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(lines[sev], 3));
+      g.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: color[sev], transparent: true, opacity: 0.8 })));
+    }
+    if (heads[sev].length) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(heads[sev], 3));
+      g.add(new THREE.Points(geo, new THREE.PointsMaterial({ color: color[sev], size: 9, sizeAttenuation: false })));
+    }
   }
   return g;
 }

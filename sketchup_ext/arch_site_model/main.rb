@@ -83,8 +83,12 @@ module ArchSiteModel
     end
 
     def self.finish_single(dlg, result, ortho_png, ortho_extent)
-      n = Builder.build(result[:geometry], result[:warnings], ortho_png, ortho_extent)
+      qa = result[:qa]
+      n = Builder.build(result[:geometry], result[:warnings], ortho_png, ortho_extent, qa)
       done = { "count" => n, "warnings" => result[:warnings] || [] }
+      if qa && qa["summary"]
+        done["qa"] = { "total" => qa["summary"]["total"], "warnings" => qa["summary"]["warnings"] }
+      end
       dlg.execute_script("window.showDone(#{JSON.generate(done)});")
     rescue StandardError => e
       dlg.execute_script("window.showError(#{JSON.generate("조립 실패: #{e.message}")});")

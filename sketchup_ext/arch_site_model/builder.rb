@@ -17,6 +17,8 @@ module ArchSiteModel
     C_SIDEWALK = [176, 172, 160].freeze # 콘크리트 베이지그레이 (F2 C_SIDEWALK)
     C_LANE     = [232, 200, 74].freeze  # 노랑 — 차선/중심선 마킹 (F2 C_LANE)
     C_WATER    = [58, 110, 165].freeze  # 강물 블루 — 수계 (F2 C_WATER)
+    C_QA_WARN  = [220, 38, 38].freeze   # 빨강 — QA 경고 핀
+    C_QA_INFO  = [245, 158, 11].freeze  # 주황 — QA info 핀
 
     # 노면을 지형 바로 위로 살짝 띄우는 리프트(m) — 경계선 z-fighting 방지(src road.py ROAD_LIFT_M와 동일).
     ROAD_LIFT_M = 0.03
@@ -26,14 +28,14 @@ module ArchSiteModel
     # 단일 조립(소반경): root 그룹 생성 + 전체 조립 + zoom. 반환: 생성된 건물 수.
     # geometry: {"buildings"=>[...], "terrain"=>{...}|nil}
     # ortho_png/ortho_extent: 정사영상 PNG 경로 + 로컬미터 extent[x0,y0,x1,y1](선택)
-    def self.build(geometry, _warnings = [], ortho_png = nil, ortho_extent = nil)
+    def self.build(geometry, _warnings = [], ortho_png = nil, ortho_extent = nil, qa = nil)
       model = Sketchup.active_model
       count = 0
       model.start_operation("대지모델 생성", true)
       begin
         root = model.active_entities.add_group
         root.name = "arch-site-model"
-        count = build_into(model, root.entities, geometry, ortho_png, ortho_extent)
+        count = build_into(model, root.entities, geometry, ortho_png, ortho_extent, qa)
         model.commit_operation
         model.active_view.zoom_extents
       rescue StandardError => e
@@ -55,7 +57,7 @@ module ArchSiteModel
     end
 
     # 지형 + 도로/보도/차선 + 건물을 주어진 entities에 조립(단일/타일 공통). 반환: 건물 수.
-    def self.build_into(model, parent_ents, geometry, ortho_png = nil, ortho_extent = nil)
+    def self.build_into(model, parent_ents, geometry, ortho_png = nil, ortho_extent = nil, qa = nil)
       if geometry["terrain"]
         build_terrain(model, parent_ents, geometry["terrain"], ortho_png, ortho_extent)
       end
@@ -67,6 +69,59 @@ module ArchSiteModel
       # 수계 — 평면 수면(z는 백엔드가 이미 리프트) → lift_m=0.
       build_surface_mesh(model, parent_ents, geometry["water"], "water", C_WATER, 0.0)
       build_buildings(model, parent_ents, geometry["buildings"] || [])
+      build_qa(model, parent_ents, qa, geometry) if qa
+    end
+
+    # 자동 QA findings → 결함 위치(at)에 수직 핀(교차 쿼드 2장, 색=심각도). F2와 동일 개념.
+    # 텍스트 목록은 다이얼로그가, 3D 위치는 여기가 담당. qa = {"findings"=>[{at,severity,...}], ...}.
+    def self.build_qa(model, parent_ents, qa, geometry)
+      finds = (qa && qa["findings"]) || []
+      return if finds.empty?
+
+      # 모델 z 범위(미터) → 핀 수직 스팬. 지형 정점 + 건물 상단.
+      zlo = nil; zhi = nil
+      (geometry["terrain"] && geometry["terrain"]["vertices"] || []).each do |v|
+        z = v[2]
+        zlo = z if zlo.nil? || z < zlo
+        zhi = z if zhi.nil? || z > zhi
+      end
+      (geometry["buildings"] || []).each do |b|
+        top = b["base_z"].to_f + b["height"].to_f
+        zlo = b["base_z"].to_f if zlo.nil? || b["base_z"].to_f < zlo
+        zhi = top if zhi.nil? || top > zhi
+      end
+      zlo ||= 0.0; zhi ||= 100.0
+      ztop = zhi + [zhi - zlo, 20.0].max * 0.15   # 머리를 모델 위로
+
+      grp = parent_ents.add_group
+      grp.name = "qa"
+      grp.layer = tag(model, "qa")
+      mat_w = material(model, "asm_qa_warn", C_QA_WARN)
+      mat_i = material(model, "asm_qa_info", C_QA_INFO)
+      w = 0.6 * M2I  # 핀 반폭(인치)
+      zl = zlo * M2I; zt = ztop * M2I
+      ents = grp.entities
+      finds.each do |f|
+        at = f["at"]
+        next unless at && at.length == 2
+        x = at[0] * M2I; y = at[1] * M2I
+        mat = (f["severity"] == "warn") ? mat_w : mat_i
+        # 교차 쿼드 2장(±Y면, ±X면) → 어느 각도서나 보임.
+        [[[x - w, y, zl], [x + w, y, zl], [x + w, y, zt], [x - w, y, zt]],
+         [[x, y - w, zl], [x, y + w, zl], [x, y + w, zt], [x, y - w, zt]]].each do |quad|
+          begin
+            face = ents.add_face(quad.map { |p| Geom::Point3d.new(p[0], p[1], p[2]) })
+            if face && !face.deleted?
+              face.material = mat
+              face.back_material = mat
+            end
+          rescue StandardError
+            next
+          end
+        end
+      end
+    rescue StandardError => e
+      puts "[qa] 핀 조립 오류: #{e.message}"
     end
 
     # 타일 1개를 root 아래 서브그룹에 조립(자체 operation, zoom 없음).

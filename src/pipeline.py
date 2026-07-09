@@ -551,6 +551,13 @@ def generate(
         else None
     )
 
+    # 자동 QA (검증 자동화) — layers.qa=True 시 생성물 결함 검사(건물 앉힘·겹침·지형 스파이크).
+    qa_result = None
+    if layers.get("qa"):
+        from src.qa import run_qa
+
+        qa_result = run_qa(solids, dem=dem, terrain_mesh=terrain_mesh, m2i=config.M2I)
+
     return {
         "ok": True,
         "address": cleaned,
@@ -571,4 +578,5 @@ def generate(
         },
         "provenance": prov,
         "warnings": warnings,
+        "qa": qa_result,
     }

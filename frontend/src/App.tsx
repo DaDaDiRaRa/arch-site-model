@@ -16,6 +16,10 @@ interface GenerateResult {
   };
   provenance: Record<string, unknown>;
   warnings: string[];
+  qa: {
+    findings: { severity: string; kind: string; message: string; at: [number, number] | null; name: string | null }[];
+    summary: { total: number; warnings: number; by_kind: Record<string, number> };
+  } | null;
 }
 
 export default function App() {
@@ -26,6 +30,7 @@ export default function App() {
   const [cadastral, setCadastral] = useState(false);
   const [roads, setRoads] = useState(false);
   const [water, setWater] = useState(false);
+  const [qa, setQa] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +48,7 @@ export default function App() {
         body: JSON.stringify({
           address,
           radius_m: radius,
-          layers: { buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral, roads, water: terrain && water },
+          layers: { buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral, roads, water: terrain && water, qa },
           outputs: ["3dm"],
         }),
       });
@@ -147,6 +152,15 @@ export default function App() {
               />
               수계(하천·호소)
             </label>
+            <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={qa}
+                onChange={(e) => setQa(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              자동 QA(검증)
+            </label>
           </div>
 
           <button
@@ -188,7 +202,7 @@ export default function App() {
 
             {result.geometry && (result.geometry.buildings.length > 0 || result.geometry.terrain) && (
               <div className="mt-6">
-                <Viewer3D geometry={result.geometry} orthoUrl={result.files.ortho_png} />
+                <Viewer3D geometry={result.geometry} orthoUrl={result.files.ortho_png} qa={result.qa} />
               </div>
             )}
 
@@ -231,6 +245,32 @@ export default function App() {
                     <li key={i}>{w}</li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {result.qa && (
+              <div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-700 ring-1 ring-slate-200">
+                <p className="font-semibold text-slate-900">
+                  자동 QA — 결함 {result.qa.summary.total}건 (경고 {result.qa.summary.warnings})
+                </p>
+                {result.qa.summary.total === 0 ? (
+                  <p className="mt-1 text-emerald-700">검출된 결함 없음 ✓</p>
+                ) : (
+                  <>
+                    <p className="mt-1 text-slate-500">
+                      {Object.entries(result.qa.summary.by_kind)
+                        .map(([k, n]) => `${k}: ${n}`)
+                        .join(" · ")}
+                    </p>
+                    <ul className="mt-2 max-h-40 list-disc overflow-y-auto pl-5">
+                      {result.qa.findings.slice(0, 30).map((f, i) => (
+                        <li key={i} className={f.severity === "warn" ? "text-rose-700" : "text-slate-500"}>
+                          {f.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
               </div>
             )}
 

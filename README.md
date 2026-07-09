@@ -4,6 +4,7 @@
 
 **입력**: 대지 주소(지번·도로명) + 반경(m)  
 **출력**: `.skp` (SketchUp, 정사영상 텍스처 포함) · `.3dm` (Rhino, 정사영상 텍스처 포함) · 브라우저 3D 미리보기  
+**레이어**: 건물 · 지형(TIN) · 지적 · 도로/보도/차선(다차선) · 수계(하천·호소) · 정사영상 텍스처 · 자동 QA  
 **소비 경로**: ① MCP 도구(Claude) · ② 웹앱(주소→다운로드 + 3D 미리보기) · ③ SketchUp 확장(.rbz) — 엔진·백엔드는 공유  
 **핵심**: `gro_flo_co`(실제 층수) 직접 사용 — AI 추정 0%, "재현이지 상상이 아님"
 
@@ -44,6 +45,8 @@ Copy-Item .env.example .env
 | `VWORLD_KEY` | VWorld 운영 키 |
 | `VWORLD_DOMAIN` | 키 발급 시 등록 도메인 (기타 개발자 키는 불필요) |
 | `DEM_TILE_BASE` | (선택) DEM 타일 읽기 위치. 기본=로컬 `geo_store`. GCS 서빙 시 `/vsicurl/https://storage.googleapis.com/<버킷>/<프리픽스>` — 로컬 개발엔 불필요 |
+| `ROAD_BASE` | (선택) 도로 GeoJSON 읽기 위치. 기본=로컬 `geo_store`. `gs://<버킷>/roads`(또는 `https://…`)로 두면 공개 GCS에서 HTTP fetch(도로는 json+shapely라 DEM과 달리 `/vsicurl` 아닌 HTTP) |
+| `WATER_BASE` | (선택) 수계 GeoJSON 읽기 위치. `ROAD_BASE`와 동형(기본=로컬 `geo_store`, `gs://<버킷>/water` 지정 시 GCS HTTP) |
 | `TERRAIN_MAX_ERROR_M` | (선택) 지형 TIN 적응형 단순화 오차 한도(m, 기본 `0.25`). `>0` = 오차 유계 적응형 TIN(평탄부는 큰 삼각형, 복잡부는 조밀 삼각형 — 수직오차 ≤ 이 값 보장). `0` = 균일 5m 격자 |
 
 > **키 발급**: [VWorld 공간정보 오픈플랫폼](https://www.vworld.kr) → 개발자 → 인증키 발급
@@ -88,6 +91,9 @@ cd frontend; npm run build; cd ..; uvicorn src.api:app --port 8000
 ```
 
 `/api/generate` 는 `.3dm`/정사영상 다운로드 URL + `geometry` JSON(three.js **브라우저 3D 미리보기**)을 반환.
+웹 UI(`App.tsx`)와 F2 뷰어(`Viewer3D.tsx`)는 지형·정사영상·지적에 더해 **도로·수계·QA·음영(AO)** 토글을
+제공하고, QA 켜면 결함 목록 패널 + 3D 결함 핀을 표시합니다. F2 뷰어는 **SSAO(주변광 차폐)** 를 지원합니다
+(three.js `EffectComposer` + `GTAOPass`, 음영 토글) — 건물 밑동·틈에 접촉 음영을 넣습니다.
 도커/Cloud Run 배포·인증은 **`docs/deploy.md`**.
 
 ### (C) SketchUp 확장 (.rbz) — 데스크톱에서 조립
@@ -176,7 +182,7 @@ check_site_data("대전광역시 서구 괴정동 358", radius_m=250)
 | `radius_m` | `250` | 반경 (m) — **2km 이상도 지원**(VWorld 박스당 10km² 한도를 클라이언트가 bbox 분할로 자동 우회, 상한 ~반경 15km) |
 | `floor_height_m` | `3.0` | 기본 층고 (m) |
 | `outputs` | `["skp"]` | `"skp"` · `"3dm"` 선택 |
-| `layers` | `{"buildings": true}` | 레이어 활성화 |
+| `layers` | `{"buildings": true}` | 레이어 활성화 — `buildings`·`terrain`·`cadastral`·`roads`·`water`·`orthophoto`·`qa` |
 | `output_dir` | `"output/"` | .3dm 저장 경로 |
 | `missing_floors_policy` | `"default"` | 층수 누락 처리 정책 |
 | `setback` | `false` | 이격면 분석 (stub) |
@@ -228,11 +234,19 @@ generate_site_model(
 
 #### 도로·보도·차선 (Phase R)
 
-`layers.roads: true` 로 도로 노면(수치지도 A0010000)·보도(A0033320)·차선(A0020000 중심선)을 추가합니다.
+`layers.roads: true` 로 도로 노면(수치지도 A0010000)·보도(A0033320)·차선(A0020000)을 추가합니다.
 지형이 있으면 **통합 표면**으로 생성됩니다 — 지형·도로·보도를 한 번의 삼각화로 만들어 정점을 공유하므로
 도로가 지형에 이음매·구멍·뜸 없이 녹아듭니다(도로 아래 지형은 절토/성토로 정합). 도로 벡터는 지형 DEM처럼
 **오프라인 비축**(로컬 SHP뿐이라 실시간 API 없음) — `road_bake`로 지역 GeoJSON을 굽고 `road_manifest.json`
 으로 조회합니다. 비축 없으면 경고 후 건물·지형만 생성(조용한 fallback).
+
+- **다차선 마킹**: A0020000 중심선의 실측 `차로수`·`도로폭`으로 평행 차선을 생성합니다
+  (`road.clip_lane_markings`) — 중앙선(median)은 실선, 차선 구분선은 점선(`road._dash_line`).
+  **F2 뷰어**(노란 라인)와 **SketchUp 데스크톱 확장**(노면 위 얇은 **노란 면 리본**, `builder.rb::build_lanes`)이
+  렌더합니다. (`.3dm`·클라우드 `.skp` 코드에는 차선 마킹이 포함되지 않습니다 — 노면·보도·수계만.)
+- **도로 정교화**: 경계 폴리곤(A0010000)이 없는 소로·골목은 A0020000 실측 `도로폭`으로 버퍼링해 노면을
+  합성합니다(`road_bake.synthesize_gap_roads`, 커버리지 89%→100%). 통합 표면의 도로 경계는 `ROAD_EDGE_CELL_M`
+  로 샤프닝하고, 보도는 도로 겹침 구간에서도 컬링하지 않아(보도 우선) 보도 삼각형이 크게 늘었습니다.
 
 ```python
 generate_site_model(
@@ -245,6 +259,32 @@ generate_site_model(
 > **도로 데이터 굽기**: `python -m src.terrain.road_bake "<수치지도 폴더>" --out geo_store/roads_<지역>.geojson
 > --region "<지역명>"` → A0010000/A0020000/A0033320을 읽어 지역 GeoJSON + `road_manifest.json` 갱신
 > (동부원점 5187→5186 재투영·도엽 중복제거 자동, contour_bake 헬퍼 재사용). `manifest`만 깃 추적, `roads_*.geojson`은 gitignore.
+>
+> **클라우드 서빙**: `roads_*.geojson`을 공개 GCS(`gs://…/roads/`)에 올리고 `ROAD_BASE=gs://…/roads`로 두면
+> 앱이 HTTP fetch+캐시(`road._read_geojson_text`, `config.road_file_path`가 `gs://`→`https://` 변환)합니다.
+> DEM(GDAL `/vsicurl` 범위읽기)과 달리 도로는 json+shapely라 파일 전체를 HTTP로 받습니다. **코드는 완성이며 실제
+> 업로드/배포 env 설정은 사용자 액션**(미설정 시 클라우드에서 도로만 조용히 생략 → `ROAD_BASE` 확인).
+
+#### 수계 — 하천·호소 (water)
+
+`layers.water: true` 로 하천·호소 수면을 추가합니다(지형 필요 — 수면 표고가 DEM 기준). 수치지도 E계열
+면 SHP(하천경계 `E0010001`·호소 `E0052114` 등)를 `water_bake`로 지역 GeoJSON + `water_manifest.json`으로
+오프라인 비축하고, 런타임 `src/geometry/water.py`가 하천/호소를 **표고 고정 평면 수면**(수면 z = 경계 둑
+DEM의 저백분위)으로 만든 뒤 지형을 물 아래로 버닝합니다. F2(파랑)·.3dm(`water` 레이어)·.skp·SketchUp
+확장이 렌더합니다. 도로와 동형으로 `WATER_BASE`(`gs://…/water`)로 GCS 서빙합니다. 비축 없으면 경고 후
+지형만 생성(조용한 fallback).
+
+```python
+generate_site_model(
+  "대전광역시 서구 괴정동 358",
+  outputs=["skp", "3dm"],
+  layers={"buildings": True, "terrain": True, "water": True},
+)
+```
+
+> **수계 데이터 굽기**: `python -m src.terrain.water_bake "<수치지도 폴더>" --out geo_store/water_<지역>.geojson
+> --region "<지역명>"` → E계열 면 SHP을 읽어 지역 GeoJSON + `water_manifest.json` 갱신(road_bake와 동형,
+> 5187→5186 재투영·중복제거 자동). `manifest`만 깃 추적, `water_*.geojson`은 gitignore·GCS 서빙.
 
 #### 정사영상 텍스처
 
@@ -255,11 +295,32 @@ generate_site_model(
 코드는 여전히 텍스처 불가(데스크톱 확장만 가능). 대반경 타일(>500m)도 지원 — 타일마다 자기 영역을
 풀해상도(zoom 18)로 만들어 base64로 실어 보내고 확장이 그 타일 지형에 드레이프.
 
+> **B2(.skp 드레이프)**: 백엔드 경로는 **코드 완성·테스트** 상태입니다 — 단발 `/api/generate`는 mosaic
+> PNG + `geometry.ortho_extent_m` + `files.ortho_png`을, 대반경 `/api/generate_tile`은 타일별 base64
+> 정사영상을 응답에 담습니다. 데스크톱 확장이 이를 받아 지형 삼각형마다 `Face#position_material`로 **양면**
+> 평면투영 드레이프합니다. 남은 것은 **데스크톱 실기 렌더 검증**뿐입니다.
+
 ```python
 generate_site_model(
   "대전광역시 서구 괴정동 358",
   outputs=["3dm"],
   layers={"buildings": True, "terrain": True, "orthophoto": True},
+)
+```
+
+#### 자동 QA — 검증 자동화 (qa)
+
+`layers.qa: true` 로 생성물을 자동 검사합니다(`src/qa.py::run_qa`). KBS TopoMap의 "사람 눈검사→수동
+수리"를 코드로 대체하는 지점 — 건물 앉힘(급경사 `steep_site`·부유·침몰·지형밖), 건물 겹침(중복),
+footprint 유효성(자기교차·슬리버), 지형 스파이크를 검사해 구조화된 `findings`
+(`{severity, kind, message, at, name}`) 목록을 냅니다. 응답의 `result.qa`(및 `/api/generate` 응답의 `qa`)에
+담기고, 웹 UI가 결함 목록 패널을 표시하며 F2 3D 뷰어·SketchUp 확장이 결함 위치(`at`)에 **수직 핀**
+(경고=빨강 / info=주황)을 세웁니다.
+
+```python
+generate_site_model(
+  "대전광역시 서구 괴정동 358",
+  layers={"buildings": True, "terrain": True, "qa": True},
 )
 ```
 
@@ -303,6 +364,9 @@ build_model(code=result["outputs"]["skp"]["code"])
 | `cadastral` | 황색 | 대지 경계 PolylineCurve |
 | `roads` | 아스팔트 그레이 | 도로 노면 Mesh (Phase R) |
 | `sidewalks` | 콘크리트 베이지 | 보도 Mesh (Phase R) |
+| `water` | 강 파랑 | 하천·호소 평면 수면 Mesh |
+
+> QA 결함은 결함 위치에 수직 핀으로 함께 출력됩니다. (차선 마킹은 `.3dm`에는 포함되지 않고 F2 뷰어·SketchUp 확장에서만 렌더됩니다.)
 
 ### 실제 위치 복원
 
@@ -350,6 +414,11 @@ python -m src.terrain.contour_bake "<지역 폴더>" `
 
 > `--method clough`(기본) = guarded CloughTocher 보간(계단현상 완화, 오버슈트는 linear±`guard`m로 클램프).
 > `--method linear`로 옛 평면삼각 보간 폴백 가능. 계단 지표 진단: `python scripts/dem_staircase.py <tif>`.
+>
+> **`--method solver`(선택, opt-in)** = 라플라스 조화 격자 솔버(`contour_bake._grid_relax`, red-black SOR).
+> 등고선 셀을 Dirichlet 제약으로 고정하고 나머지를 ∇²z=0로 완화 — TIN 삼각화(테라스)를 회피해 계단현상을
+> 오버슈트 없이 제거합니다(힐셰이드로 계단 소멸 확인). 등고선을 반 셀 이하로 조밀화(`read_contours`
+> `densify_m`)해 beading을 없앱니다. guarded clough보다 ~10× 느려 **기본값은 여전히 clough**입니다.
 
 1. COG 변환 — 베이크된 GeoTIFF를 Cloud-Optimized GeoTIFF(내부 타일링)로:
 
@@ -371,7 +440,7 @@ gcloud storage cp cog_out/dem_<지역>*.tif gs://arch-site-model-dem/dem/
 ## 6. 테스트 실행
 
 ```powershell
-# 단위 테스트 (오프라인, API mock) — 전체 약 200개
+# 단위 테스트 (오프라인, API mock) — 전체 291개
 python -m pytest tests/ --ignore=tests/test_integration_api.py -v
 
 # 실제 VWorld API 연동 테스트 (키 필요)
@@ -395,14 +464,20 @@ python -m pytest tests/test_integration_api.py -v
 | 확장2 | `preview_site` — 건물 목록·규모 미리보기 | ✅ |
 | 확장3 | 이격면(setback) 실연동 — arch-law-diagnose | 🚧 블로커 |
 | 확장4 | `generate_site_tiles` — 대량건물 타일분할 | ✅ |
-| 확장5 | 정사영상 텍스처 — 지형 드레이프 (.3dm + .skp 데스크톱 확장, 단발+대반경 타일) | ✅ (데스크톱 실기 렌더 검증 대기) |
+| 확장5 | 정사영상 텍스처 — 지형 드레이프 (.3dm + .skp 데스크톱 확장 B2, 단발 PNG + 대반경 타일 base64) | ✅ 코드 완성·테스트 (데스크톱 실기 렌더 검증 대기) |
 | 웹앱 | FastAPI 백엔드 + React UI + 브라우저 3D 미리보기(F2) + Cloud Run 배포 | ✅ |
 | 확장(Phase B) | SketchUp `.rbz` — 지형+건물 조립(B1, 깔끔한 실면) + 정사영상 드레이프 | ✅ |
 | 대반경 조립 | SketchUp 확장 타일 순차조립(반경>500m, `/api/tile_plan`·`/api/generate_tile`, 진행바·취소) — `src/tiles_stream.py` | ✅ (1km 검증, .3dm은 타일링 불필요) |
 | 지형 LOD | 적응형 TIN(`TERRAIN_MAX_ERROR_M`, 오차 유계 삼각형 ~86% 감소) | ✅ |
-| 지형 개선 | 계단현상 완화 — guarded CloughTocher 재bake | ✅ |
+| 지형 개선 | 계단현상 완화 — guarded CloughTocher 재bake (`--method clough` 기본) | ✅ |
+| 지형 격자 솔버 | 라플라스 조화 격자 솔버(`--method solver`, `_grid_relax` red-black SOR) — 테라스 회피·오버슈트 없이 계단 제거, 등고선 조밀화(densify) | ✅ opt-in (~10× 느려 기본은 clough) |
 | geocode | 지번+도로명(PARCEL→ROAD) 지원 | ✅ |
 | 전국 DEM 확장 | 6개 광역단체 120타일 GCS COG 서빙(/vsicurl) + 다중 타일 mosaic + 배치 베이크(bake_tiled) + 좌표대 재투영(5187→5186) + 도엽 중복제거 + bbox 분할(반경 2km+) | ✅ 프로덕션 |
-| F2 뷰어 표현 | 높이별 색 그라디언트·건물 외곽선·그림자·뷰모드·지적/도로/보도/차선 표시·레이어 토글 (SSAO만 잔여) | ✅ |
-| 도로 R1~R3 (Phase R) | 도로 노면(A0010000)·보도(A0033320)·차선(A0020000) → F2/.3dm/.skp. 지형 정합=버닝(절토/성토·스커트·IDW 교차블렌딩·클램프)+크라운 | ✅ |
+| F2 뷰어 표현 | 높이별 색 그라디언트·건물 외곽선·그림자·뷰모드·지적/도로/보도/차선/수계 표시·레이어 토글 + SSAO(GTAOPass 주변광 차폐) | ✅ |
+| 도로 R1~R3 (Phase R) | 노면(A0010000)·보도(A0033320) → F2/.3dm/.skp/확장 · 차선(A0020000 차로수 기반 다차선) → F2·확장만. 지형 정합=버닝(절토/성토·스커트·IDW 교차블렌딩·클램프)+크라운 | ✅ |
 | 통합 표면 | 지형·도로·보도를 1번 Delaunay로 삼각화(정점 공유) → 이음매·구멍·뜸·z-fighting 구조적 제거 | ✅ |
+| 도로 정교화 | 다차선 마킹(`차로수`·`도로폭` → 중앙 실선/구분 점선, `clip_lane_markings`, F2·확장 렌더) + 소로 합성(`synthesize_gap_roads`, 커버리지 89→100%) + 경계 샤프닝(`ROAD_EDGE_CELL_M`) + 보도 우선 | ✅ |
+| 도로/수계 클라우드 서빙 | `roads_*/water_*.geojson` GCS 업로드 + `ROAD_BASE`/`WATER_BASE` HTTP fetch+캐시(json+shapely) | ✅ 코드 완성 (업로드·env 설정은 사용자 액션) |
+| 대반경 타일 도로 | `generate_tile`이 도로/보도/차선 통합 표면 생성 + SketchUp 확장 `builder.rb`가 태그별 렌더(단일+타일) | ✅ (데스크톱 실기 검증 대기) |
+| 수계 (water) | E계열 면 SHP(하천 E0010001·호소 E0052114) → `water_bake` 지역 GeoJSON + `water_manifest.json`. 런타임 `water.py` 표고고정 평면 수면 + 지형 버닝 → F2(파랑)/.3dm/.skp/확장 | ✅ |
+| 자동 QA | `src/qa.py::run_qa` — 건물 앉힘(급경사·부유·침몰·지형밖)·겹침·footprint 유효성·지형 스파이크 → `findings`. 웹 결함 패널 + F2/확장 수직 핀(`layers.qa`) | ✅ |

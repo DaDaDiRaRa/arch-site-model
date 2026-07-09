@@ -43,6 +43,7 @@
     <label class="chk"><input type="checkbox" id="orthophoto" /> 정사영상</label>
     <label class="chk"><input type="checkbox" id="roads" /> 도로</label>
     <label class="chk"><input type="checkbox" id="water" /> 수계</label>
+    <label class="chk"><input type="checkbox" id="qa" /> QA</label>
   </div>
 
   <button id="go">모델 생성</button>
@@ -87,6 +88,7 @@
       var msg = (info.cancelled ? "취소됨" : "완료") + " — 건물 " + (info.count || 0) + "동";
       if (info.tiles_total) msg += " (타일 " + (info.tiles_done || 0) + "/" + info.tiles_total + ")";
       if (info.errors) msg += " · 실패 타일 " + info.errors;
+      if (info.qa) msg += " · QA 결함 " + info.qa.total + "(경고 " + info.qa.warnings + ", 빨강/주황 핀)";
       s.textContent = msg;
       var ul = $("warns"); ul.innerHTML = "";
       (info.warnings || []).forEach(function (w) {
@@ -117,6 +119,7 @@
           orthophoto: $("orthophoto").checked,
           roads: $("roads").checked,
           water: $("water").checked,
+          qa: $("qa").checked,
         };
         // sketchup 브리지가 없으면 클릭이 조용히 죽지 않게 — 원인을 화면에 표시.
         if (window.sketchup && typeof window.sketchup.generate === "function") {

@@ -21,6 +21,7 @@ module ArchSiteModel
           "orthophoto" => params["orthophoto"] == true,
           "roads"      => params["roads"] == true,
           "water"      => params["water"] == true,
+          "qa"         => params["qa"] == true,
         },
         "outputs"    => ["skp"],  # .3dm 불필요 — geometry + 정사영상 URL만 받음
       }
@@ -50,7 +51,7 @@ module ArchSiteModel
       ext = geom["ortho_extent_m"]
       ourl = (data["files"] || {})["ortho_png"]
       ortho = { extent: ext, url: ourl } if ext && ourl
-      { geometry: geom, warnings: data["warnings"] || [], ortho: ortho }
+      { geometry: geom, warnings: data["warnings"] || [], ortho: ortho, qa: data["qa"] }
     rescue JSON::ParserError => e
       { error: "응답 파싱 실패: #{e.message}" }
     rescue StandardError => e
