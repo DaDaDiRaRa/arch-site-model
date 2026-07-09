@@ -205,6 +205,7 @@ def generate_tile(
     road_mesh = None
     sidewalk_mesh = None
     lanes = None
+    water_mesh = None
     dem = None
     clip_5186 = None
     if layers.get("terrain"):
@@ -270,6 +271,24 @@ def generate_tile(
                     clip_lane_markings(road_path, clip_5186, offset), dem
                 )
 
+    # 수계 — 하천/호소를 표고고정 평면 수면으로 + 지형을 물 아래로 버닝(§6b 통합표면이 이 DEM을 씀).
+    if layers.get("water") and dem is not None and clip_5186 is not None:
+        from src.geometry.water import (
+            build_water_mesh,
+            burn_water,
+            clip_water,
+            surface_zs,
+        )
+        from src.terrain.store import find_water_file
+
+        wf = find_water_file(_bbox_5186_to_4326(clip_5186))
+        if wf is not None:
+            water_features = clip_water(config.water_file_path(wf["file"]), clip_5186, offset)
+            if water_features:
+                water_zs = surface_zs(water_features, dem)
+                dem = burn_water(dem, water_features, water_zs)
+                water_mesh = build_water_mesh(water_features, water_zs, dem, config.WATER_CELL_M)
+
     # 지형·도로·보도 메시: 도로/보도 있으면 통합 삼각화(정점 공유 → 이음매·구멍·겹침 0),
     # 없으면 일반 TIN. 버닝된 dem을 쓴다(도로에 맞게 절토/성토된 지형).
     if dem is not None and dem.z_range() is not None:
@@ -297,7 +316,7 @@ def generate_tile(
 
     geometry = _build_geometry(
         solids, terrain_mesh, None,
-        roads=road_mesh, sidewalks=sidewalk_mesh, lanes=lanes,
+        roads=road_mesh, sidewalks=sidewalk_mesh, lanes=lanes, water=water_mesh,
     )
     return {
         "ok": True,

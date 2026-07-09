@@ -117,6 +117,22 @@ ROAD_CROWN_CAP_M = _envf("ROAD_CROWN_CAP_M", 15.0)
 ROAD_EDGE_CELL_M = _envf("ROAD_EDGE_CELL_M", 1.0)
 
 
+# 수계(E계열) GeoJSON 서빙 위치 — 도로(ROAD_BASE)와 동형. 미설정 시 로컬 geo_store.
+WATER_BASE = os.environ.get("WATER_BASE", str(GEO_STORE))
+# 수면 삼각화 격자 간격(m). 수면은 평면이라 도로(2.5m)보다 성겨도 됨 → 삼각형 절약.
+WATER_CELL_M = _envf("WATER_CELL_M", 10.0)
+
+
+def water_file_path(filename: str) -> str:
+    """water_manifest의 수계 파일명 → 실제 읽기 위치. road_file_path와 동형(로컬↔GCS HTTP)."""
+    base = WATER_BASE
+    if base.startswith("gs://"):
+        base = "https://storage.googleapis.com/" + base[len("gs://"):]
+    if base.startswith(("http://", "https://")):
+        return base.rstrip("/") + "/" + filename
+    return str(Path(base) / filename)
+
+
 def road_file_path(filename: str) -> str:
     """road_manifest의 도로 파일명 → 실제 읽기 위치(로컬 경로 또는 HTTP(S) URL).
 

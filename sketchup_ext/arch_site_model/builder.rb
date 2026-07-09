@@ -16,6 +16,7 @@ module ArchSiteModel
     C_ROAD     = [116, 121, 127].freeze # 아스팔트 그레이 (F2 C_ROAD_FILL과 동일)
     C_SIDEWALK = [176, 172, 160].freeze # 콘크리트 베이지그레이 (F2 C_SIDEWALK)
     C_LANE     = [232, 200, 74].freeze  # 노랑 — 차선/중심선 마킹 (F2 C_LANE)
+    C_WATER    = [58, 110, 165].freeze  # 강물 블루 — 수계 (F2 C_WATER)
 
     # 노면을 지형 바로 위로 살짝 띄우는 리프트(m) — 경계선 z-fighting 방지(src road.py ROAD_LIFT_M와 동일).
     ROAD_LIFT_M = 0.03
@@ -63,6 +64,8 @@ module ArchSiteModel
       build_surface_mesh(model, parent_ents, geometry["roads"], "roads", C_ROAD)
       build_surface_mesh(model, parent_ents, geometry["sidewalks"], "sidewalks", C_SIDEWALK)
       build_lanes(model, parent_ents, geometry["lanes"])
+      # 수계 — 평면 수면(z는 백엔드가 이미 리프트) → lift_m=0.
+      build_surface_mesh(model, parent_ents, geometry["water"], "water", C_WATER, 0.0)
       build_buildings(model, parent_ents, geometry["buildings"] || [])
     end
 
@@ -188,7 +191,7 @@ module ArchSiteModel
     # 엣지)이되, z를 ROAD_LIFT_M 올려 지형 경계선 z-fighting을 피한다. 색은 재질로. surf가
     # 비었으면 조용히 생략. tag_name = "roads"|"sidewalks". (통합 표면이라 정점은 지형과 공유
     # 위치지만 별도 그룹·메시로 온다 — 리프트로 노면이 지형 바로 위에 얹힌다.)
-    def self.build_surface_mesh(model, parent_ents, surf, tag_name, rgb)
+    def self.build_surface_mesh(model, parent_ents, surf, tag_name, rgb, lift_m = ROAD_LIFT_M)
       return unless surf
       verts = surf["vertices"] || []
       tris = surf["triangles"] || []
@@ -198,7 +201,7 @@ module ArchSiteModel
       grp.name = tag_name
       grp.layer = tag(model, tag_name)
 
-      lift = ROAD_LIFT_M * M2I
+      lift = lift_m * M2I
       mesh = Geom::PolygonMesh.new(verts.length, tris.length)
       idx = verts.map { |v| mesh.add_point(Geom::Point3d.new(v[0] * M2I, v[1] * M2I, v[2] * M2I + lift)) }
       tris.each do |t|

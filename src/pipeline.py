@@ -67,7 +67,7 @@ def _resolve_ortho_source():
 
 def _build_geometry(
     solids, terrain_mesh, ortho_info,
-    cadastral=None, dem=None, roads=None, sidewalks=None, lanes=None,
+    cadastral=None, dem=None, roads=None, sidewalks=None, lanes=None, water=None,
 ) -> dict:
     """브라우저 3D 미리보기용 경량 지오메트리 JSON (F2).
 
@@ -133,6 +133,7 @@ def _build_geometry(
         "roads": roads_out,
         "sidewalks": sidewalks_out,
         "lanes": lanes_out,
+        "water": water.to_geometry() if water is not None else None,
         "ortho_extent_m": list(ortho_info["extent_local_m"]) if ortho_info else None,
     }
 
@@ -313,6 +314,8 @@ def generate(
     sidewalk_features = None
     road_centerlines = None
     road_count = 0
+    water_mesh = None
+    water_count = 0
     if layers.get("roads"):
         from src.geometry.road import (
             burn_roads,
@@ -356,6 +359,37 @@ def generate(
                     lanes = drape_centerlines(
                         clip_lane_markings(road_path, bbox_5186_road, offset), dem
                     )
+
+    # 7.4 수계 (E계열) — 하천/호소 폴리곤을 표고고정 평면 수면으로. 지형을 물 아래로 버닝(§6b가 이
+    #     DEM을 씀 → 지형이 수면 위로 안 삐져나옴). 수면 z = 경계(둑) DEM 저백분위. 수계는 실시간
+    #     API 없어 오프라인 굽기(water_bake) GeoJSON을 water_manifest로 조회. dem 필요(수면 z가 DEM).
+    if layers.get("water") and dem is not None:
+        from src.geometry.water import (
+            build_water_mesh,
+            burn_water,
+            clip_water,
+            surface_zs,
+        )
+        from src.terrain.store import find_water_file
+
+        wf = find_water_file(bbox)
+        if wf is None:
+            warnings.append(
+                "수계 비축 없음: 반경이 수계 GeoJSON 밖입니다 "
+                "(water_manifest.json 확인 또는 water_bake 실행 필요)."
+            )
+        else:
+            water_path = config.water_file_path(wf["file"])
+            water_features = clip_water(water_path, _bbox_4326_to_5186(bbox), offset)
+            if not water_features:
+                warnings.append("반경 내 수계 폴리곤 없음 (E계열).")
+            else:
+                water_zs = surface_zs(water_features, dem)  # 버닝 전(둑) 기준 수면 표고
+                dem = burn_water(dem, water_features, water_zs)  # 지형을 물 아래로 평탄화
+                water_mesh = build_water_mesh(
+                    water_features, water_zs, dem, config.WATER_CELL_M
+                )
+                water_count = len(water_features)
 
     # 6b. 통합 표면 — 지형·도로·보도를 **한 번의 삼각화**로 만들어 재질별 3메시로 분리(정점 공유 →
     #     구멍·뜸·z-fighting·겹침 구조적 제거). 도로/보도 없으면 일반 build_tin.
@@ -450,7 +484,7 @@ def generate(
         out["skp"] = {
             "code": build_skp_code(
                 solids, terrain=terrain_mesh, cadastral=cadastral_parcels,
-                roads=road_mesh, sidewalks=sidewalk_mesh,
+                roads=road_mesh, sidewalks=sidewalk_mesh, water=water_mesh,
             ),
             "solids": len(solids),
             "terrain_triangles": len(terrain_mesh.triangles) if terrain_mesh else 0,
@@ -466,6 +500,7 @@ def generate(
             cadastral=cadastral_parcels,
             roads=road_mesh,
             sidewalks=sidewalk_mesh,
+            water=water_mesh,
             ortho_image=ortho_info["image_path"] if ortho_info else None,
             ortho_extent_m=ortho_info["extent_local_m"] if ortho_info else None,
         )
@@ -510,7 +545,7 @@ def generate(
         _build_geometry(
             solids, terrain_mesh, ortho_info,
             cadastral=cadastral_parcels, dem=dem, roads=road_mesh,
-            sidewalks=sidewalk_mesh, lanes=lanes,
+            sidewalks=sidewalk_mesh, lanes=lanes, water=water_mesh,
         )
         if include_geometry
         else None
@@ -530,6 +565,7 @@ def generate(
             "flagged": flagged_count,
             "cadastral_parcels": cadastral_count,
             "roads": road_count,
+            "water": water_count,
             "origin_offset": list(offset),   # 복원용 — 필수 저장 (사양서 §6.1)
             "elev_range_m": elev_range,
         },

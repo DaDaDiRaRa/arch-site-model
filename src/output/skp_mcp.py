@@ -248,7 +248,7 @@ def _mesh_literal(mesh, prefix: str) -> str:
     return f"{prefix}_VERTS = [{verts}]\n{prefix}_TRIS = [{tris}]\n"
 
 
-def build_skp_code(solids, terrain=None, cadastral=None, roads=None, sidewalks=None, camera: bool = True) -> str:
+def build_skp_code(solids, terrain=None, cadastral=None, roads=None, sidewalks=None, water=None, camera: bool = True) -> str:
     """solids → SketchUp MCP build_model 에 넣을 완전한 Python 코드 문자열.
 
     terrain: TerrainMesh (Phase 3B). None 이면 건물만 출력(Phase 2 호환).
@@ -260,6 +260,7 @@ def build_skp_code(solids, terrain=None, cadastral=None, roads=None, sidewalks=N
     has_cadastral = cadastral is not None and len(cadastral) > 0
     has_roads = roads is not None and bool(getattr(roads, "triangles", None))
     has_sidewalks = sidewalks is not None and bool(getattr(sidewalks, "triangles", None))
+    has_water = water is not None and bool(getattr(water, "triangles", None))
     if has_terrain and has_cadastral:
         phase = "Phase 5"
     elif has_terrain:
@@ -284,6 +285,9 @@ def build_skp_code(solids, terrain=None, cadastral=None, roads=None, sidewalks=N
     if has_sidewalks:
         parts.append(_mesh_literal(sidewalks, "SIDEWALK"))
         parts.append(_mesh_build("SIDEWALK", "sidewalks", "grp_s"))
+    if has_water:
+        parts.append(_mesh_literal(water, "WATER"))
+        parts.append(_mesh_build("WATER", "water", "grp_w"))
     if has_cadastral:
         parts.append(_cadastral_literal(cadastral))
         parts.append(_CADASTRAL_BUILD)

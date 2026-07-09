@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 
 // 백엔드 /api/generate 의 geometry (로컬 미터, z=높이/up).
 export interface SiteGeometry {
@@ -24,6 +28,11 @@ export interface SiteGeometry {
     outlines: [number, number, number][][];
   } | null;
   lanes?: [number, number, number][][] | null;
+  water?: {
+    vertices: [number, number, number][];
+    triangles: [number, number, number][];
+    outlines: [number, number, number][][];
+  } | null;
   ortho_extent_m: [number, number, number, number] | null;
 }
 
@@ -45,6 +54,7 @@ const C_ROAD_FILL = 0x74797f; // 아스팔트 그레이 — 도로 노면 (R1b)
 const C_ROAD_EDGE = 0x3a3f45; // 짙은 그레이 — 도로 외곽선
 const C_SIDEWALK = 0xb0aca0; // 콘크리트 베이지그레이 — 보도 (R3)
 const C_LANE = 0xe8c84a; // 노랑 — 차선/중심선 마킹 (R3)
+const C_WATER = 0x3a6ea5; // 강물 블루 — 수계 (평면 수면)
 // 지형이 제약 삼각화로 도로 경계에 정확히 맞물리므로(도로 밑 지형은 컬링) 리프트는 경계선
 // z-fighting 방지용 아주 작은 값만. 크면 도로가 떠 보인다.
 const ROAD_LIFT = 0.03; // 도로 노면 — 지면에 거의 flush
@@ -64,6 +74,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
     roads?: THREE.Object3D | null;
     sidewalks?: THREE.Object3D | null;
     lanes?: THREE.Object3D | null;
+    water?: THREE.Object3D | null;
     buildingMeshes: THREE.Mesh[];
     edges: THREE.LineSegments[];
     sun?: THREE.DirectionalLight;
@@ -74,10 +85,13 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
   const [showRoads, setShowRoads] = useState(true);
   const [showSidewalks, setShowSidewalks] = useState(true);
   const [showLanes, setShowLanes] = useState(true);
+  const [showWater, setShowWater] = useState(true);
   const [colorMode, setColorMode] = useState<ColorMode>("height");
   const [viewMode, setViewMode] = useState<ViewMode>("solid");
   const [showEdges, setShowEdges] = useState(true);
   const [showShadows, setShowShadows] = useState(true);
+  const [ssao, setSsao] = useState(true); // 주변광 차폐(GTAO) — 틈·밑동 음영으로 입체감
+  const ssaoRef = useRef(true); // 렌더 루프가 최신 토글값을 읽도록(재설정 없이)
   const [error, setError] = useState<string | null>(null);
 
   // 높이 범위(범례·그라디언트 정규화용) — geometry 바뀔 때만 재계산.
@@ -115,6 +129,22 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
+    // SSAO(주변광 차폐, GTAO) 포스트프로세싱 — 건물 밑동·틈에 부드러운 접촉 음영으로 입체감.
+    // 기본 EffectComposer 타깃엔 MSAA가 없어(직접 렌더의 antialias와 불일치) 멀티샘플 타깃을 준다.
+    const dpr = renderer.getPixelRatio();
+    const composerRT = new THREE.WebGLRenderTarget(
+      Math.max(1, Math.floor(width * dpr)),
+      Math.max(1, Math.floor(height * dpr)),
+      { type: THREE.HalfFloatType, samples: 4 }
+    );
+    const composer = new EffectComposer(renderer, composerRT);
+    composer.addPass(new RenderPass(scene, camera));
+    const gtao = new GTAOPass(scene, camera, width, height);
+    gtao.output = GTAOPass.OUTPUT.Default; // 씬 + AO 합성
+    gtao.blendIntensity = 1.0;
+    composer.addPass(gtao);
+    composer.addPass(new OutputPass());
+
     // Z-up → Y-up
     const root = new THREE.Group();
     root.rotation.x = -Math.PI / 2;
@@ -127,12 +157,14 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
       const roads = buildRoads(geometry.roads);
       const sidewalks = buildSurfaceMesh(geometry.sidewalks, C_SIDEWALK, SIDEWALK_LIFT);
       const lanes = buildLanes(geometry.lanes);
+      const water = buildSurfaceMesh(geometry.water, C_WATER, 0);
       if (buildings) root.add(buildings);
       if (terrain) root.add(terrain);
       if (cadastral) root.add(cadastral);
       if (roads) root.add(roads);
       if (sidewalks) root.add(sidewalks);
       if (lanes) root.add(lanes);
+      if (water) root.add(water);
 
       root.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(root);
@@ -140,10 +172,20 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
       // 지형이 없으면 그림자를 받을 바닥면을 깔아 건물 그림자가 보이게 한다.
       if (!terrain && !box.isEmpty()) root.add(shadowGround(box));
 
-      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, buildingMeshes: meshes, edges, sun };
+      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, water, buildingMeshes: meshes, edges, sun };
       if (!box.isEmpty()) {
         fitCamera(camera, controls, box);
         frameSunShadow(sun, box);
+        // AO 반경은 월드 단위(m). 씬 크기에 비례하되 건물 밑동/틈 규모(수 m)로 클램프.
+        const dim = box.getSize(new THREE.Vector3());
+        gtao.updateGtaoMaterial({
+          radius: THREE.MathUtils.clamp(Math.max(dim.x, dim.y, dim.z) * 0.012, 2, 12),
+          scale: 1,
+          thickness: 1,
+          distanceExponent: 1,
+          samples: 16,
+          screenSpaceRadius: false,
+        });
       }
     } catch (e) {
       console.error(e);
@@ -154,7 +196,8 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
     const animate = () => {
       raf = requestAnimationFrame(animate);
       controls.update();
-      renderer.render(scene, camera);
+      if (ssaoRef.current) composer.render();
+      else renderer.render(scene, camera);
     };
     animate();
 
@@ -164,6 +207,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
+      composer.setSize(width, height); // CSS 크기 → 내부에서 ×pixelRatio (passes 포함 리사이즈)
     });
     ro.observe(mount);
 
@@ -179,10 +223,17 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
         if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
         else if (mat) (mat as THREE.Material & { map?: THREE.Texture }).map?.dispose(), (mat as THREE.Material).dispose();
       });
+      gtao.dispose();
+      composer.dispose();
       renderer.dispose();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
   }, [geometry, orthoUrl, heightRange]);
+
+  // SSAO 토글 → 렌더 루프가 읽는 ref 동기화 (composer 재생성 없이 즉시 반영)
+  useEffect(() => {
+    ssaoRef.current = ssao;
+  }, [ssao]);
 
   // 표시/숨김 토글 (재빌드 없이 즉시 반영)
   useEffect(() => {
@@ -192,7 +243,8 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
     if (sceneRefs.current.roads) sceneRefs.current.roads.visible = showRoads;
     if (sceneRefs.current.sidewalks) sceneRefs.current.sidewalks.visible = showSidewalks;
     if (sceneRefs.current.lanes) sceneRefs.current.lanes.visible = showLanes;
-  }, [showBuildings, showTerrain, showCadastral, showRoads, showSidewalks, showLanes]);
+    if (sceneRefs.current.water) sceneRefs.current.water.visible = showWater;
+  }, [showBuildings, showTerrain, showCadastral, showRoads, showSidewalks, showLanes, showWater]);
 
   // 색상 모드: 높이별 그라디언트 ↔ 단색 (미확인 건물은 항상 주황)
   useEffect(() => {
@@ -248,6 +300,7 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
   const nR = geometry.roads?.outlines?.length ?? 0;
   const nSW = geometry.sidewalks?.outlines?.length ?? 0;
   const nL = geometry.lanes?.length ?? 0;
+  const nWater = geometry.water?.outlines?.length ?? 0;
 
   return (
     <div>
@@ -278,12 +331,20 @@ export default function Viewer3D({ geometry, orthoUrl }: Props) {
           차선 <span className="text-xs text-slate-400">({nL})</span>
         </label>
         <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={showWater} onChange={(e) => setShowWater(e.target.checked)} className="h-4 w-4" disabled={!nWater} />
+          수계 <span className="text-xs text-slate-400">({nWater})</span>
+        </label>
+        <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={showEdges} onChange={(e) => setShowEdges(e.target.checked)} className="h-4 w-4" />
           외곽선
         </label>
         <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={showShadows} onChange={(e) => setShowShadows(e.target.checked)} className="h-4 w-4" />
           그림자
+        </label>
+        <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={ssao} onChange={(e) => setSsao(e.target.checked)} className="h-4 w-4" />
+          음영(AO)
         </label>
         <label className="flex items-center gap-1.5">
           뷰

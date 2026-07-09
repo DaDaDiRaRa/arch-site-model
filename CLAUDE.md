@@ -44,10 +44,13 @@
       **데스크톱 실기 렌더 검증뿐**(헤드리스 없어 개발자 무인 확인 불가 — 사용자 루프): (a) 1~2km 타일모드
       실기 테스트(1km 이음매 없이 검증됨), (b) B2 정사영상이 지형에 실제로 입혀지는지 SketchUp에서 확인
       (Ruby Console `[ortho]` 로그가 실패 원인 출력). 상세 `docs/sketchup_extension.md`.
-- [ ] **F2 뷰어 — SSAO(선택)**: 높이별 색 그라디언트·건물 외곽선·그림자·뷰모드(솔리드/반투명/와이어)·지적
-      경계·도로/보도/차선 표시 완료. 남은 건 SSAO뿐(우선순위 낮음, 동작 우선).
-- [ ] **지형 계단현상 격자 솔버(선택)**: guarded CloughTocher 1차 개선 완료(quant 25.2→22.3%). 완전제거는
-      라플라스 harmonic 인필/ANUDEM류 반복 격자 솔버(구현·런타임 비용 큼, 필요성 낮으면 skip). `contour_bake.py`.
+- [ ] **지형 계단현상 격자 솔버 — 구현 완료(opt-in)**: 라플라스 조화 격자 솔버 `--method solver`
+      (`contour_bake.bake_dem`: 등고선 셀을 Dirichlet 제약으로 고정 + 나머지를 ∇²z=0 red-black SOR로 완화,
+      `_grid_relax`). TIN 삼각화(평평한 삼각형=테라스)를 안 거치고 등고선에서 확산 → **계단현상 육안 제거
+      확인(힐셰이드)**, 조화함수라 오버슈트도 없음. 등고선을 반 셀로 조밀화(`read_contours densify_m`)해
+      정점 사이 beading 제거. guarded clough(기본)보다 ~10× 느려 **opt-in — 기본은 clough 유지**. 남은 선택 —
+      전 타일 재베이크로 기본 채택(비용 큼, 사용자 결정) / 급경사 절토면 잔여 아티팩트는 biharmonic(thin-plate)
+      개선 여지. ⚠️ `dem_staircase`의 quant/flat 지표는 솔버 판단에 오도(조밀 제약·완경사를 페널티) — 힐셰이드로 볼 것.
 - [ ] **NGII 정사영상 소스**(보류): 서버사이드 키 접근 막힘(브라우저 전용 키 정황) + EPSG:5179 타일 구현
       필요. 키 서버사이드 접근이 풀리면 5179 `TileSource` 추가만. [[orthophoto-texture-blocker]].
 - [ ] **이격면(setback) 실연동**(블로커): arch-law-diagnose가 좁은 API 계약(이격만 반환) 노출할 때까지 보류.
@@ -152,25 +155,29 @@ src/
     seating.py           BuildingSolid + DEMPatch → base_z 앉힘 (Phase 3B)
     cadastral.py         LP_PA_CBND_BUBUN features → CadastralParcel (Phase 5)
     road.py              도로/보도 런타임 (Phase R). clip_roads/clip_sidewalks/clip_centerlines(GeoJSON→로컬미터, json+shapely) + burn_roads(도로를 DEM에 소각: footprint 절토/성토·스커트·IDW교차블렌딩·자기지면 클램프) + build_unified_surface(★지형·도로·보도를 1번 Delaunay로 삼각화→재질별 3메시, 정점공유로 이음매0. 보도우선(도로겹침 컬링 방지)·경계 edge_cell 샤프닝) + clip_lane_markings(중심선 props 차로수·도로폭→평행 차선 구분선, offset_curve, 구분선은 _dash_line 점선·중앙선 실선)/drape_centerlines(차선 드레이프) + _read_geojson_text(로컬/HTTP fetch+캐시 — 클라우드 도로 서빙) + apply_crown + build_road_mesh/carve_terrain/build_terrain_conformed(폴백·구버전)
+    water.py             수계 런타임 (수계). clip_water(E계열 폴리곤→로컬미터) + water_surface_z(경계 둑 DEM 저백분위=수면표고) + burn_water(지형을 물 아래로 평탄화) + build_water_mesh(★표고고정 평면 수면, road와 달리 드레이프 아님). road.py 헬퍼 재사용
   output/
     skp_mcp.py           BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk) → SketchUp MCP 코드 문자열
     rhino.py             BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk) → .3dm (Phase 4-R)
   terrain/
     store.py             manifest.json/road_manifest.json 조회 (find_tiles/find_road_file)
-    contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A) + bake_tiled(대용량 지역 타일 배치) + 좌표대 재투영(5187→5186)·도엽 중복제거·거리제한 채움(fill_dist_m)
+    contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A) + bake_tiled(대용량 지역 타일 배치) + 좌표대 재투영(5187→5186)·도엽 중복제거·거리제한 채움(fill_dist_m) + method: clough(기본)/linear/solver(라플라스 조화 격자 솔버 _grid_relax — 계단 완전제거, opt-in)
     road_bake.py         수치지도 A0010000 도로경계·A0020000 중심선(+실측 `도로폭`·`차로수`)·A0033320 보도 SHP → 지역 GeoJSON(EPSG:5186) 오프라인 굽기 (Phase R) + road_manifest.json 갱신 (contour_bake 헬퍼 재사용) + synthesize_gap_roads(경계 폴리곤 없는 도로를 실측 도로폭으로 버퍼해 노면 합성 {"syn":1}, --no-fill-gaps로 끔) + 중심선 props에 도로폭/차로수 담음(다차선 마킹용)
+    water_bake.py        수치지도 E계열 수계 면(N3A_E0* 하천경계·호소) SHP → 지역 GeoJSON(EPSG:5186) 오프라인 굽기 + water_manifest.json 갱신 (road_bake 동형)
     dem.py               DEM 타일 클립 + 표고 보간 (Phase 3B) + clip_dem_mosaic(다중 타일 rasterio.merge 병합)
 
 geo_store/
   manifest.json          비축 DEM 타일 목록 (git 추적)
   road_manifest.json     비축 도로 GeoJSON 지역 목록 (git 추적)
+  water_manifest.json    비축 수계 GeoJSON 지역 목록 (git 추적)
+  water_*.geojson        수계(하천·호소) 지역 벡터 (EPSG:5186, gitignore — water_bake 생성, ROAD_BASE처럼 WATER_BASE로 GCS 서빙)
   dem_*.tif              GeoTIFF DEM 파일 (EPSG:5186, gitignore — GCS 서빙)
   roads_*.geojson        도로/보도/중심선 지역 벡터 (EPSG:5186, gitignore — road_bake 생성). 배포는 공개 GCS에
                          올리고 ROAD_BASE=gs://…/roads로 서빙(앱이 HTTP fetch, config.road_file_path/road._read_geojson_text). docs/deploy.md §5
 
 frontend/                React + Vite + Tailwind 웹 UI (주소 입력 → /api/generate 호출 → .3dm/정사영상 다운로드)
   src/App.tsx            메인 폼·결과 화면
-  src/Viewer3D.tsx       브라우저 3D 미리보기 (three.js — 지형 mesh+건물 돌출+정사영상 드레이프 + 지적/도로/보도/차선 + 높이색 그라디언트·외곽선·그림자·뷰모드·레이어 토글) [F2]
+  src/Viewer3D.tsx       브라우저 3D 미리보기 (three.js — 지형 mesh+건물 돌출+정사영상 드레이프 + 지적/도로/보도/차선 + 높이색 그라디언트·외곽선·그림자·뷰모드·레이어 토글·SSAO(EffectComposer+GTAOPass, 음영 토글)) [F2]
   dist/                  빌드 산출물 (FastAPI가 루트에서 서빙)
 
 sketchup_ext/            SketchUp 확장(.rbz) — 주소→백엔드 geometry JSON→SketchUp 조립 (Phase B) [B1: 지형+건물]
@@ -227,6 +234,7 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 | `{"buildings": true, "terrain": true}` | 지형 TIN + 건물 앉힘 (Phase 3B) |
 | `{"buildings": true, "cadastral": true}` | 건물 + 대지 경계 폴리곤 (Phase 5) |
 | `{"buildings": true, "terrain": true, "roads": true}` | 지형 + 도로 노면(A0010000 DEM 드레이프 메시, Phase R). 도로는 `road_manifest.json`/GeoJSON 비축 필요 — 없으면 조용히 생략+warnings |
+| `{"buildings": true, "terrain": true, "water": true}` | 지형 + 수계(E계열 하천·호소 → 표고고정 평면 수면 + 지형 물 아래로 버닝). `water_manifest.json`/GeoJSON 비축 필요, 지형(DEM) 필요 — 없으면 조용히 생략+warnings |
 | `{"buildings": true, "terrain": true, "orthophoto": true}` | 지형에 정사영상 텍스처 (.3dm=Rhino 텍스처 / .skp=데스크톱 확장 B2 드레이프) |
 
 지형 활성화 시 추가 응답 필드:
@@ -281,6 +289,7 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 | 건물 footprint+층수 | `req/data?data=LT_C_SPBD` | `gro_flo_co`(층수), `geometry`(MultiPolygon) |
 | 대지 경계(지적) | `req/data?data=LP_PA_CBND_BUBUN` | `pnu`(19자리), `geometry` |
 | 지형 DEM | `geo_store/manifest.json`(로컬) + GCS COG `gs://arch-site-model-dem`(/vsicurl) | EPSG:5186, float32, 다중타일 mosaic |
+| 수계(하천·호소) | 수치지도 E계열 면 SHP(`N3A_E0*`) → `water_bake` → `water_manifest.json`/GeoJSON | 하천경계 `E0010001`, 호소 `E0052114` 등. 표고고정 평면 수면 |
 
 **VWorld API 공통 주의사항:**
 
@@ -324,10 +333,14 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
   큰 오버슈트(스파이크·웅덩이)를 내므로, 안전한 `LinearNDInterpolator` 값에서 `±guard_m`(기본 3m)
   밖으로 벗어난 셀을 그 범위로 클립("튜브 클램프")한다. Delaunay는 두 보간기가 공유.
 - `"linear"`: 평면 삼각보간만(과거 기본값). 오버슈트 없지만 등고선 사이가 평탄 삼각형이 돼 계단 발생.
-- 실측(대전 도엽): quant_frac(5m 배수 몰림) 25.2%→22.3%, flat_frac 55.2%→48.5%, 스파이크·봉우리
-  무손상(최고 190.4→190.5m). 완전 제거는 아닌 **부분 개선** — 더 강한 제거는 라플라스 harmonic
-  인필/ANUDEM류 격자 솔버 필요(미착수).
-- **진단**: `python scripts/dem_staircase.py <old.tif> <new.tif>` — quant_frac/flat_frac/봉우리 비교.
+- `"solver"`(opt-in, `--solver-iters` 기본 400): **라플라스 조화 격자 솔버**(`_grid_relax`, red-black SOR).
+  등고선 정점(반 셀로 조밀화)+표고점 셀을 Dirichlet 제약으로 고정하고 나머지 셀을 ∇²z=0로 완화한다.
+  TIN 삼각화를 아예 안 거쳐(평평한 삼각형=테라스 없음) 등고선에서 확산 → **계단현상 육안 제거**(힐셰이드
+  확인), 조화함수 최대원리로 **오버슈트 구조적 불가**. clough보다 ~10× 느림 → opt-in(기본 clough).
+- 실측(대전 도엽): clough는 quant 25.2%→22.3%, flat 55.2%→48.5%로 **부분 개선**(스파이크·봉우리 무손상).
+  solver는 **힐셰이드로 계단 확실 제거**되나 quant/flat 지표는 오히려 오르는데(조밀 등고선 제약이 정확히
+  5m 배수 + 완경사) 이는 **지표의 함정**이지 열화가 아님 — 솔버 품질은 반드시 힐셰이드로 판단.
+- **진단**: `python scripts/dem_staircase.py <old.tif> <new.tif>` — quant/flat/봉우리(단, 솔버엔 오도 주의).
 
 **실행 방법:**
 
@@ -410,7 +423,7 @@ result = generate_site_model(
 | 확장6 | 전국 DEM 확장 — 다중 타일 mosaic(`find_tiles`/`clip_dem_mosaic`) + 배치 베이크(`bake_tiled`) + GCS COG 서빙(`/vsicurl`) | ✅ 프로덕션 (지역 추가는 반복) |
 | 확장7 | 지형 LOD — 오차 한계 적응형 TIN(`adaptive_tin`, scipy greedy insertion, 삼각형 86%↓·25cm) | ✅ 완료 |
 | 확장8 | 대반경 타일 순차조립 — `/api/tile_plan`+`/api/generate_tile`, 확장이 타일별 fetch+조립(진행바/취소), 이음매 겹침 | ✅ 완료 (1km 검증, 2km 대기) |
-| F2 | 뷰어 표현 — 높이별 색·건물 외곽선·그림자·뷰모드·지적/도로/보도/차선 표시·레이어 토글 | ✅ 완료 (SSAO만 선택 잔여) |
+| F2 | 뷰어 표현 — 높이별 색·건물 외곽선·그림자·뷰모드·지적/도로/보도/차선 표시·레이어 토글·SSAO(GTAO 음영) | ✅ 완료 |
 | R1 | 도로 노면 — A0010000 폴리곤 → DEM 드레이프 메시(외곽선+면) → F2/.3dm/.skp 3출력 | ✅ 완료 |
 | R2 | 도로 지형정합 — 버닝(절토/성토·스커트·IDW 교차블렌딩·자기지면 클램프) + 크라운(횡단구배) | ✅ 완료 |
 | R3 | 보도(A0033320)·차선(A0020000 중심선 경량 마킹) | ✅ 완료 (차선 다차선은 후속) |

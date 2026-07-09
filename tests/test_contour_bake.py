@@ -200,6 +200,48 @@ def test_bake_dem_clough_guarded_within_tube(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# 라플라스 조화 격자 솔버 (method="solver") — 계단현상 제거
+# ---------------------------------------------------------------------------
+
+def test_grid_relax_removes_step_between_levels():
+    """초기값에 계단이 있어도, 양끝만 고정하면 완화가 계단을 없애고 매끈한 선형 램프로.
+
+    조화함수(∇²z=0)는 1D에서 정확히 선형 → 2차차분≈0(계단 아님). 제약 셀은 고정.
+    """
+    from src.terrain.contour_bake import _grid_relax
+
+    n = 21
+    z0 = np.zeros((n, n))
+    z0[:, n // 2:] = 10.0            # 초기 계단(왼쪽 0 / 오른쪽 10)
+    constrained = np.zeros((n, n), bool)
+    valid = np.ones((n, n), bool)
+    constrained[:, 0] = True
+    z0[:, 0] = 0.0
+    constrained[:, -1] = True
+    z0[:, -1] = 10.0
+
+    zr = _grid_relax(z0, constrained, valid, iters=1500, omega=1.9)
+    mid = zr[n // 2]
+    assert np.all(np.diff(mid) > -1e-6)              # 단조 증가(계단 사라짐)
+    assert np.all(np.abs(np.diff(mid, 2)) < 0.1)     # 2차차분≈0 → 직선 램프(매끈)
+    assert abs(mid[n // 2] - 5.0) < 0.3              # 중앙 ≈ 5 (조화=선형)
+    assert np.allclose(zr[:, 0], 0.0) and np.allclose(zr[:, -1], 10.0)  # 제약 고정
+
+
+def test_bake_dem_solver_runs_in_range_no_overshoot(tmp_path):
+    """method='solver'가 동작 + 조화라 전역 표고범위 안(오버슈트 없음) + 봉우리 유지."""
+    _make_synthetic_shp(tmp_path)
+    xs, ys, zs = read_contours(tmp_path)
+    grid, _ = bake_dem(xs, ys, zs, cell_m=10.0, method="solver", solver_iters=200)
+
+    assert np.isfinite(grid).all()                   # 최근방 채움 후 nan 없음
+    assert grid.min() >= zs.min() - 1e-3             # 조화함수 최대원리 → 오버슈트 없음
+    assert grid.max() <= zs.max() + 1e-3
+    # 봉우리(중심 표고점 40m)가 외곽 저지대보다 높음
+    assert grid[grid.shape[0] // 2, grid.shape[1] // 2] > grid[0, 0]
+
+
+# ---------------------------------------------------------------------------
 # write_dem_tif
 # ---------------------------------------------------------------------------
 

@@ -132,3 +132,40 @@ def find_road_file(bbox, manifest: list[dict] | None = None) -> dict | None:
     """질의 bbox와 겹치는 대표 도로 파일 1개(겹침 큰 것). 없으면 None."""
     hits = find_road_files(bbox, manifest)
     return hits[0] if hits else None
+
+
+# --- 수계 — water_manifest.json (road_manifest와 동형) ---
+
+def _water_manifest_path() -> Path:
+    return config.GEO_STORE / "water_manifest.json"
+
+
+def load_water_manifest(path: Path | None = None) -> list[dict]:
+    """water_manifest.json의 수계 지역 목록. 파일 없으면 빈 목록(수계 비축 없음)."""
+    path = path or _water_manifest_path()
+    if not path.exists():
+        return []
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, dict):
+        return data.get("water", [])
+    if isinstance(data, list):
+        return data
+    return []
+
+
+def find_water_file(bbox, manifest: list[dict] | None = None) -> dict | None:
+    """질의 bbox(EPSG:4326)와 겹치는 대표 수계 파일 1개(겹침 큰 것). 없으면 None."""
+    entries = manifest if manifest is not None else load_water_manifest()
+    query = box(*bbox)
+    hits: list[tuple[dict, float]] = []
+    for e in entries:
+        bounds = e.get("bounds_4326")
+        if not bounds or len(bounds) != 4:
+            continue
+        overlap = box(*bounds).intersection(query).area
+        if overlap <= 0.0:
+            continue
+        hits.append((e, overlap))
+    hits.sort(key=lambda h: -h[1])
+    return hits[0][0] if hits else None

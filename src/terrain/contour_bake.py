@@ -106,6 +106,30 @@ def _find_shp(shp_dir: Path, pattern: re.Pattern) -> list[Path]:
     return out
 
 
+def _densify_coords(coords, step: float):
+    """폴리라인 정점열을 step 간격 이하로 조밀화. 솔버가 등고선을 셀마다 제약하도록(beading 방지).
+
+    수치지형도 등고선 정점은 수 m~수십 m 간격이라, 격자 셀(5m)보다 성기면 등고선이 지나는데도
+    제약 안 되는 셀이 생겨 조화 완화가 그 셀을 드리프트시킨다(등고선 따라 구슬 물결). 반 셀 이하로
+    조밀화하면 등고선이 지나는 모든 셀에 정점이 놓여 연속 Dirichlet 제약이 된다.
+    """
+    if len(coords) < 2 or step <= 0:
+        return coords
+    out = []
+    for i in range(len(coords) - 1):
+        x0, y0 = coords[i][0], coords[i][1]
+        x1, y1 = coords[i + 1][0], coords[i + 1][1]
+        out.append((x0, y0))
+        seg = ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
+        if seg > step:
+            k = int(seg // step)
+            for j in range(1, k + 1):
+                t = j / (k + 1)
+                out.append((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t))
+    out.append((coords[-1][0], coords[-1][1]))
+    return out
+
+
 def _to_target_crs(gdf, target_crs: str):
     """gdf를 target_crs로 재투영(좌표대가 다르면). 부산·대구 등 동부원점(EPSG:5187)
     SHP를 파이프라인 기준 5186으로 통일한다(안 하면 지형이 ~2° 어긋남). z(표고)는
@@ -121,7 +145,7 @@ def _to_target_crs(gdf, target_crs: str):
 
 
 def read_contours(
-    shp_dir: str | Path, target_crs: str = "EPSG:5186"
+    shp_dir: str | Path, target_crs: str = "EPSG:5186", densify_m: float | None = None
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """수치지형도 SHP에서 (등고선 + 표고점) 좌표+표고를 추출한다.
 
@@ -154,6 +178,8 @@ def read_contours(
             if not coords and hasattr(geom, "geoms"):
                 for part in geom.geoms:
                     coords.extend(part.coords)
+            if densify_m:  # 솔버용: 등고선을 반 셀 이하로 조밀화(beading 방지, 선형/clough엔 공선점 무해)
+                coords = _densify_coords(coords, densify_m)
             for x, y, *_ in coords:
                 xs.append(x)
                 ys.append(y)
@@ -181,6 +207,47 @@ def read_contours(
     return np.array(xs), np.array(ys), np.array(zs)
 
 
+def _grid_relax(
+    z0: np.ndarray,
+    constrained: np.ndarray,
+    valid: np.ndarray,
+    iters: int = 400,
+    omega: float = 1.8,
+) -> np.ndarray:
+    """제약 셀 고정 + 나머지 valid 셀을 라플라스(조화) 완화 → 계단현상 제거 격자 솔버.
+
+    등고선/표고점이 놓인 셀(constrained)을 Dirichlet 경계로 고정하고, 그 사이 valid 셀을
+    ∇²z=0(조화함수)로 완화한다. 조화함수는 극값이 경계에만 있어(최대원리) **오버슈트가
+    구조적으로 불가** — clough의 스파이크/웅덩이가 없다. TIN의 "평평한 삼각형"(테라스)이
+    아니라 실제 등고선 셀에서 확산하므로 등고선 사이가 매끈한 램프가 된다.
+
+    valid 밖(볼록껍질 밖 NaN 영역)은 이웃 평균에서 제외한다(경계). 수렴 가속을 위해 red-black
+    SOR(체커보드 병렬 갱신 + over-relaxation ω). z0는 초기 추정(선형 보간 권장).
+    """
+    z = z0.astype(np.float64, copy=True)
+    z[~valid] = 0.0  # 무효셀은 평균에서 빠지지만 0으로 둬 연산 안정
+    vf = valid.astype(np.float64)
+    ii, jj = np.indices(z.shape)
+    free = valid & ~constrained
+    red = free & (((ii + jj) % 2) == 0)
+    black = free & (((ii + jj) % 2) == 1)
+
+    def sweep(color: np.ndarray) -> None:
+        zp = np.pad(np.where(valid, z, 0.0), 1, mode="constant")
+        vp = np.pad(vf, 1, mode="constant")
+        s = zp[:-2, 1:-1] + zp[2:, 1:-1] + zp[1:-1, :-2] + zp[1:-1, 2:]
+        c = vp[:-2, 1:-1] + vp[2:, 1:-1] + vp[1:-1, :-2] + vp[1:-1, 2:]
+        with np.errstate(invalid="ignore", divide="ignore"):
+            avg = np.where(c > 0, s / c, z)
+        m = color & (c > 0)
+        z[m] = (1.0 - omega) * z[m] + omega * avg[m]
+
+    for _ in range(max(1, iters)):
+        sweep(red)    # 흑 셀(이전값)에서 적 셀 갱신
+        sweep(black)  # 갱신된 적 셀에서 흑 셀 갱신 (Gauss-Seidel 가속)
+    return z
+
+
 def bake_dem(
     xs: np.ndarray,
     ys: np.ndarray,
@@ -190,6 +257,7 @@ def bake_dem(
     method: str = "clough",
     guard_m: float = 3.0,
     fill_dist_m: float = 200.0,
+    solver_iters: int = 400,
 ) -> tuple[np.ndarray, Affine]:
     """등고선+표고점 좌표 → 정규 격자 DEM 보간.
 
@@ -239,8 +307,26 @@ def bake_dem(
         grid_ct = CloughTocher2DInterpolator(tri, zs)(gx, gy)
         # 튜브 클램프: clough를 linear±guard_m 범위로 제한 → 오버슈트 스파이크/웅덩이 제거.
         grid = np.clip(grid_ct, grid_lin - guard_m, grid_lin + guard_m)
+    elif method == "solver":
+        # 라플라스 조화 격자 솔버: 등고선 정점+표고점을 격자 셀에 배정해 Dirichlet 제약으로 고정,
+        # 그 사이 셀을 ∇²z=0로 완화한다. TIN 삼각화(평평한 삼각형=테라스)를 안 거치고 실제 등고선
+        # 셀에서 확산하므로 계단현상이 구조적으로 사라진다(조화함수라 오버슈트도 없음). 초기값=선형.
+        col = np.floor((xs - minx) / cell_m).astype(int)
+        row = np.floor((maxy - ys) / cell_m).astype(int)
+        inb = (row >= 0) & (row < nrows) & (col >= 0) & (col < ncols)
+        fixed = np.zeros((nrows, ncols))
+        cnt = np.zeros((nrows, ncols))
+        np.add.at(fixed, (row[inb], col[inb]), zs[inb])
+        np.add.at(cnt, (row[inb], col[inb]), 1.0)
+        constrained = cnt > 0
+        fixed[constrained] /= cnt[constrained]
+        valid = ~np.isnan(grid_lin)
+        z0 = np.where(valid, grid_lin, 0.0)
+        z0[constrained] = fixed[constrained]  # 데이터 셀 = 실측 표고
+        zr = _grid_relax(z0, constrained, valid, iters=solver_iters)
+        grid = np.where(valid, zr, np.nan)
     else:
-        raise ValueError(f"알 수 없는 보간법: {method!r} (clough|linear)")
+        raise ValueError(f"알 수 없는 보간법: {method!r} (clough|linear|solver)")
 
     # 볼록껍질 밖(nan) 셀을 최근방 값으로 채우되, 실데이터에서 fill_dist_m 넘게 떨어진 셀은
     # nodata(nan) 유지한다. 무제한 외삽하면 타일 사각형 전체가 채워져, 지역 경계에서 한 지역의
@@ -355,18 +441,23 @@ def bake(
     update_manifest_flag: bool = True,
     method: str = "clough",
     guard_m: float = 3.0,
+    solver_iters: int = 400,
 ) -> None:
     """end-to-end: SHP 읽기 → 보간 → .tif 저장 → manifest 갱신."""
     shp_dir = Path(shp_dir)
     out_path = Path(out_path)
 
     log.info("=== contour_bake 시작 === shp_dir=%s cell_m=%s method=%s", shp_dir, cell_m, method)
-    xs, ys, zs = read_contours(shp_dir)
+    # 솔버는 등고선을 반 셀 이하로 조밀화해 읽는다(연속 제약 → beading 방지).
+    xs, ys, zs = read_contours(shp_dir, densify_m=(cell_m * 0.5 if method == "solver" else None))
 
     if bounds is None:
         bounds = (xs.min(), ys.min(), xs.max(), ys.max())
 
-    grid, transform = bake_dem(xs, ys, zs, cell_m=cell_m, bounds=bounds, method=method, guard_m=guard_m)
+    grid, transform = bake_dem(
+        xs, ys, zs, cell_m=cell_m, bounds=bounds, method=method,
+        guard_m=guard_m, solver_iters=solver_iters,
+    )
     write_dem_tif(out_path, grid, transform)
 
     if update_manifest_flag:
@@ -389,6 +480,7 @@ def bake_tiled(
     update_manifest_flag: bool = True,
     method: str = "clough",
     guard_m: float = 3.0,
+    solver_iters: int = 400,
 ) -> list[Path]:
     """대용량 지역용: 등고선/표고점을 1회 읽고 tile_km 격자로 나눠 타일별 DEM을 굽는다.
 
@@ -403,7 +495,8 @@ def bake_tiled(
     """
     shp_dir = Path(shp_dir)
     out_path = Path(out_path)
-    xs, ys, zs = read_contours(shp_dir)
+    # 솔버는 등고선을 반 셀 이하로 조밀화해 읽는다(연속 제약 → beading 방지).
+    xs, ys, zs = read_contours(shp_dir, densify_m=(cell_m * 0.5 if method == "solver" else None))
 
     minx, miny = float(xs.min()), float(ys.min())
     maxx, maxy = float(xs.max()), float(ys.max())
@@ -437,6 +530,7 @@ def bake_tiled(
                 grid, transform = bake_dem(
                     xs[sel], ys[sel], zs[sel],
                     cell_m=cell_m, bounds=tb, method=method, guard_m=guard_m,
+                    solver_iters=solver_iters,
                 )
             except Exception as e:  # 슬리버/특이 삼각화 등 → 타일만 스킵(전체 중단 방지)
                 log.warning("타일 r%dc%d 스킵: %s", r, c, e)
@@ -468,12 +562,17 @@ def _cli() -> None:
     parser.add_argument("--sheets", nargs="*", help="도엽 번호 목록")
     parser.add_argument("--no-manifest", action="store_true", help="manifest.json 갱신 안 함")
     parser.add_argument(
-        "--method", default="clough", choices=["clough", "linear"],
-        help="보간법. clough=C1 3차 가드(계단제거, 기본) | linear=평면삼각(계단발생, 비교용)",
+        "--method", default="clough", choices=["clough", "linear", "solver"],
+        help="보간법. clough=C1 3차 가드(부분 계단제거, 기본) | linear=평면삼각(계단발생, 비교용) "
+             "| solver=라플라스 조화 격자 솔버(계단 완전제거, 오버슈트 없음, 런타임 비용 큼)",
     )
     parser.add_argument(
         "--guard", type=float, default=3.0,
-        help="clough 튜브 클램프 폭(m). linear에서 벗어날 최대 표고차. 기본 3.0",
+        help="clough 튜브 클램프 폭(m). linear에서 벗어날 최대 표고차. 기본 3.0 (solver 무관)",
+    )
+    parser.add_argument(
+        "--solver-iters", type=int, default=400,
+        help="solver(라플라스) 완화 반복수. 클수록 매끈·수렴↑·느림. 기본 400 (method=solver일 때만)",
     )
     parser.add_argument(
         "--tile-km", type=float, default=0.0,
@@ -498,6 +597,7 @@ def _cli() -> None:
             update_manifest_flag=not args.no_manifest,
             method=args.method,
             guard_m=args.guard,
+            solver_iters=args.solver_iters,
         )
     else:
         bake(
@@ -509,6 +609,7 @@ def _cli() -> None:
             update_manifest_flag=not args.no_manifest,
             method=args.method,
             guard_m=args.guard,
+            solver_iters=args.solver_iters,
         )
 
 

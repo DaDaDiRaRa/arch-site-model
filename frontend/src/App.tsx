@@ -25,6 +25,7 @@ export default function App() {
   const [orthophoto, setOrthophoto] = useState(true);
   const [cadastral, setCadastral] = useState(false);
   const [roads, setRoads] = useState(false);
+  const [water, setWater] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +43,7 @@ export default function App() {
         body: JSON.stringify({
           address,
           radius_m: radius,
-          layers: { buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral, roads },
+          layers: { buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral, roads, water: terrain && water },
           outputs: ["3dm"],
         }),
       });
@@ -135,6 +136,16 @@ export default function App() {
                 className="h-4 w-4 rounded border-slate-300"
               />
               도로(노면)
+            </label>
+            <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={water}
+                onChange={(e) => setWater(e.target.checked)}
+                disabled={!terrain}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              수계(하천·호소)
             </label>
           </div>
 

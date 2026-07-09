@@ -20,6 +20,7 @@ module ArchSiteModel
           "terrain"    => params["terrain"] != false,
           "orthophoto" => params["orthophoto"] == true,
           "roads"      => params["roads"] == true,
+          "water"      => params["water"] == true,
         },
         "outputs"    => ["skp"],  # .3dm 불필요 — geometry + 정사영상 URL만 받음
       }

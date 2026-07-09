@@ -32,6 +32,7 @@ def write_3dm(
     cadastral: list[CadastralParcel] | None = None,
     roads: RoadMesh | None = None,
     sidewalks: RoadMesh | None = None,
+    water: RoadMesh | None = None,
     ortho_image: str | Path | None = None,
     ortho_extent_m: tuple[float, float, float, float] | None = None,
 ) -> str:
@@ -81,6 +82,11 @@ def write_3dm(
     l_sw.Color = (176, 172, 160, 255)          # concrete beige-gray
     idx_sw = model.Layers.Add(l_sw)
 
+    l_water = rhino3dm.Layer()
+    l_water.Name = "water"
+    l_water.Color = (58, 110, 165, 255)        # river blue
+    idx_water = model.Layers.Add(l_water)
+
     # origin_offset → 문서 수준 Strings (좌표 복원용, 사양서 §6.1)
     ox, oy = offset
     model.Strings["origin_offset_x"] = str(ox)
@@ -105,6 +111,9 @@ def write_3dm(
         _add_roads(model, roads, idx_road, "roads")
     if sidewalks is not None:
         _add_roads(model, sidewalks, idx_sw, "sidewalks")
+    # 수계(평면 수면) — z에 이미 리프트가 있으므로 lift=0.
+    if water is not None:
+        _add_roads(model, water, idx_water, "water", lift=0.0)
 
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -257,15 +266,20 @@ def _add_roads(
     roads: RoadMesh,
     layer_idx: int,
     name: str = "roads",
+    lift: float | None = None,
 ) -> None:
-    """RoadMesh → rhino3dm Mesh (로컬 미터, 노면 살짝 리프트). 삼각화 없으면 생략."""
+    """RoadMesh/WaterMesh → rhino3dm Mesh (로컬 미터, 살짝 리프트). 삼각화 없으면 생략.
+
+    lift=None이면 도로 기본 리프트(ROAD_LIFT_M). 수계는 z에 이미 리프트가 들어 있어 lift=0.
+    """
     from src.geometry.road import ROAD_LIFT_M
 
+    lft = ROAD_LIFT_M if lift is None else lift
     if not roads.vertices or not roads.triangles:
         return
     mesh = rhino3dm.Mesh()
     for x, y, z in roads.vertices:
-        mesh.Vertices.Add(x, y, z + ROAD_LIFT_M)
+        mesh.Vertices.Add(x, y, z + lft)
     for a, b, c in roads.triangles:
         mesh.Faces.AddFace(a, b, c)
     mesh.Normals.ComputeNormals()
