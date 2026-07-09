@@ -25,6 +25,7 @@ class BuildingSolid:
     attrs: dict                                                # bd_mgt_sn, buld_nm, rd_nm 등
     holes_m: list[list[tuple[float, float]]] = field(default_factory=list)  # 중정 내부 링 목록
     flagged: bool = False                                      # True when floors 누락 + policy="flag"
+    floors_source: str = "measured"                            # "measured"(gro_flo_co 실측) | "default"(누락→기본층수 추정)
 
 
 def floors_of(props: dict) -> int | None:
@@ -110,6 +111,7 @@ def features_to_solids(
         if floors is None and missing_policy == "skip":
             continue
         flagged = floors is None and missing_policy == "flag"
+        floors_source = "measured" if floors is not None else "default"  # 실측 vs 추정(A-2 시각구분)
         n_floors = floors if floors is not None else default_floors
         height = n_floors * floor_h_m
         name = props.get("buld_nm") or props.get("bd_mgt_sn") or "building"
@@ -135,6 +137,7 @@ def features_to_solids(
                     floors=floors,
                     attrs=attrs,
                     flagged=flagged,
+                    floors_source=floors_source,
                 )
             )
     return solids

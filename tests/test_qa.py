@@ -92,3 +92,29 @@ def test_summary_counts():
     qa = run_qa([_bldg("A", fp), _bldg("B", [(5, 5), (45, 5), (45, 45), (5, 45)])])
     assert qa["summary"]["total"] >= 1
     assert qa["summary"]["by_kind"].get("building_overlap", 0) >= 1
+
+
+def test_findings_have_reviewer_label():
+    """각 finding에 실무 라벨(label)이 붙는다 (A-3)."""
+    fp = [(0, 0), (40, 0), (40, 40), (0, 40)]
+    qa = run_qa([_bldg("A", fp), _bldg("B", [(5, 5), (45, 5), (45, 45), (5, 45)])])
+    overlap = next(f for f in qa["findings"] if f["kind"] == "building_overlap")
+    assert overlap["label"] == "건물 겹침"
+
+
+def test_summary_passed_and_stamp_clean():
+    """결함 0건이면 passed=True + '검수 통과' 스탬프."""
+    qa = run_qa([
+        _bldg("A", [(0, 0), (10, 0), (10, 10), (0, 10)]),
+        _bldg("B", [(100, 100), (110, 100), (110, 110), (100, 110)]),
+    ])
+    assert qa["summary"]["passed"] is True
+    assert "검수 통과" in qa["summary"]["stamp"]
+
+
+def test_summary_not_passed_with_warning():
+    """경고가 있으면 passed=False + '검토 필요' 스탬프."""
+    fp = [(0, 0), (40, 0), (40, 40), (0, 40)]
+    qa = run_qa([_bldg("A", fp), _bldg("B", [(5, 5), (45, 5), (45, 45), (5, 45)])])
+    assert qa["summary"]["passed"] is False
+    assert "검토" in qa["summary"]["stamp"]

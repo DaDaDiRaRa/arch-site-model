@@ -344,9 +344,10 @@ module ArchSiteModel
       return false if fp.length < 3 || height <= 0
 
       flagged = b["flagged"] == true
-      mat = flagged ? mat_f : mat_n
+      estimated = b["verified"] == false   # 추정 층수(default 정책 포함) → 색/레이어 구분 (A-2)
+      mat = estimated ? mat_f : mat_n
       grp = parent_ents.add_group
-      grp.layer = flagged ? tag_f : tag_n
+      grp.layer = estimated ? tag_f : tag_n
       grp.name = flagged ? "building [층수미확인]" : "building"
       ents = grp.entities
       base = b["base_z"].to_f * M2I

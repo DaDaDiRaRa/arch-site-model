@@ -92,9 +92,10 @@ def write_3dm(
     model.Strings["origin_offset_x"] = str(ox)
     model.Strings["origin_offset_y"] = str(oy)
 
-    # 건물 Extrusion (flagged → buildings_unverified 레이어)
+    # 건물 Extrusion (추정 층수 → buildings_unverified 레이어)
     for solid in solids:
-        layer = idx_flag if solid.flagged else idx_bldg
+        # 추정 층수(floors_source=default) 또는 flag → buildings_unverified (A-2: 추정 시각구분)
+        layer = idx_flag if (solid.flagged or solid.floors_source == "default") else idx_bldg
         _add_building(model, solid, layer, ox, oy)
 
     # 지형 Mesh (정사영상 텍스처 옵션)
@@ -162,6 +163,7 @@ def _add_building(
         attrs.SetUserString("origin_offset_x", str(ox))
         attrs.SetUserString("origin_offset_y", str(oy))
         attrs.SetUserString("flagged", "1" if solid.flagged else "0")
+        attrs.SetUserString("floors_source", solid.floors_source)
         if solid.floors is not None:
             attrs.SetUserString("floors", str(solid.floors))
         if solid.attrs:

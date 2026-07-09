@@ -89,6 +89,8 @@ def _build_geometry(
             "base_z": round(s.base_z_m, 3),
             "height": round(s.height_m, 3),
             "flagged": bool(s.flagged),
+            # 실측 층수(measured)이며 flag도 아닐 때만 verified — 추정(default)은 시각 구분(A-2).
+            "verified": s.floors_source == "measured" and not s.flagged,
         }
         for s in solids
         if len(s.footprint_m) >= 3 and s.height_m > 0
@@ -150,6 +152,8 @@ def generate(
     client: VWorldClient | None = None,
     ortho_fetch=None,
     include_geometry: bool = False,
+    shadow_date: str | None = None,
+    shadow_hours: list[int] | None = None,
 ) -> dict:
     """건물 매싱(+ 선택적 지형/지적) 생성 결과를 반환.
 
@@ -558,6 +562,33 @@ def generate(
 
         qa_result = run_qa(solids, dem=dem, terrain_mesh=terrain_mesh, m2i=config.M2I)
 
+    # 일조·그림자 분석 (B-3) — 옵션. 위경도+동지 기준 시간대별 그림자 폴리곤(로컬 미터, geometry 동일 좌표).
+    shadows = None
+    if layers.get("shadows"):
+        from datetime import date as _date
+
+        from src.solar import shadows_for_day
+
+        sd = shadow_date or f"{datetime.now(timezone.utc).year}-12-21"  # 기본 동지
+        try:
+            y, mo, d = (int(v) for v in sd.split("-"))
+            hrs = shadow_hours or [9, 10, 11, 12, 13, 14, 15]
+            entries = shadows_for_day(solids, coord["lat"], coord["lon"], _date(y, mo, d), hrs)
+            shadows = {"date": sd, "hours": hrs, "entries": entries}
+        except Exception as e:  # noqa: BLE001 — 그림자 실패가 생성을 막지 않음
+            warnings.append(f"일조·그림자 분석 실패: {e}")
+
+    # 용도지역 조회 (arch-law-graph 연동) — 옵션. 미설정/미도달 시 조용히 생략.
+    zoning = None
+    if layers.get("zoning"):
+        from src.geo.zoning import lookup_zoning
+
+        zoning = lookup_zoning(cleaned)
+        if zoning is None:
+            warnings.append(
+                "용도지역 조회 생략 — ZONING_BASE 미설정/미도달 또는 결과 없음(arch-law-graph)"
+            )
+
     res = {
         "ok": True,
         "address": cleaned,
@@ -579,6 +610,8 @@ def generate(
         "provenance": prov,
         "warnings": warnings,
         "qa": qa_result,
+        "shadows": shadows,
+        "zoning": zoning,
     }
     # 데이터 신뢰도 리포트(A-1) — 조립된 결과 위의 순수 뷰. 소비자(웹/노트)가 렌더만.
     from src.trust_report import build_trust_report

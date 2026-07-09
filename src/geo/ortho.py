@@ -223,6 +223,16 @@ def _write_png_rgb(path: str | Path, rgb) -> None:
         f.write(_chunk(b"IEND", b""))
 
 
+def _nodata_tile(ts: int):
+    """결측 타일용 체커 패턴(밝은 두 톤) — 회색 단색을 실제 영상으로 오인하지 않게 (A-2)."""
+    import numpy as np
+
+    s = max(8, ts // 16)
+    yy, xx = np.mgrid[0:ts, 0:ts]
+    checker = np.where(((yy // s) + (xx // s)) % 2 == 0, 205, 235).astype(np.uint8)
+    return np.repeat(checker[None, :, :], 3, axis=0)
+
+
 def build_mosaic(
     bbox: tuple[float, float, float, float],
     zoom: int,
@@ -256,8 +266,10 @@ def build_mosaic(
         )
     ts = source.tile_size
 
-    # 3857 격자에 타일을 붙임(회색=128로 초기화 → 결측 타일 자연 처리)
+    # 3857 격자에 타일을 붙임. 결측 타일은 체커 패턴으로 채워 "영상 없음"을 명시(A-2 — 회색이
+    # 실제 영상으로 오인되지 않게).
     mosaic = np.full((3, ny * ts, nx * ts), 128, dtype=np.uint8)
+    nodata = _nodata_tile(ts)
     missing = 0
     for ty in range(y_min, y_max + 1):
         for tx in range(x_min, x_max + 1):
@@ -266,6 +278,7 @@ def build_mosaic(
             col = (tx - x_min) * ts
             if not data:
                 missing += 1
+                mosaic[:, row : row + ts, col : col + ts] = nodata
                 continue
             with MemoryFile(data) as mf, mf.open() as ds:
                 arr = ds.read()  # (bands, ts, ts)

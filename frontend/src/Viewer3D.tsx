@@ -14,6 +14,7 @@ export interface SiteGeometry {
     base_z: number;
     height: number;
     flagged: boolean;
+    verified: boolean;
   }[];
   terrain: { vertices: [number, number, number][]; triangles: [number, number, number][] } | null;
   cadastral?: { pnu: string; ring: [number, number, number][] }[] | null;
@@ -48,10 +49,17 @@ export interface QaResult {
   summary: { total: number; warnings: number; by_kind: Record<string, number> };
 }
 
+export interface ShadowData {
+  date: string;
+  hours: number[];
+  entries: { time: string; sun_alt: number; sun_az: number; polygons: [number, number][][] }[];
+}
+
 interface Props {
   geometry: SiteGeometry;
   orthoUrl?: string; // 정사영상 PNG (지형에 드레이프)
   qa?: QaResult | null; // 자동 QA findings — 결함 위치에 수직 핀 표시
+  shadows?: ShadowData | null; // 일조·그림자 분석 (B-3) — 시간대별 그림자 폴리곤
 }
 
 type ColorMode = "height" | "flat";
@@ -62,6 +70,7 @@ const C_FLAGGED = 0xd2783c; // orange — 층수 미확인
 const C_TERRAIN = 0x6a9a55; // olive green
 const C_EDGE = 0x27303a; // 건물 외곽선 (짙은 슬레이트)
 const C_CADASTRAL = 0xd9a441; // sandy yellow — 대지경계 (.3dm cadastral 레이어와 통일)
+const C_SHADOW = 0x1b2733; // dark slate — 일조 그림자 오버레이 (B-3)
 const CADASTRAL_LIFT = 0.5; // 지형 위로 살짝 띄워 z-fighting 방지 (m)
 const C_ROAD_FILL = 0x74797f; // 아스팔트 그레이 — 도로 노면 (R1b)
 const C_ROAD_EDGE = 0x3a3f45; // 짙은 그레이 — 도로 외곽선
@@ -78,7 +87,7 @@ const RAMP_LO = new THREE.Color(0xa9cfe8);
 const RAMP_HI = new THREE.Color(0x1f3a5f);
 
 // three는 Y-up, 데이터는 Z-up(z=높이) → 루트 그룹을 X축 -90° 회전해 맞춘다.
-export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
+export default function Viewer3D({ geometry, orthoUrl, qa, shadows }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRefs = useRef<{
     buildings?: THREE.Group | null;
@@ -89,6 +98,8 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
     lanes?: THREE.Object3D | null;
     water?: THREE.Object3D | null;
     qa?: THREE.Object3D | null;
+    shadows?: THREE.Group | null;
+    root?: THREE.Group | null;
     buildingMeshes: THREE.Mesh[];
     edges: THREE.LineSegments[];
     sun?: THREE.DirectionalLight;
@@ -105,6 +116,8 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("solid");
   const [showEdges, setShowEdges] = useState(true);
   const [showShadows, setShowShadows] = useState(true);
+  const [showShadowAnalysis, setShowShadowAnalysis] = useState(true);
+  const [shadowIdx, setShadowIdx] = useState(0);
   const [ssao, setSsao] = useState(true); // 주변광 차폐(GTAO) — 틈·밑동 음영으로 입체감
   const ssaoRef = useRef(true); // 렌더 루프가 최신 토글값을 읽도록(재설정 없이)
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +127,19 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
     const hs = geometry.buildings.filter((b) => b.height > 0).map((b) => b.height);
     if (!hs.length) return null;
     return { min: Math.min(...hs), max: Math.max(...hs) };
+  }, [geometry]);
+
+  // 일조 분석(B-3): 주간 시간대만 / 그림자 지면 표고(건물 base 평균, 없으면 지형 최저).
+  const daylight = useMemo(
+    () => (shadows?.entries ?? []).filter((e) => e.sun_alt > 0),
+    [shadows]
+  );
+  const groundZ = useMemo(() => {
+    const bs = geometry.buildings.map((b) => b.base_z).filter((z) => Number.isFinite(z));
+    if (bs.length) return bs.reduce((a, c) => a + c, 0) / bs.length;
+    const tv = geometry.terrain?.vertices;
+    if (tv?.length) return Math.min(...tv.map((v) => v[2]));
+    return 0;
   }, [geometry]);
 
   useEffect(() => {
@@ -189,7 +215,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
       // 지형이 없으면 그림자를 받을 바닥면을 깔아 건물 그림자가 보이게 한다.
       if (!terrain && !box.isEmpty()) root.add(shadowGround(box));
 
-      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, water, qa: qaMarkers, buildingMeshes: meshes, edges, sun };
+      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, water, qa: qaMarkers, buildingMeshes: meshes, edges, sun, root };
       if (!box.isEmpty()) {
         fitCamera(camera, controls, box);
         frameSunShadow(sun, box);
@@ -268,8 +294,8 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
   useEffect(() => {
     for (const m of sceneRefs.current.buildingMeshes) {
       const mat = m.material as THREE.MeshStandardMaterial;
-      const ud = m.userData as { flagged?: boolean; rampColor?: THREE.Color };
-      if (ud.flagged) continue;
+      const ud = m.userData as { verified?: boolean; rampColor?: THREE.Color };
+      if (ud.verified === false) continue;   // 미검증 건물은 색상모드 무관 항상 주황 (A-2)
       mat.color.copy(colorMode === "height" && ud.rampColor ? ud.rampColor : new THREE.Color(C_BUILDING));
     }
   }, [colorMode]);
@@ -311,6 +337,33 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
   useEffect(() => {
     if (sceneRefs.current.sun) sceneRefs.current.sun.castShadow = showShadows;
   }, [showShadows]);
+
+  // 일조 분석: shadows 로드 시 정오(12:00)로 기본 이동.
+  useEffect(() => {
+    if (!daylight.length) return;
+    const noon = daylight.findIndex((e) => e.time === "12:00");
+    setShadowIdx(noon >= 0 ? noon : Math.floor(daylight.length / 2));
+  }, [daylight]);
+
+  // 그림자 오버레이(B-3): 선택 시각 그림자 폴리곤을 지면 표고에 렌더. 시각/토글/지오메트리 변경 시 스왑.
+  useEffect(() => {
+    const root = sceneRefs.current.root;
+    if (!root) return;
+    const entry = daylight[Math.min(shadowIdx, daylight.length - 1)];
+    const grp = buildShadowOverlay(entry, groundZ);
+    if (grp) {
+      grp.visible = showShadowAnalysis;
+      root.add(grp);
+      sceneRefs.current.shadows = grp;
+    }
+    return () => {
+      if (grp) {
+        root.remove(grp);
+        disposeGroup(grp);
+      }
+      sceneRefs.current.shadows = null;
+    };
+  }, [geometry, shadows, shadowIdx, groundZ, daylight, showShadowAnalysis]);
 
   const nB = geometry.buildings.length;
   const nT = geometry.terrain?.triangles.length ?? 0;
@@ -366,6 +419,10 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
           그림자
         </label>
         <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={showShadowAnalysis} onChange={(e) => setShowShadowAnalysis(e.target.checked)} className="h-4 w-4" disabled={!daylight.length} />
+          일조분석 <span className="text-xs text-slate-400">({daylight.length}시각)</span>
+        </label>
+        <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={ssao} onChange={(e) => setSsao(e.target.checked)} className="h-4 w-4" />
           음영(AO)
         </label>
@@ -394,6 +451,23 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
         </label>
         <span className="ml-auto text-xs text-slate-400">드래그=회전 · 휠=확대 · 우클릭드래그=이동</span>
       </div>
+      {shadows && daylight.length > 0 && showShadowAnalysis && (
+        <div className="mb-3 flex items-center gap-3 text-xs text-slate-600">
+          <span className="font-medium text-slate-700">일조 {shadows.date}</span>
+          <input
+            type="range"
+            min={0}
+            max={daylight.length - 1}
+            value={Math.min(shadowIdx, daylight.length - 1)}
+            onChange={(e) => setShadowIdx(Number(e.target.value))}
+            className="w-56"
+          />
+          <span className="tabular-nums text-slate-500">
+            {daylight[Math.min(shadowIdx, daylight.length - 1)]?.time} · 태양고도{" "}
+            {daylight[Math.min(shadowIdx, daylight.length - 1)]?.sun_alt.toFixed(0)}°
+          </span>
+        </div>
+      )}
       <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
         <div ref={mountRef} style={{ width: "100%", height: 520 }} />
         {colorMode === "height" && heightRange && heightRange.max > heightRange.min && (
@@ -448,7 +522,7 @@ function buildBuildings(
 
     const rampColor = range && span > 0 ? RAMP_LO.clone().lerp(RAMP_HI, (b.height - range.min) / span) : RAMP_HI.clone();
     const mat = new THREE.MeshStandardMaterial({
-      color: b.flagged ? C_FLAGGED : rampColor,
+      color: b.verified ? rampColor : C_FLAGGED,   // 미검증(추정) 건물은 항상 주황 (A-2)
       roughness: 0.82,
       metalness: 0,
       // 면 위에 외곽선이 깔끔히 얹히도록 폴리곤 오프셋.
@@ -459,7 +533,7 @@ function buildBuildings(
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.userData = { flagged: b.flagged, rampColor };
+    mesh.userData = { verified: b.verified, rampColor };
     meshes.push(mesh);
 
     // 외곽선: 실제 모서리만(평면 삼각화 대각선 제외 — thresholdAngle 20°).
@@ -540,6 +614,42 @@ function buildCadastral(parcels: Props["geometry"]["cadastral"]): THREE.Group | 
     g.add(new THREE.LineLoop(geo, mat));
   }
   return g;
+}
+
+// 일조 그림자 오버레이(B-3): 선택 시각 그림자 폴리곤을 지면 표고 평면에 반투명 면으로.
+function buildShadowOverlay(
+  entry: ShadowData["entries"][number] | undefined,
+  groundZ: number
+): THREE.Group | null {
+  if (!entry || !entry.polygons.length) return null;
+  const g = new THREE.Group();
+  g.name = "shadows";
+  const mat = new THREE.MeshBasicMaterial({
+    color: C_SHADOW,
+    transparent: true,
+    opacity: 0.34,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  for (const ring of entry.polygons) {
+    if (ring.length < 3) continue;
+    const shape = new THREE.Shape(ring.map(([x, y]) => new THREE.Vector2(x, y)));
+    const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), mat);
+    mesh.position.z = groundZ + 0.3; // 지면 살짝 위 (z-fighting 방지)
+    mesh.renderOrder = 2;
+    g.add(mesh);
+  }
+  return g;
+}
+
+function disposeGroup(obj: THREE.Object3D) {
+  const mats = new Set<THREE.Material>();
+  obj.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.geometry) m.geometry.dispose();
+    if (m.material) mats.add(m.material as THREE.Material);
+  });
+  mats.forEach((mat) => mat.dispose());
 }
 
 // 도로 노면(R1b): DEM 드레이프한 삼각 메시(회색 면) + 외곽선(짙은 라인). z-fighting 방지 리프트.

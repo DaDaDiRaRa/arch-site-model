@@ -431,13 +431,82 @@ def test_generate_include_geometry(monkeypatch):
     assert len(g["buildings"]) == 4
     b0 = g["buildings"][0]
     assert len(b0["footprint"]) >= 3
-    assert {"base_z", "height", "flagged"} <= b0.keys()
+    assert {"base_z", "height", "flagged", "verified"} <= b0.keys()
     # 지형: vertices/triangles, 인덱스는 순수 int (numpy.int32 혼입 방지)
     assert g["terrain"] is not None
     assert g["terrain"]["vertices"] and g["terrain"]["triangles"]
     assert all(type(i) is int for i in g["terrain"]["triangles"][0])
     # 전체 직렬화 가능 — numpy 타입이 섞이면 여기서 TypeError (회귀 가드)
     json.dumps(g)
+
+
+def test_geometry_marks_estimated_buildings_under_default(monkeypatch):
+    """A-2: default 정책에서도 층수 추정 건물은 verified=False로 시각 구분(추정≠검증)."""
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
+    )
+    out = generate(
+        "대전광역시 서구 괴정동 358",
+        missing_floors_policy="default",
+        client=FakeClient(_daejeon_features()),
+        layers={"buildings": True},
+        include_geometry=True,
+    )
+    verified = [b["verified"] for b in out["geometry"]["buildings"]]
+    assert verified.count(False) == 2   # 층수 누락 2개 → 추정으로 표시
+    assert verified.count(True) == 2    # 실측 2개
+
+
+def test_generate_shadows_layer(monkeypatch):
+    """B-3: layers.shadows=True → result['shadows']에 시간대별 그림자 폴리곤."""
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 126.978, "lat": 37.5665, "crs": "EPSG:4326"}
+    )
+    out = generate(
+        "서울특별시 중구",
+        client=FakeClient(_daejeon_features()),
+        layers={"buildings": True, "shadows": True},
+        shadow_date="2026-12-21",
+        shadow_hours=[12, 23],
+    )
+    sh = out["shadows"]
+    assert sh["date"] == "2026-12-21"
+    noon = next(e for e in sh["entries"] if e["time"] == "12:00")
+    night = next(e for e in sh["entries"] if e["time"] == "23:00")
+    assert noon["sun_alt"] > 0 and noon["polygons"]          # 정오 그림자 존재
+    assert night["polygons"] == []                            # 야간 없음
+
+
+def test_generate_zoning_layer(monkeypatch):
+    """arch-law-graph 연동: layers.zoning=True → result['zoning'] 부착(성공 시)."""
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.02, "lat": 37.5, "crs": "EPSG:4326"}
+    )
+    monkeypatch.setattr(
+        "src.geo.zoning.lookup_zoning",
+        lambda addr: {"zone_name": "제2종일반주거지역", "zone_key": "k", "sido": "서울특별시",
+                      "sigungu": "강남구", "address": addr, "src": "arch-law-graph /api/zoning"},
+    )
+    out = generate(
+        "서울 강남 …", client=FakeClient(_daejeon_features()),
+        layers={"buildings": True, "zoning": True},
+    )
+    assert out["zoning"]["zone_name"] == "제2종일반주거지역"
+
+
+def test_generate_zoning_graceful_when_unavailable(monkeypatch):
+    """ZONING_BASE 미설정/미도달 → zoning None + warning, 생성은 성공."""
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.02, "lat": 37.5, "crs": "EPSG:4326"}
+    )
+    monkeypatch.setattr("src.geo.zoning.lookup_zoning", lambda addr: None)
+    out = generate(
+        "서울 강남 …", client=FakeClient(_daejeon_features()),
+        layers={"buildings": True, "zoning": True},
+    )
+    assert out["ok"] is True
+    assert out["zoning"] is None
+    assert any("용도지역" in w for w in out["warnings"])
 
 
 def test_generate_geometry_cadastral(monkeypatch):

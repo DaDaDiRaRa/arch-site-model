@@ -119,6 +119,13 @@ ROAD_EDGE_CELL_M = _envf("ROAD_EDGE_CELL_M", 1.0)
 
 # 수계(E계열) GeoJSON 서빙 위치 — 도로(ROAD_BASE)와 동형. 미설정 시 로컬 geo_store.
 WATER_BASE = os.environ.get("WATER_BASE", str(GEO_STORE))
+
+# --- 용도지역(zoning) — 형제 앱 arch-law-graph 연동 ---
+# 사이트 용도지역은 arch-law-graph의 GET /api/zoning?address= 로 조회한다(경계 존중: zoning=법령
+# 클러스터 소유). ZONING_BASE=arch-law-graph 서비스 base URL(예: http://localhost:8000 또는 배포 URL).
+# 미설정/미도달 시 조용히 생략(warnings) — DEM/도로와 동일 원칙. 그쪽 서비스가 떠 있고 VWORLD_KEY도
+# 설정돼 있어야 한다. 배포(Cloud Run): --set-env-vars ZONING_BASE=<arch-law-graph URL>.
+ZONING_BASE = os.environ.get("ZONING_BASE", "")
 # 수면 삼각화 격자 간격(m). 수면은 평면이라 도로(2.5m)보다 성겨도 됨 → 삼각형 절약.
 WATER_CELL_M = _envf("WATER_CELL_M", 10.0)
 

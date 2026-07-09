@@ -102,51 +102,55 @@ Cadmapper                       arch-site-model                Autodesk Forma
 > 노력: **S**(≤1주) / **M**(1–3주) / **L**(3주+).  임팩트: **상 / 중 / 하**.
 > 각 항목의 *산출물(done)* = 완료 판정 기준, *의존성* = 착수 전 선행과제.
 
-### 트랙 A · 신뢰를 "눈에 보이게" — 100% 내부, 무충돌, 최우선
+### 트랙 A · 신뢰를 "눈에 보이게" — 100% 내부, 무충돌 — ✅ **완료 (A-1·A-2·A-3)**
 
-> 정확도를 올리는 게 아니라 이미 있는 신뢰 정보를 표면으로 끌어올리는 것. 데이터가 이미 다 있어 값싸다.
+> 정확도를 올리는 게 아니라 이미 있는 신뢰 정보를 표면으로 끌어올리는 것. 데이터가 이미 다 있어 값쌌다.
 
 **A-1. 데이터 신뢰도 리포트 (플래그십)** — `노력 S · 임팩트 상` — ✅ **백엔드 구현 완료**
 - *산출물(done)*: `generate()` 결과에 `result["trust_report"]`(구조화 dict) 부착 ✅ · `tests/test_trust_report.py`
-  8개 통과 ✅. [남은 소비자] 웹 패널 렌더 · 인쇄용 1페이지(HTML) · `.3dm`/`.skp` 노트 임베드.
+  8개 통과 ✅ · `/api/generate` 응답 노출 ✅ · **웹 패널 렌더 ✅**(App.tsx `TrustPanel`, 빌드 검증).
+  [남은 소비자] 인쇄용 1페이지(HTML) · `.3dm`/`.skp` 노트 임베드.
 - *구현*: `src/trust_report.py::build_trust_report(result) -> dict` — **이미 조립된 파이프라인 결과
   (provenance+qa+stats+outputs) 위의 순수 뷰 함수.** 신규 데이터 취득 0. 상세 필드·목업 → §4-A1.
 - ~~의존성 ①~~ **불필요 확인**: "실측 vs 추정" 층수는 이미 있는 `stats.with_floors`(gro_flo_co 있는
   건물)와 `stats.buildings`(총 건물)로 계산 — `BuildingSolid` 수정 없이 됨. (A-2 시각화에서 per-solid
   tier가 필요하면 그때 `floors_source` 추가 검토.)
 
-**A-2. 불확실성 가시화** — `노력 M · 임팩트 상 · 의존성: A-1의 tier 정의`
-- *산출물(done)*: 건물이 **검증/추정/플래그 3-tier**로 뷰어·`.3dm` 레이어·`.skp`·확장에서 일관 색·해치
-  구분. 정사영상 결측 타일은 "영상 없음" 워터마크/틴트로 명시.
-- *구현*: `.3dm`은 `buildings`/`buildings_unverified` 레이어가 이미 존재 → tier 기준으로 분기 확장.
-  `Viewer3D.tsx` 색상 매핑, `ortho.py` 모자이크에 결측 타일 마킹.
+**A-2. 불확실성 가시화** — `노력 M · 임팩트 상` — ✅ **완료**
+- *산출물(done)*: `BuildingSolid.floors_source`(measured|default) 신설 → **추정 건물이 default 정책에서도
+  시각 구분**(핵심: 침묵하는 추정 제거). 뷰어 색(verified=램프 / 추정=주황) ✅ · `.3dm` buildings_unverified
+  레이어를 추정 전체로 확장 ✅ · 확장 builder.rb 색/레이어 ✅ · 정사영상 결측 타일 체커 패턴("영상 없음") ✅.
+- *구현*: `building.py`+`pipeline`(geometry `verified`)·`rhino.py`·`builder.rb`·`ortho.py`(`_nodata_tile`).
+  `tests/test_pipeline.py` +1(default에서 추정 2동 `verified=False` 검증). 전체 303 green + 프론트 빌드 ✓.
+  (`.skp` 이름 접미사·`stats.flagged`는 정책 의미 보존. 확장 색은 데스크톱 실기 렌더 검증 대기.)
 
-**A-3. QA 실무언어 + "검수 통과" 스탬프** — `노력 S · 임팩트 중 · 의존성: 없음`
-- *산출물(done)*: 각 finding에 심의어 `label`(예: `terrain_spike`→"지형 돌출 의심") 추가,
-  `qa.summary`에 `passed: bool` + 경고 0건 시 스탬프 문구.
-- *구현*: `qa.py` 매핑 테이블 + summary 확장. 기존 QA 테스트에 케이스 추가.
+**A-3. QA 실무언어 + "검수 통과" 스탬프** — `노력 S · 임팩트 중` — ✅ **완료**
+- *산출물(done)*: finding마다 심의어 `label`(예: `terrain_spike`→"지형 돌출·웅덩이") ✅ ·
+  `qa.summary`에 `passed: bool` + `stamp` ✅ · 웹 QA 패널이 스탬프·라벨 렌더(내부 코드명 숨김) ✅.
+- *구현*: `qa.py` `KIND_LABELS` 맵 + summary 확장 · `tests/test_qa.py` +3 · App.tsx QA 패널. 전체 302 green.
 
 ### 트랙 B · 공간 측정·분석 (우리만 가능 → 형제 앱에 먹임)
 
 > 3D 기하가 있어야만 가능한 일. 법령 판정은 하지 않고, 측정·시뮬레이션 결과를 소유 앱에 넘긴다.
 
-**B-1. 정북 이격거리·인접지 용도 자동 측정 → `arch-law-diagnose` 연동** — `노력 L · 임팩트 상`
-- *산출물(done)*: `result["measurements"]["north_setback"] = {subject_pnu, height_m, north_setback_m}`
-  산출. 옵션으로 diagnose `POST /api/diagnose`에 전달 후 pass/fail 첨부.
-- *경계*: 우리는 **측정기**(검토기 아님). pass/fail·용도지역 판정은 diagnose 소유.
-- *의존성(실제 선행과제 — 이게 L인 이유)*:
-  1. **대상 대지(subject parcel) 지정** — 현재는 반경 내 현황만 모델링하고 "설계 대지" 개념이 없음.
-     주소 → 그 주소를 포함하는 지적 parcel을 subject로 표시하는 프리미티브 신설.
-  2. **진북 보정** — 일조 사선은 *진북* 기준인데 EPSG:5186 격자북 ≠ 진북(자오선 수렴). 원점에서 먼
-     대지는 수렴각 보정 필요(안 하면 이격 방향이 틀어짐).
-  3. **diagnose 좁은 계약 실검증** — `height.py`가 `north_setback_m`+`adjacent_zone_north`만으로 부분
-     호출 가능한지 확인(전체 DiagnoseRequest 요구 여부). 용도지역은 diagnose가 주소로 조회.
-- *부수효과*: 성사되면 `spec.md`의 **setback 블로커를 좁은 계약으로 해소**.
+**B-1(재조정). 정북일조 사선 "봉투(envelope)" 작도** — `노력 L · 임팩트 상` — 🔀 **재설계(정찰 2026-07-09)**
+- ⚠️ *정찰 결과*: diagnose는 **좁은 계약 없음** — `POST /api/diagnose`에 필수 8필드(address·building_use·
+  site_area·building_area·floor_area_above·floors_above·height·floors_below = **설계 프로그램**)를 요구해
+  현황만 있는 우리가 못 채움. "measure→feed diagnose"는 **폐기**(setback 블로커 유지).
+- *재설계 산출물*: **정북일조 사선 봉투(buildable envelope)를 우리가 기하로 직접 작도** — subject parcel에
+  공개규칙(`h≤10m→1.5m`, `>10m→h/2`, 주거지역만) 적용. 용도지역은 arch-law-graph `/api/zoning`으로.
+  *판정*(특정 설계안 pass/fail)만 diagnose 유보 → 경계 유지(우리는 봉투=기하, diagnose는 verdict).
+- *진행*: **① arch-law-graph 용도지역 연동 ✅ 완료**(`src/geo/zoning.py`·`layers.zoning`·조용한 fallback·
+  `ZONING_BASE`, 테스트 6+2, 웹 배지). 남은 선행: ② subject-parcel 지정 프리미티브, ③ 진북 보정(격자북≠진북),
+  ④ 봉투 작도+뷰어/.3dm 렌더.
 
-**B-3. 일조·그림자 분석 export** — `노력 M · 임팩트 중상 · 의존성: 태양위치 계산(자체)`
-- *산출물(done)*: 위경도+날짜(동지 등)로 시간대별 그림자 폴리곤/일조시간 맵을 JSON+오버레이 이미지로
-  export. 스위트 **미소유 영역이라 마찰 0**.
-- *구현*: 태양 고도·방위는 위경도·일시로 순수 계산(외부 API 불필요). 기존 지형+건물 기하에 투영.
+**B-3. 일조·그림자 분석 export** — `노력 M · 임팩트 중상` — ✅ **완료 (뷰어 포함)**
+- *산출물(done)*: `src/solar.py`(sun_position 저차 천문식 + building_shadow 민코프스키 그림자 +
+  shadows_for_day) ✅ · `layers.shadows=True` → `result["shadows"]`(동지 09~15시, 로컬 미터) ✅ ·
+  `/api/generate` 노출 ✅ · **F2 뷰어 "일조분석" 토글 + 시각 슬라이더**(그림자 폴리곤을 지면 표고에
+  반투명 렌더, 정오 기본) ✅ · `tests/test_solar.py` 9 + 파이프라인 1. [남은 선택] 일조시간(누적) 맵.
+- *구현*: 태양 저차 천문식(외부 API 0) + footprint×높이 태양반대 투영. `Viewer3D.tsx` buildShadowOverlay.
+  전체 313 green + 프론트 빌드 ✓. (진북≈격자북, 그림자 지면 평지 가정 — 슬라이더 옆 날짜 표기.)
 
 **B-2. 조망·스카이라인 3D 시뮬레이션 (경관심의)** — `노력 L · 임팩트 상 · 의존성: 제안 매스 입력`
 - *산출물(done)*: 핵심 조망점 카메라 렌더 + 스카이라인 종/횡단면 컷 + before/after 세트.
@@ -241,7 +245,8 @@ Cadmapper                       arch-site-model                Autodesk Forma
 
 | 방향 | 내용 | 계약 |
 | --- | --- | --- |
-| arch-site-model → **arch-law-diagnose** | 3D에서 측정한 법규 입력값 | `{height_m, north_setback_m, adjacent_zone_north}` → `POST /api/diagnose` |
+| arch-site-model ← **arch-law-graph** | 사이트 용도지역(zone_name·zone_key) | `GET /api/zoning?address=` — ✅ 연동(`ZONING_BASE`, 조용한 fallback) |
+| ~~→ arch-law-diagnose~~ | ~~정북일조 입력값~~ | ⚠️ 좁은 계약 없음(필수 8필드=설계 프로그램) → 봉투는 자체 작도 |
 | arch-site-model → **competition_comparison** | 공간 타당성 데이터 레이어 | 그림자 영향·스카이라인 저촉·경사도 (제안서 *조립*은 그쪽) |
 | arch-site-model ↔ **elevation-renderer** | 3D 맥락 배경 / 2D 입면 상호참조 | 스카이라인 컨텍스트 제공 |
 | arch-site-model → **kw-ai-hub** | 앱 등록(발견 가능성) | 카탈로그 메타 등록 |
