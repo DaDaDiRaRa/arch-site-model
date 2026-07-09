@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Viewer3D, { type SiteGeometry, type ShadowData, type SetbackData } from "./Viewer3D";
+import Viewer3D, { type SiteGeometry } from "./Viewer3D";
 
 // 데이터 신뢰도 리포트 (A-1) — src/trust_report.py 산출
 interface TrustReport {
@@ -29,15 +29,6 @@ interface ZoningInfo {
   src: string;
 }
 
-// 스카이라인 종/횡단면 프로파일 (B-2)
-interface SkylineProfile {
-  name: string;
-  t: number[];
-  before: (number | null)[];
-  after: (number | null)[];
-  ground: number;
-}
-
 // 백엔드 /api/generate 응답 형태
 interface GenerateResult {
   ok: boolean;
@@ -58,10 +49,7 @@ interface GenerateResult {
     summary: { total: number; warnings: number; passed: boolean; stamp: string; by_kind: Record<string, number> };
   } | null;
   trust_report: TrustReport | null;
-  shadows: ShadowData | null;
   zoning: ZoningInfo | null;
-  setback: SetbackData | null;
-  skyline: SkylineProfile[] | null;
 }
 
 export default function App() {
@@ -73,10 +61,7 @@ export default function App() {
   const [roads, setRoads] = useState(false);
   const [water, setWater] = useState(false);
   const [qa, setQa] = useState(false);
-  const [shadowAnalysis, setShadowAnalysis] = useState(false);
   const [zoning, setZoning] = useState(false);
-  const [setbackLayer, setSetbackLayer] = useState(false);
-  const [proposedHeight, setProposedHeight] = useState(0);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,9 +79,8 @@ export default function App() {
         body: JSON.stringify({
           address,
           radius_m: radius,
-          layers: { buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral: cadastral || setbackLayer || proposedHeight > 0, roads, water: terrain && water, qa, shadows: shadowAnalysis, zoning, setback: setbackLayer },
+          layers: { buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral, roads, water: terrain && water, qa, zoning },
           outputs: ["3dm"],
-          proposed_height_m: proposedHeight > 0 ? proposedHeight : undefined,
         }),
       });
       const data = await res.json();
@@ -207,17 +191,7 @@ export default function App() {
                 className="h-4 w-4 rounded border-slate-300"
               />
               자동 QA(검증)
-            </label>
-            <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={shadowAnalysis}
-                onChange={(e) => setShadowAnalysis(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300"
-              />
-              일조·그림자
-            </label>
-            <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
+            </label>            <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
                 checked={zoning}
@@ -225,29 +199,7 @@ export default function App() {
                 className="h-4 w-4 rounded border-slate-300"
               />
               용도지역
-            </label>
-            <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={setbackLayer}
-                onChange={(e) => setSetbackLayer(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300"
-              />
-              정북일조 봉투
-            </label>
-            <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
-              제안 높이(m)
-              <input
-                type="number"
-                min={0}
-                max={500}
-                value={proposedHeight}
-                onChange={(e) => setProposedHeight(Number(e.target.value))}
-                className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm
-                           focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </label>
-          </div>
+            </label>          </div>
 
           <button
             type="submit"
@@ -299,21 +251,7 @@ export default function App() {
 
             {result.geometry && (result.geometry.buildings.length > 0 || result.geometry.terrain) && (
               <div className="mt-6">
-                <Viewer3D geometry={result.geometry} orthoUrl={result.files.ortho_png} qa={result.qa} shadows={result.shadows} setback={result.setback} />
-              </div>
-            )}
-
-            {result.skyline && result.skyline.length > 0 && (
-              <div className="mt-6">
-                <h3 className="text-sm font-semibold text-slate-900">스카이라인 (before / after)</h3>
-                <div className="mt-2 grid gap-4 sm:grid-cols-2">
-                  {result.skyline.map((p) => (
-                    <SkylineChart key={p.name} profile={p} />
-                  ))}
-                </div>
-                <p className="mt-1 text-xs text-slate-400">
-                  회색=현황 · <span className="text-sky-600">하늘색=제안 반영</span>. 경관심의 조망 검토용.
-                </p>
+                <Viewer3D geometry={result.geometry} orthoUrl={result.files.ortho_png} qa={result.qa} />
               </div>
             )}
 
@@ -497,46 +435,6 @@ function SourceCard({ title, children }: { title: string; children: React.ReactN
     <div className="rounded-lg bg-slate-50 p-3 text-xs">
       <dt className="font-medium uppercase tracking-wide text-slate-400">{title}</dt>
       <dd className="mt-1 space-y-0.5">{children}</dd>
-    </div>
-  );
-}
-
-// 스카이라인 종/횡단면 SVG 차트 (B-2) — 회색=현황, 하늘색=제안 반영, 하단 지면선.
-function SkylineChart({ profile }: { profile: SkylineProfile }) {
-  const W = 360;
-  const H = 130;
-  const pad = 6;
-  const ts = profile.t;
-  const n = ts.length;
-  if (n < 2) return null;
-  const tmin = ts[0];
-  const tmax = ts[n - 1];
-  const tops = [...profile.before, ...profile.after].filter((v): v is number => v != null);
-  const ymax = Math.max(profile.ground + 5, ...(tops.length ? tops : [profile.ground + 5]));
-  const ymin = profile.ground;
-  const xOf = (i: number) => pad + ((W - 2 * pad) * (ts[i] - tmin)) / (tmax - tmin || 1);
-  const yOf = (v: number) => H - pad - ((H - 2 * pad) * (v - ymin)) / (ymax - ymin || 1);
-  const linePath = (arr: (number | null)[]) => {
-    let d = "";
-    for (let i = 0; i < n; i++) {
-      d += (i === 0 ? "M" : "L") + xOf(i).toFixed(1) + " " + yOf(arr[i] ?? ymin).toFixed(1);
-    }
-    return d;
-  };
-  const areaAfter =
-    linePath(profile.after) +
-    ` L ${xOf(n - 1).toFixed(1)} ${yOf(ymin).toFixed(1)} L ${xOf(0).toFixed(1)} ${yOf(ymin).toFixed(1)} Z`;
-  return (
-    <div>
-      <div className="mb-1 text-xs font-medium text-slate-600">
-        {profile.name} <span className="text-slate-400">· 최고 {Math.round(ymax - ymin)}m</span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded border border-slate-200 bg-white">
-        <path d={areaAfter} fill="#e0f2fe" />
-        <path d={linePath(profile.before)} fill="none" stroke="#94a3b8" strokeWidth={1.2} />
-        <path d={linePath(profile.after)} fill="none" stroke="#0ea5e9" strokeWidth={1.6} />
-        <line x1={pad} y1={yOf(ymin)} x2={W - pad} y2={yOf(ymin)} stroke="#cbd5e1" strokeWidth={0.8} />
-      </svg>
     </div>
   );
 }

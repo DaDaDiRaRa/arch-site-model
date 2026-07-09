@@ -152,9 +152,6 @@ def generate(
     client: VWorldClient | None = None,
     ortho_fetch=None,
     include_geometry: bool = False,
-    shadow_date: str | None = None,
-    shadow_hours: list[int] | None = None,
-    proposed_height_m: float | None = None,
 ) -> dict:
     """건물 매싱(+ 선택적 지형/지적) 생성 결과를 반환.
 
@@ -563,22 +560,6 @@ def generate(
 
         qa_result = run_qa(solids, dem=dem, terrain_mesh=terrain_mesh, m2i=config.M2I)
 
-    # 일조·그림자 분석 (B-3) — 옵션. 위경도+동지 기준 시간대별 그림자 폴리곤(로컬 미터, geometry 동일 좌표).
-    shadows = None
-    if layers.get("shadows"):
-        from datetime import date as _date
-
-        from src.solar import shadows_for_day
-
-        sd = shadow_date or f"{datetime.now(timezone.utc).year}-12-21"  # 기본 동지
-        try:
-            y, mo, d = (int(v) for v in sd.split("-"))
-            hrs = shadow_hours or [9, 10, 11, 12, 13, 14, 15]
-            entries = shadows_for_day(solids, coord["lat"], coord["lon"], _date(y, mo, d), hrs)
-            shadows = {"date": sd, "hours": hrs, "entries": entries}
-        except Exception as e:  # noqa: BLE001 — 그림자 실패가 생성을 막지 않음
-            warnings.append(f"일조·그림자 분석 실패: {e}")
-
     # 용도지역 조회 (arch-law-graph 연동) — 옵션. 미설정/미도달 시 조용히 생략.
     zoning = None
     if layers.get("zoning"):
@@ -589,63 +570,6 @@ def generate(
             warnings.append(
                 "용도지역 조회 생략 — ZONING_BASE 미설정/미도달 또는 결과 없음(arch-law-graph)"
             )
-
-    # 정북일조 사선 봉투 (B-1', 재설계) — 옵션. subject parcel(지적) 필요. 판정은 diagnose 유보.
-    setback_env = None
-    if layers.get("setback"):
-        parcels = cadastral_parcels or []
-        if not parcels:
-            warnings.append("정북일조 봉투 생략 — 지적(cadastral) 레이어 필요")
-        else:
-            from src.geometry.setback import (
-                build_setback_envelope,
-                find_subject_parcel,
-                north_azimuth_deg,
-                true_north_local,
-            )
-
-            px, py = to_5186(coord["lon"], coord["lat"])
-            subject = find_subject_parcel(parcels, (px - offset[0], py - offset[1]))
-            if subject is None:
-                warnings.append("정북일조 봉투 생략 — 주소를 포함하는 지적 필지를 찾지 못함")
-            else:
-                nd = true_north_local(coord["lon"], coord["lat"])
-                zone_name = (zoning or {}).get("zone_name")
-                setback_env = {
-                    "subject_pnu": getattr(subject, "pnu", None),
-                    "subject_ring": [[round(x, 2), round(y, 2)] for x, y in subject.footprint_m],
-                    "north_azimuth_deg": round(north_azimuth_deg(nd), 3),
-                    "zone_name": zone_name,
-                    "zone_applies": ("주거" in zone_name) if zone_name else None,
-                    "envelope": build_setback_envelope(subject.footprint_m, nd),
-                    "rule": "건축법 시행령 §86 ① (참고용 봉투 — 판정은 arch-law-diagnose)",
-                }
-
-    # 조망·스카이라인 (B-2) — 제안 매스 + 조망점 + 스카이라인 프로파일. proposed_height_m 시.
-    skyline = None
-    if proposed_height_m and geometry is not None:
-        proposed = None
-        parcels = cadastral_parcels or []
-        if not parcels:
-            warnings.append("제안 매스 생략 — 지적(cadastral) 레이어 필요")
-        else:
-            from src.geometry.proposal import build_proposed_mass, standard_viewpoints
-            from src.geometry.setback import find_subject_parcel
-
-            px, py = to_5186(coord["lon"], coord["lat"])
-            subject = find_subject_parcel(parcels, (px - offset[0], py - offset[1]))
-            if subject is None:
-                warnings.append("제안 매스 생략 — 주소를 포함하는 지적 필지를 찾지 못함")
-            else:
-                proposed = build_proposed_mass(subject.footprint_m, proposed_height_m, dem, floor_h_m)
-                if proposed:
-                    geometry["proposed"] = proposed
-                    geometry["viewpoints"] = standard_viewpoints(
-                        subject.footprint_m, proposed["base_z"], proposed["height"]
-                    )
-        from src.geometry.skyline import build_skylines
-
-        skyline = build_skylines(solids, proposed) or None
 
     res = {
         "ok": True,
@@ -668,10 +592,7 @@ def generate(
         "provenance": prov,
         "warnings": warnings,
         "qa": qa_result,
-        "shadows": shadows,
         "zoning": zoning,
-        "setback": setback_env,
-        "skyline": skyline,
     }
     # 데이터 신뢰도 리포트(A-1) — 조립된 결과 위의 순수 뷰. 소비자(웹/노트)가 렌더만.
     from src.trust_report import build_trust_report

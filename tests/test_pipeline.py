@@ -457,26 +457,6 @@ def test_geometry_marks_estimated_buildings_under_default(monkeypatch):
     assert verified.count(True) == 2    # 실측 2개
 
 
-def test_generate_shadows_layer(monkeypatch):
-    """B-3: layers.shadows=True → result['shadows']에 시간대별 그림자 폴리곤."""
-    monkeypatch.setattr(
-        pl, "geocode", lambda a: {"lon": 126.978, "lat": 37.5665, "crs": "EPSG:4326"}
-    )
-    out = generate(
-        "서울특별시 중구",
-        client=FakeClient(_daejeon_features()),
-        layers={"buildings": True, "shadows": True},
-        shadow_date="2026-12-21",
-        shadow_hours=[12, 23],
-    )
-    sh = out["shadows"]
-    assert sh["date"] == "2026-12-21"
-    noon = next(e for e in sh["entries"] if e["time"] == "12:00")
-    night = next(e for e in sh["entries"] if e["time"] == "23:00")
-    assert noon["sun_alt"] > 0 and noon["polygons"]          # 정오 그림자 존재
-    assert night["polygons"] == []                            # 야간 없음
-
-
 def test_generate_zoning_layer(monkeypatch):
     """arch-law-graph 연동: layers.zoning=True → result['zoning'] 부착(성공 시)."""
     monkeypatch.setattr(
@@ -507,64 +487,6 @@ def test_generate_zoning_graceful_when_unavailable(monkeypatch):
     assert out["ok"] is True
     assert out["zoning"] is None
     assert any("용도지역" in w for w in out["warnings"])
-
-
-def test_generate_setback_needs_cadastral(monkeypatch):
-    """B-1': layers.setback=True 인데 지적 없으면 setback None + warning, 생성은 성공."""
-    monkeypatch.setattr(
-        pl, "geocode", lambda a: {"lon": 127.02, "lat": 37.5, "crs": "EPSG:4326"}
-    )
-    out = generate(
-        "서울 강남 …", client=FakeClient(_daejeon_features()),
-        layers={"buildings": True, "setback": True},
-    )
-    assert out["ok"] is True
-    assert out["setback"] is None
-    assert any("정북일조" in w for w in out["warnings"])
-
-
-def test_generate_setback_envelope(monkeypatch):
-    """B-1': subject parcel 위 정북일조 봉투 메시 생성 → result['setback']."""
-    monkeypatch.setattr(
-        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
-    )
-    from src.geometry.cadastral import CadastralParcel
-
-    fake = CadastralParcel(pnu="1" * 19, footprint_m=[(0, 0), (30, 0), (30, 30), (0, 30)])
-    monkeypatch.setattr("src.geometry.setback.find_subject_parcel", lambda parcels, pt: fake)
-    out = generate(
-        "대전 …",
-        client=FakeClientMulti(_daejeon_features(), _cadastral_features()),
-        layers={"buildings": True, "cadastral": True, "setback": True},
-    )
-    sb = out["setback"]
-    assert sb is not None
-    assert sb["subject_pnu"] == "1" * 19
-    assert sb["envelope"]["triangles"]        # 봉투 메시 생성됨
-    assert "north_azimuth_deg" in sb
-
-
-def test_generate_proposed_mass(monkeypatch):
-    """B-2: proposed_height_m → geometry.proposed(before/after) + 4 조망점."""
-    monkeypatch.setattr(
-        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
-    )
-    from src.geometry.cadastral import CadastralParcel
-
-    fake = CadastralParcel(pnu="1" * 19, footprint_m=[(0, 0), (30, 0), (30, 30), (0, 30)])
-    monkeypatch.setattr("src.geometry.setback.find_subject_parcel", lambda parcels, pt: fake)
-    out = generate(
-        "대전 …",
-        client=FakeClientMulti(_daejeon_features(), _cadastral_features()),
-        layers={"buildings": True, "cadastral": True},
-        include_geometry=True,
-        proposed_height_m=45.0,
-    )
-    g = out["geometry"]
-    assert g["proposed"]["height"] == 45.0
-    assert g["proposed"]["proposed"] is True
-    assert len(g["viewpoints"]) == 4
-    assert out["skyline"] and len(out["skyline"]) == 2   # 횡단·종단 스카이라인
 
 
 def test_generate_geometry_cadastral(monkeypatch):

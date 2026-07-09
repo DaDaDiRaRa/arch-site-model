@@ -54,9 +54,6 @@ class GenerateRequest(BaseModel):
     missing_floors_policy: str = Field(
         "default", description='층수 누락 처리: "default"|"skip"|"flag"'
     )
-    proposed_height_m: float | None = Field(
-        None, gt=0, description="제안 건물 높이(m) — 조망·스카이라인 B-2. subject 대지에 매스 배치"
-    )
 
 
 class TilePlanRequest(BaseModel):
@@ -107,7 +104,6 @@ def generate_endpoint(req: GenerateRequest) -> dict:
         output_dir=str(job_dir),
         missing_floors_policy=req.missing_floors_policy,
         include_geometry=True,   # 브라우저 3D 미리보기용 지오메트리 JSON (F2)
-        proposed_height_m=req.proposed_height_m,
     )
 
     if not result.get("ok"):
@@ -139,10 +135,7 @@ def generate_endpoint(req: GenerateRequest) -> dict:
         "warnings": result.get("warnings"),
         "qa": result.get("qa"),   # 자동 QA findings (layers.qa=True 시)
         "trust_report": result.get("trust_report"),  # 데이터 신뢰도 리포트 (A-1)
-        "shadows": result.get("shadows"),  # 일조·그림자 분석 (B-3, layers.shadows=True 시)
         "zoning": result.get("zoning"),  # 용도지역 (arch-law-graph 연동, layers.zoning=True 시)
-        "setback": result.get("setback"),  # 정북일조 사선 봉투 (B-1', layers.setback=True 시)
-        "skyline": result.get("skyline"),  # 스카이라인 종/횡단면 (B-2, proposed_height_m 시)
     }
 
 

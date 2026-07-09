@@ -133,35 +133,25 @@ Cadmapper                       arch-site-model                Autodesk Forma
 
 > 3D 기하가 있어야만 가능한 일. 법령 판정은 하지 않고, 측정·시뮬레이션 결과를 소유 앱에 넘긴다.
 
-**B-1(재조정). 정북일조 사선 "봉투(envelope)" 작도** — `노력 L · 임팩트 상` — ✅ **완료 (백엔드+뷰어)**
-- ⚠️ *정찰 결과*: diagnose는 **좁은 계약 없음** — `POST /api/diagnose`에 필수 8필드(address·building_use·
-  site_area·building_area·floor_area_above·floors_above·height·floors_below = **설계 프로그램**)를 요구해
-  현황만 있는 우리가 못 채움. "measure→feed diagnose"는 **폐기**(setback 블로커 유지).
-- *재설계 산출물*: **정북일조 사선 봉투(buildable envelope)를 우리가 기하로 직접 작도** — subject parcel에
-  공개규칙(`h≤10m→1.5m`, `>10m→h/2`, 주거지역만) 적용. 용도지역은 arch-law-graph `/api/zoning`으로.
-  *판정*(특정 설계안 pass/fail)만 diagnose 유보 → 경계 유지(우리는 봉투=기하, diagnose는 verdict).
-- *진행*: **① 용도지역 연동 ✅**(`zoning.py`·`layers.zoning`·`ZONING_BASE`, 웹 배지) · **② subject-parcel
-  지정 ✅** · **③ 진북 보정 ✅**(자오선 수렴) · **④ 봉투 작도(백엔드) ✅** — `src/geometry/setback.py`
-  (`true_north_local`·`find_subject_parcel`·`setback_max_height`·`build_setback_envelope`),
-  `layers.setback`→`result["setback"]`(subject_pnu·north_azimuth·봉투 메시·zone_applies), 테스트 6+2, 329 green ·
-  **⑤ F2 뷰어 봉투 렌더 ✅**(반투명 사선면 + subject 대지 강조 + "정북일조" 토글, 지면 표고 정렬, 빌드 검증).
-  규칙값은 arch-law-diagnose와 동일(단일 소스), *판정*은 유보. [남은 선택] .3dm 봉투 레이어.
+**B-1(재조정). 정북일조 사선 봉투** — `노력 L · 임팩트 상` — ⏸️ **보류 (2026-07-09 구현 후 제거)**
+- *결정*: 용도지역 연동·subject parcel·진북보정·봉투작도·뷰어렌더까지 완성했으나 **되돌림**. B-2와 같은
+  이유 — 현황 재현이 아닌 **규제/설계 분석**으로 드리프트, *권위 판정은 diagnose 몫*이라 우리 건 "참고용"
+  캐비앳투성이 + 가장 복잡·취약(실데이터서 z 455m 폭증→cap 급땜). 실사용자 pull 없이 넓힌 것이라 제거(사용자 결정).
+- *유지된 부산물*: **arch-law-graph `/api/zoning` 연동은 남김**(용도지역 라벨 = "여기 뭘 지을 수 있나"의
+  독립 가치). `setback.py`·봉투 코드/테스트/뷰어는 전부 제거.
+- *재개 조건*: 실수요 시. 그땐 봉투 자체작도보다 diagnose에 좁은 계약이 열리는 쪽을 우선.
 
-**B-3. 일조·그림자 분석 export** — `노력 M · 임팩트 중상` — ✅ **완료 (뷰어 포함)**
-- *산출물(done)*: `src/solar.py`(sun_position 저차 천문식 + building_shadow 민코프스키 그림자 +
-  shadows_for_day) ✅ · `layers.shadows=True` → `result["shadows"]`(동지 09~15시, 로컬 미터) ✅ ·
-  `/api/generate` 노출 ✅ · **F2 뷰어 "일조분석" 토글 + 시각 슬라이더**(그림자 폴리곤을 지면 표고에
-  반투명 렌더, 정오 기본) ✅ · `tests/test_solar.py` 9 + 파이프라인 1. [남은 선택] 일조시간(누적) 맵.
-- *구현*: 태양 저차 천문식(외부 API 0) + footprint×높이 태양반대 투영. `Viewer3D.tsx` buildShadowOverlay.
-  전체 313 green + 프론트 빌드 ✓. (진북≈격자북, 그림자 지면 평지 가정 — 슬라이더 옆 날짜 표기.)
+**B-3. 일조·그림자** — `노력 M · 임팩트 중상` — ⏸️ **보류 (2026-07-09 구현 후 제거)**
+- *결정*: `solar.py`(천문식·실데이터 검증 정확: 동지 정오 대전 고도 29.9°)·뷰어 슬라이더까지 완성했으나
+  **되돌림**. 평지가정 러프버전이라 건축가 BIM 일조분석을 못 이기는 데모급 + 실사용자 pull 없음(사용자 결정).
+  코드/테스트/뷰어 전부 제거. *재개 조건*: 실수요 시(sun_position 계산은 정확했으니 재구현 저비용).
 
-**B-2. 조망·스카이라인 (경관심의)** — `노력 L · 임팩트 상` — ✅ **완료**
-- *산출물(done)*: **제안 매스 입력 ✅**(`src/geometry/proposal.py` — subject 대지×제안높이 지형앉힘,
-  `proposed_height_m`, `geometry.proposed`, 현황 solids와 분리→통계·QA 무오염) · **before/after ✅**(뷰어 "제안"
-  토글) · **4방위 조망점 ✅**(`standard_viewpoints`, 뷰어 버튼→카메라 이동) · **스카이라인 종/횡단면 ✅**
-  (`src/geometry/skyline.py` `build_skylines` — 건물 상단 실루엣 투영, before/after, 웹 SVG 차트). 테스트 3+3+2, 336 green.
-- *경계*: `elevation-renderer`(2D 입면도)와 **상보** — 우리는 3D 맥락 속 매스+조망.
-- *시너지*: 제안 매스 + 정북일조 봉투(B-1') 함께 켜면 "제안이 사선 제한에 드나" 육안 검토.
+**B-2. 조망·스카이라인 (경관심의)** — `노력 L · 임팩트 상` — ⏸️ **보류 (2026-07-09 구현 후 제거)**
+- *결정*: 제안 매스·조망점·before/after·스카이라인까지 구현했으나 **되돌림**. "제안 매스"를 받는 순간
+  이 앱 정체성(**현황 재현**)에서 벗어나 *설계 도구*로 진입 — 우리 박스는 SketchUp/Rhino 실설계에 못 미치고,
+  실사용자 pull 없이 넓힌 것이라 판단(사용자 결정). 코드/테스트/뷰어 전부 제거, 나머지 트랙엔 무영향.
+- *재개 조건*: 실사용자가 실제로 요구할 때. 그땐 우리 박스가 아니라 **실설계 입력 연동** 또는
+  `competition_comparison` 핸드오프로 재설계(경계 재확인 필요 — `elevation-renderer`/제안서 앱과 중복 주의).
 
 **밀도 지표**: 건폐율/용적률 *판정*은 `arch-law-diagnose` 소유 → 우리는 **주변 밀도 맥락 측정**만.
 
