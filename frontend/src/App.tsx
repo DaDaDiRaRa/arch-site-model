@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Viewer3D, { type SiteGeometry, type ShadowData } from "./Viewer3D";
+import Viewer3D, { type SiteGeometry, type ShadowData, type SetbackData } from "./Viewer3D";
 
 // 데이터 신뢰도 리포트 (A-1) — src/trust_report.py 산출
 interface TrustReport {
@@ -51,6 +51,7 @@ interface GenerateResult {
   trust_report: TrustReport | null;
   shadows: ShadowData | null;
   zoning: ZoningInfo | null;
+  setback: SetbackData | null;
 }
 
 export default function App() {
@@ -64,6 +65,7 @@ export default function App() {
   const [qa, setQa] = useState(false);
   const [shadowAnalysis, setShadowAnalysis] = useState(false);
   const [zoning, setZoning] = useState(false);
+  const [setbackLayer, setSetbackLayer] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +83,7 @@ export default function App() {
         body: JSON.stringify({
           address,
           radius_m: radius,
-          layers: { buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral, roads, water: terrain && water, qa, shadows: shadowAnalysis, zoning },
+          layers: { buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral: cadastral || setbackLayer, roads, water: terrain && water, qa, shadows: shadowAnalysis, zoning, setback: setbackLayer },
           outputs: ["3dm"],
         }),
       });
@@ -212,6 +214,15 @@ export default function App() {
               />
               용도지역
             </label>
+            <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={setbackLayer}
+                onChange={(e) => setSetbackLayer(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              정북일조 봉투
+            </label>
           </div>
 
           <button
@@ -264,7 +275,7 @@ export default function App() {
 
             {result.geometry && (result.geometry.buildings.length > 0 || result.geometry.terrain) && (
               <div className="mt-6">
-                <Viewer3D geometry={result.geometry} orthoUrl={result.files.ortho_png} qa={result.qa} shadows={result.shadows} />
+                <Viewer3D geometry={result.geometry} orthoUrl={result.files.ortho_png} qa={result.qa} shadows={result.shadows} setback={result.setback} />
               </div>
             )}
 

@@ -509,6 +509,41 @@ def test_generate_zoning_graceful_when_unavailable(monkeypatch):
     assert any("용도지역" in w for w in out["warnings"])
 
 
+def test_generate_setback_needs_cadastral(monkeypatch):
+    """B-1': layers.setback=True 인데 지적 없으면 setback None + warning, 생성은 성공."""
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.02, "lat": 37.5, "crs": "EPSG:4326"}
+    )
+    out = generate(
+        "서울 강남 …", client=FakeClient(_daejeon_features()),
+        layers={"buildings": True, "setback": True},
+    )
+    assert out["ok"] is True
+    assert out["setback"] is None
+    assert any("정북일조" in w for w in out["warnings"])
+
+
+def test_generate_setback_envelope(monkeypatch):
+    """B-1': subject parcel 위 정북일조 봉투 메시 생성 → result['setback']."""
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
+    )
+    from src.geometry.cadastral import CadastralParcel
+
+    fake = CadastralParcel(pnu="1" * 19, footprint_m=[(0, 0), (30, 0), (30, 30), (0, 30)])
+    monkeypatch.setattr("src.geometry.setback.find_subject_parcel", lambda parcels, pt: fake)
+    out = generate(
+        "대전 …",
+        client=FakeClientMulti(_daejeon_features(), _cadastral_features()),
+        layers={"buildings": True, "cadastral": True, "setback": True},
+    )
+    sb = out["setback"]
+    assert sb is not None
+    assert sb["subject_pnu"] == "1" * 19
+    assert sb["envelope"]["triangles"]        # 봉투 메시 생성됨
+    assert "north_azimuth_deg" in sb
+
+
 def test_generate_geometry_cadastral(monkeypatch):
     """cadastral 레이어 + include_geometry → geometry.cadastral 링이 지형 표고로 드레이프."""
     import json

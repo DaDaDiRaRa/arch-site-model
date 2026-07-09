@@ -137,6 +137,7 @@ def generate_endpoint(req: GenerateRequest) -> dict:
         "trust_report": result.get("trust_report"),  # 데이터 신뢰도 리포트 (A-1)
         "shadows": result.get("shadows"),  # 일조·그림자 분석 (B-3, layers.shadows=True 시)
         "zoning": result.get("zoning"),  # 용도지역 (arch-law-graph 연동, layers.zoning=True 시)
+        "setback": result.get("setback"),  # 정북일조 사선 봉투 (B-1', layers.setback=True 시)
     }
 
 

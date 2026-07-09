@@ -55,11 +55,22 @@ export interface ShadowData {
   entries: { time: string; sun_alt: number; sun_az: number; polygons: [number, number][][] }[];
 }
 
+export interface SetbackData {
+  subject_pnu: string | null;
+  subject_ring: [number, number][];
+  north_azimuth_deg: number;
+  zone_name: string | null;
+  zone_applies: boolean | null;
+  envelope: { vertices: [number, number, number][]; triangles: [number, number, number][] } | null;
+  rule: string;
+}
+
 interface Props {
   geometry: SiteGeometry;
   orthoUrl?: string; // 정사영상 PNG (지형에 드레이프)
   qa?: QaResult | null; // 자동 QA findings — 결함 위치에 수직 핀 표시
   shadows?: ShadowData | null; // 일조·그림자 분석 (B-3) — 시간대별 그림자 폴리곤
+  setback?: SetbackData | null; // 정북일조 사선 봉투 (B-1') — subject 대지 + 봉투 메시
 }
 
 type ColorMode = "height" | "flat";
@@ -71,6 +82,7 @@ const C_TERRAIN = 0x6a9a55; // olive green
 const C_EDGE = 0x27303a; // 건물 외곽선 (짙은 슬레이트)
 const C_CADASTRAL = 0xd9a441; // sandy yellow — 대지경계 (.3dm cadastral 레이어와 통일)
 const C_SHADOW = 0x1b2733; // dark slate — 일조 그림자 오버레이 (B-3)
+const C_SETBACK = 0x6366f1; // indigo — 정북일조 사선 봉투 (B-1')
 const CADASTRAL_LIFT = 0.5; // 지형 위로 살짝 띄워 z-fighting 방지 (m)
 const C_ROAD_FILL = 0x74797f; // 아스팔트 그레이 — 도로 노면 (R1b)
 const C_ROAD_EDGE = 0x3a3f45; // 짙은 그레이 — 도로 외곽선
@@ -87,7 +99,7 @@ const RAMP_LO = new THREE.Color(0xa9cfe8);
 const RAMP_HI = new THREE.Color(0x1f3a5f);
 
 // three는 Y-up, 데이터는 Z-up(z=높이) → 루트 그룹을 X축 -90° 회전해 맞춘다.
-export default function Viewer3D({ geometry, orthoUrl, qa, shadows }: Props) {
+export default function Viewer3D({ geometry, orthoUrl, qa, shadows, setback }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRefs = useRef<{
     buildings?: THREE.Group | null;
@@ -99,6 +111,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa, shadows }: Props) {
     water?: THREE.Object3D | null;
     qa?: THREE.Object3D | null;
     shadows?: THREE.Group | null;
+    setback?: THREE.Group | null;
     root?: THREE.Group | null;
     buildingMeshes: THREE.Mesh[];
     edges: THREE.LineSegments[];
@@ -118,6 +131,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa, shadows }: Props) {
   const [showShadows, setShowShadows] = useState(true);
   const [showShadowAnalysis, setShowShadowAnalysis] = useState(true);
   const [shadowIdx, setShadowIdx] = useState(0);
+  const [showSetback, setShowSetback] = useState(true);
   const [ssao, setSsao] = useState(true); // 주변광 차폐(GTAO) — 틈·밑동 음영으로 입체감
   const ssaoRef = useRef(true); // 렌더 루프가 최신 토글값을 읽도록(재설정 없이)
   const [error, setError] = useState<string | null>(null);
@@ -365,6 +379,25 @@ export default function Viewer3D({ geometry, orthoUrl, qa, shadows }: Props) {
     };
   }, [geometry, shadows, shadowIdx, groundZ, daylight, showShadowAnalysis]);
 
+  // 정북일조 봉투 오버레이(B-1'): subject 대지 강조 + 봉투 메시를 지면 표고에 반투명 렌더.
+  useEffect(() => {
+    const root = sceneRefs.current.root;
+    if (!root) return;
+    const grp = buildSetbackOverlay(setback, groundZ);
+    if (grp) {
+      grp.visible = showSetback;
+      root.add(grp);
+      sceneRefs.current.setback = grp;
+    }
+    return () => {
+      if (grp) {
+        root.remove(grp);
+        disposeGroup(grp);
+      }
+      sceneRefs.current.setback = null;
+    };
+  }, [geometry, setback, groundZ, showSetback]);
+
   const nB = geometry.buildings.length;
   const nT = geometry.terrain?.triangles.length ?? 0;
   const nC = geometry.cadastral?.length ?? 0;
@@ -421,6 +454,10 @@ export default function Viewer3D({ geometry, orthoUrl, qa, shadows }: Props) {
         <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={showShadowAnalysis} onChange={(e) => setShowShadowAnalysis(e.target.checked)} className="h-4 w-4" disabled={!daylight.length} />
           일조분석 <span className="text-xs text-slate-400">({daylight.length}시각)</span>
+        </label>
+        <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={showSetback} onChange={(e) => setShowSetback(e.target.checked)} className="h-4 w-4" disabled={!setback} />
+          <span className="text-indigo-600">정북일조</span>
         </label>
         <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={ssao} onChange={(e) => setSsao(e.target.checked)} className="h-4 w-4" />
@@ -650,6 +687,57 @@ function disposeGroup(obj: THREE.Object3D) {
     if (m.material) mats.add(m.material as THREE.Material);
   });
   mats.forEach((mat) => mat.dispose());
+}
+
+// 정북일조 봉투 오버레이(B-1'): subject 대지 경계(라인) + 봉투 상단면(반투명 사선 메시). z=지면 표고+높이.
+function buildSetbackOverlay(
+  setback: SetbackData | null | undefined,
+  groundZ: number
+): THREE.Group | null {
+  if (!setback) return null;
+  const g = new THREE.Group();
+  g.name = "setback";
+
+  const ring = setback.subject_ring;
+  if (ring && ring.length >= 3) {
+    const pos = new Float32Array(ring.length * 3);
+    for (let i = 0; i < ring.length; i++) {
+      pos[3 * i] = ring[i][0];
+      pos[3 * i + 1] = ring[i][1];
+      pos[3 * i + 2] = groundZ + 0.3;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.add(new THREE.LineLoop(geo, new THREE.LineBasicMaterial({ color: C_SETBACK })));
+  }
+
+  const env = setback.envelope;
+  if (env && env.vertices.length && env.triangles.length) {
+    const pos = new Float32Array(env.vertices.length * 3);
+    for (let i = 0; i < env.vertices.length; i++) {
+      pos[3 * i] = env.vertices[i][0];
+      pos[3 * i + 1] = env.vertices[i][1];
+      pos[3 * i + 2] = groundZ + env.vertices[i][2]; // 봉투 z = 지면 위 높이
+    }
+    const idx: number[] = [];
+    for (const t of env.triangles) idx.push(t[0], t[1], t[2]);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({
+      color: C_SETBACK,
+      transparent: true,
+      opacity: 0.26,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      roughness: 0.9,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 2;
+    g.add(mesh);
+  }
+  return g;
 }
 
 // 도로 노면(R1b): DEM 드레이프한 삼각 메시(회색 면) + 외곽선(짙은 라인). z-fighting 방지 리프트.

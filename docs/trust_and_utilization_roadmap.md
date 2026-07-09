@@ -133,16 +133,19 @@ Cadmapper                       arch-site-model                Autodesk Forma
 
 > 3D 기하가 있어야만 가능한 일. 법령 판정은 하지 않고, 측정·시뮬레이션 결과를 소유 앱에 넘긴다.
 
-**B-1(재조정). 정북일조 사선 "봉투(envelope)" 작도** — `노력 L · 임팩트 상` — 🔀 **재설계(정찰 2026-07-09)**
+**B-1(재조정). 정북일조 사선 "봉투(envelope)" 작도** — `노력 L · 임팩트 상` — ✅ **완료 (백엔드+뷰어)**
 - ⚠️ *정찰 결과*: diagnose는 **좁은 계약 없음** — `POST /api/diagnose`에 필수 8필드(address·building_use·
   site_area·building_area·floor_area_above·floors_above·height·floors_below = **설계 프로그램**)를 요구해
   현황만 있는 우리가 못 채움. "measure→feed diagnose"는 **폐기**(setback 블로커 유지).
 - *재설계 산출물*: **정북일조 사선 봉투(buildable envelope)를 우리가 기하로 직접 작도** — subject parcel에
   공개규칙(`h≤10m→1.5m`, `>10m→h/2`, 주거지역만) 적용. 용도지역은 arch-law-graph `/api/zoning`으로.
   *판정*(특정 설계안 pass/fail)만 diagnose 유보 → 경계 유지(우리는 봉투=기하, diagnose는 verdict).
-- *진행*: **① arch-law-graph 용도지역 연동 ✅ 완료**(`src/geo/zoning.py`·`layers.zoning`·조용한 fallback·
-  `ZONING_BASE`, 테스트 6+2, 웹 배지). 남은 선행: ② subject-parcel 지정 프리미티브, ③ 진북 보정(격자북≠진북),
-  ④ 봉투 작도+뷰어/.3dm 렌더.
+- *진행*: **① 용도지역 연동 ✅**(`zoning.py`·`layers.zoning`·`ZONING_BASE`, 웹 배지) · **② subject-parcel
+  지정 ✅** · **③ 진북 보정 ✅**(자오선 수렴) · **④ 봉투 작도(백엔드) ✅** — `src/geometry/setback.py`
+  (`true_north_local`·`find_subject_parcel`·`setback_max_height`·`build_setback_envelope`),
+  `layers.setback`→`result["setback"]`(subject_pnu·north_azimuth·봉투 메시·zone_applies), 테스트 6+2, 329 green ·
+  **⑤ F2 뷰어 봉투 렌더 ✅**(반투명 사선면 + subject 대지 강조 + "정북일조" 토글, 지면 표고 정렬, 빌드 검증).
+  규칙값은 arch-law-diagnose와 동일(단일 소스), *판정*은 유보. [남은 선택] .3dm 봉투 레이어.
 
 **B-3. 일조·그림자 분석 export** — `노력 M · 임팩트 중상` — ✅ **완료 (뷰어 포함)**
 - *산출물(done)*: `src/solar.py`(sun_position 저차 천문식 + building_shadow 민코프스키 그림자 +

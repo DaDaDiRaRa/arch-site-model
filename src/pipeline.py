@@ -589,6 +589,37 @@ def generate(
                 "용도지역 조회 생략 — ZONING_BASE 미설정/미도달 또는 결과 없음(arch-law-graph)"
             )
 
+    # 정북일조 사선 봉투 (B-1', 재설계) — 옵션. subject parcel(지적) 필요. 판정은 diagnose 유보.
+    setback_env = None
+    if layers.get("setback"):
+        parcels = cadastral_parcels or []
+        if not parcels:
+            warnings.append("정북일조 봉투 생략 — 지적(cadastral) 레이어 필요")
+        else:
+            from src.geometry.setback import (
+                build_setback_envelope,
+                find_subject_parcel,
+                north_azimuth_deg,
+                true_north_local,
+            )
+
+            px, py = to_5186(coord["lon"], coord["lat"])
+            subject = find_subject_parcel(parcels, (px - offset[0], py - offset[1]))
+            if subject is None:
+                warnings.append("정북일조 봉투 생략 — 주소를 포함하는 지적 필지를 찾지 못함")
+            else:
+                nd = true_north_local(coord["lon"], coord["lat"])
+                zone_name = (zoning or {}).get("zone_name")
+                setback_env = {
+                    "subject_pnu": getattr(subject, "pnu", None),
+                    "subject_ring": [[round(x, 2), round(y, 2)] for x, y in subject.footprint_m],
+                    "north_azimuth_deg": round(north_azimuth_deg(nd), 3),
+                    "zone_name": zone_name,
+                    "zone_applies": ("주거" in zone_name) if zone_name else None,
+                    "envelope": build_setback_envelope(subject.footprint_m, nd),
+                    "rule": "건축법 시행령 §86 ① (참고용 봉투 — 판정은 arch-law-diagnose)",
+                }
+
     res = {
         "ok": True,
         "address": cleaned,
@@ -612,6 +643,7 @@ def generate(
         "qa": qa_result,
         "shadows": shadows,
         "zoning": zoning,
+        "setback": setback_env,
     }
     # 데이터 신뢰도 리포트(A-1) — 조립된 결과 위의 순수 뷰. 소비자(웹/노트)가 렌더만.
     from src.trust_report import build_trust_report
