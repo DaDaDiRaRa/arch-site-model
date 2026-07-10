@@ -16,6 +16,8 @@ from shapely.geometry import box, shape
 
 # 도로 GeoJSON 원격 fetch 캐시(URL→본문). 로컬 파일은 캐시 안 함(개발 중 재베이크 즉시 반영).
 _GEOJSON_CACHE: dict[str, str] = {}
+_GEOJSON_CACHE_MAX = 16                  # 캐시 항목 상한(장기 실행 메모리 누적 방지)
+_MAX_GEOJSON_BYTES = 200 * 1024 * 1024   # 원격 GeoJSON 크기 상한(악성/과대 응답 OOM 방지)
 
 
 def _read_geojson_text(loc) -> str | None:
@@ -33,11 +35,20 @@ def _read_geojson_text(loc) -> str | None:
         import requests
 
         try:
-            resp = requests.get(s, timeout=30)
+            resp = requests.get(s, timeout=30, stream=True)
             resp.raise_for_status()
-            text = resp.text
+            chunks: list[bytes] = []
+            total = 0
+            for chunk in resp.iter_content(chunk_size=65536):
+                total += len(chunk)
+                if total > _MAX_GEOJSON_BYTES:
+                    return None  # 비정상적으로 큰 원격 파일 — OOM 방지
+                chunks.append(chunk)
+            text = b"".join(chunks).decode("utf-8", errors="replace")
         except requests.RequestException:
             return None
+        if len(_GEOJSON_CACHE) >= _GEOJSON_CACHE_MAX:
+            _GEOJSON_CACHE.pop(next(iter(_GEOJSON_CACHE)), None)  # FIFO evict
         _GEOJSON_CACHE[s] = text
         return text
     p = Path(s)

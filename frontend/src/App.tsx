@@ -83,9 +83,17 @@ export default function App() {
           outputs: ["3dm"],
         }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null; // 비-JSON 응답(502·타임아웃 HTML 등) — res.json() 예외로 오해 메시지 방지
+      }
       if (!res.ok) {
-        setError(data.detail ?? "생성에 실패했습니다.");
+        setError(data?.detail ?? `생성 실패 (HTTP ${res.status})`);
+      } else if (!data) {
+        setError(`서버 응답을 해석할 수 없습니다 (HTTP ${res.status})`);
       } else {
         setResult(data as GenerateResult);
       }

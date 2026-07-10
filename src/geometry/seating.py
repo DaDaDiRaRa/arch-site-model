@@ -18,5 +18,9 @@ def seat_building(solid: BuildingSolid, dem: DEMPatch) -> float:
     footprint 각 꼭짓점 아래 DEM 표고 중 최솟값 - BURIAL_M.
     경사가 급해도 건물 바닥이 지형에서 뜨지 않는다.
     """
-    elevs = [dem.elev_at(x, y) for x, y in solid.footprint_m]
-    return min(elevs) - BURIAL_M
+    # sample()은 in-range NaN 구멍에 None을 돌려줘(elev_at의 0.0 침몰 방지) 유효 정점만 쓴다.
+    valid = [z for z in (dem.sample(x, y) for x, y in solid.footprint_m) if z is not None]
+    if not valid:  # footprint 전체가 데이터 없음 → DEM 최저(없으면 0)
+        zr = dem.z_range()
+        return (zr[0] if zr else 0.0) - BURIAL_M
+    return min(valid) - BURIAL_M

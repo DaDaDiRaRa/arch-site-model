@@ -119,3 +119,25 @@ def test_safe_component_rejects_traversal():
     assert not _safe_component("a/b")       # 슬래시 불가
     assert not _safe_component("../etc")
     assert not _safe_component("")
+
+
+def test_generate_tile_rejects_oversized_bbox():
+    """미인증 자원증폭 방지: bbox span이 상한 초과면 generate_tile 호출 전 400."""
+    huge = 10_000.0  # 한 변 10km > _MAX_TILE_SPAN_M(3000)
+    r = _client().post("/api/generate_tile", json={
+        "bbox_4326": [127.0, 37.0, 127.1, 37.1],
+        "bbox_5186": [200000.0, 400000.0, 200000.0 + huge, 400000.0 + huge],
+        "origin_offset": [200000.0, 400000.0],
+    })
+    assert r.status_code == 400
+    assert "span" in r.json()["detail"]
+
+
+def test_generate_tile_rejects_degenerate_bbox():
+    """span ≤ 0(퇴화 bbox)도 400."""
+    r = _client().post("/api/generate_tile", json={
+        "bbox_4326": [127.0, 37.0, 127.1, 37.1],
+        "bbox_5186": [200000.0, 400000.0, 200000.0, 400500.0],  # sx=0
+        "origin_offset": [200000.0, 400000.0],
+    })
+    assert r.status_code == 400

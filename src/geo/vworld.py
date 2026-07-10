@@ -131,7 +131,8 @@ class VWorldClient:
             resp.raise_for_status()
             return resp.json()
         except requests.RequestException as e:
-            raise VWorldError(f"VWorld data API 호출 실패: {e}") from e
+            from src.config import scrub_secrets  # 예외 문자열의 key= URL 마스킹
+            raise VWorldError(scrub_secrets(f"VWorld data API 호출 실패: {e}")) from e
         except ValueError as e:
             raise VWorldError(f"VWorld data API 응답 파싱 실패: {e}") from e
 

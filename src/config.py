@@ -37,6 +37,16 @@ except ValueError:
 ORTHO_SOURCE = os.environ.get("ORTHO_SOURCE", "vworld")
 NGII_KEY = os.environ.get("NGII_KEY", "")
 
+
+def scrub_secrets(text: str) -> str:
+    """응답/로그 문자열에서 알려진 API 키 값을 마스킹 (URL의 key= 유출 방지)."""
+    if not text:
+        return text
+    for secret in (VWORLD_KEY, NGII_KEY):
+        if secret and secret in text:
+            text = text.replace(secret, "***")
+    return text
+
 try:
     ORTHO_ZOOM = int(os.environ.get("ORTHO_ZOOM", "18"))
 except ValueError:

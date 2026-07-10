@@ -112,9 +112,16 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
 
   // 높이 범위(범례·그라디언트 정규화용) — geometry 바뀔 때만 재계산.
   const heightRange = useMemo(() => {
-    const hs = geometry.buildings.filter((b) => b.height > 0).map((b) => b.height);
-    if (!hs.length) return null;
-    return { min: Math.min(...hs), max: Math.max(...hs) };
+    // 대규모 사이트(수만 동)서 Math.min(...spread) RangeError 방지 — for 루프 reduce.
+    let min = Infinity;
+    let max = -Infinity;
+    for (const b of geometry.buildings) {
+      if (b.height > 0) {
+        if (b.height < min) min = b.height;
+        if (b.height > max) max = b.height;
+      }
+    }
+    return min <= max ? { min, max } : null;
   }, [geometry]);
 
   useEffect(() => {
@@ -166,9 +173,10 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
     root.rotation.x = -Math.PI / 2;
     scene.add(root);
 
+    const loadCancel = { v: false };  // 언마운트/재생성 시 진행 중 텍스처 로드 취소(누수 방지)
     try {
       const { group: buildings, meshes, edges } = buildBuildings(geometry.buildings, heightRange);
-      const terrain = buildTerrain(geometry.terrain, orthoUrl, geometry.ortho_extent_m);
+      const terrain = buildTerrain(geometry.terrain, orthoUrl, geometry.ortho_extent_m, loadCancel);
       const cadastral = buildCadastral(geometry.cadastral);
       const roads = buildRoads(geometry.roads);
       const sidewalks = buildSurfaceMesh(geometry.sidewalks, C_SIDEWALK, SIDEWALK_LIFT);
@@ -230,6 +238,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
     ro.observe(mount);
 
     return () => {
+      loadCancel.v = true;  // 진행 중 정사영상 로드 콜백이 폐기된 씬에 업로드하지 않게
       cancelAnimationFrame(raf);
       ro.disconnect();
       controls.dispose();
@@ -476,7 +485,8 @@ function buildBuildings(
 function buildTerrain(
   terrain: Props["geometry"]["terrain"],
   orthoUrl: string | undefined,
-  extent: [number, number, number, number] | null
+  extent: [number, number, number, number] | null,
+  cancel?: { v: boolean }
 ): THREE.Mesh | null {
   if (!terrain || !terrain.vertices.length || !terrain.triangles.length) return null;
 
@@ -511,10 +521,21 @@ function buildTerrain(
       uv[2 * i + 1] = (y1 - positions[3 * i + 1]) / dy; // 북(y1)→v=0(이미지 상단)
     }
     geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
-    const tex = new THREE.TextureLoader().load(orthoUrl);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.flipY = false;
-    material = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, metalness: 0, side: THREE.DoubleSide });
+    // 초기엔 지형 단색(로드 전/실패 시 흰 지형 대신 올리브), 로드 성공 시 정사영상 map 적용.
+    const mat = new THREE.MeshStandardMaterial({ color: C_TERRAIN, roughness: 1, metalness: 0, side: THREE.DoubleSide });
+    material = mat;
+    new THREE.TextureLoader().load(
+      orthoUrl,
+      (tex) => {
+        if (cancel?.v) { tex.dispose(); return; }  // 언마운트 후 완료 → 텍스처 누수 방지
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.flipY = false;
+        mat.map = tex;
+        mat.needsUpdate = true;
+      },
+      undefined,
+      () => { mat.needsUpdate = true; }  // 로드 실패 → C_TERRAIN 단색 유지(흰 지형·무한대기 방지)
+    );
   } else {
     material = new THREE.MeshStandardMaterial({ color: C_TERRAIN, roughness: 1, metalness: 0, side: THREE.DoubleSide, flatShading: false });
   }

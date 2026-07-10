@@ -33,6 +33,26 @@ JOBS_DIR = Path(
     os.environ.get("JOBS_DIR") or (Path(tempfile.gettempdir()) / "arch_site_model_jobs")
 ).resolve()
 
+# 타일 bbox span(m) 상한 — 미인증 /api/generate_tile 자원증폭 방지(정상 타일 ≤ tile_size + margin).
+_MAX_TILE_SPAN_M = 3000.0
+
+
+def _sweep_old_jobs(ttl_seconds: float = 7200.0) -> None:
+    """오래된 잡 폴더 삭제(디스크 누적/DoS 방지). best-effort — 실패 무시."""
+    import shutil
+    import time
+
+    try:
+        now = time.time()
+        for d in JOBS_DIR.iterdir():
+            try:
+                if d.is_dir() and now - d.stat().st_mtime > ttl_seconds:
+                    shutil.rmtree(d, ignore_errors=True)
+            except OSError:
+                continue
+    except OSError:
+        pass
+
 app = FastAPI(
     title="arch-site-model API",
     version="1.0",
@@ -94,6 +114,7 @@ def generate_endpoint(req: GenerateRequest) -> dict:
     """
     job_id = uuid4().hex[:12]
     job_dir = JOBS_DIR / job_id
+    _sweep_old_jobs()  # 오래된 잡 폴더 정리(디스크 누적 방지)
 
     result = _generate(
         req.address,
@@ -107,8 +128,8 @@ def generate_endpoint(req: GenerateRequest) -> dict:
     )
 
     if not result.get("ok"):
-        # 생성 실패(주소 오류·건물 없음 등)는 4xx로 전달
-        raise HTTPException(status_code=400, detail=result.get("error", "생성 실패"))
+        # 생성 실패(주소 오류·건물 없음 등)는 4xx로 전달. 시크릿 마스킹.
+        raise HTTPException(status_code=400, detail=config.scrub_secrets(result.get("error", "생성 실패")))
 
     # 다운로드 URL은 ASCII 종류키(3dm/ortho)로 — 한글 파일명 URL 인코딩 문제 회피.
     # 실제 파일명(한글 가능)은 다운로드 시 Content-Disposition으로 전달.
@@ -132,7 +153,7 @@ def generate_endpoint(req: GenerateRequest) -> dict:
         "outputs": result.get("outputs"),
         "stats": result.get("stats"),
         "provenance": result.get("provenance"),
-        "warnings": result.get("warnings"),
+        "warnings": [config.scrub_secrets(w) for w in (result.get("warnings") or [])],
         "qa": result.get("qa"),   # 자동 QA findings (layers.qa=True 시)
         "trust_report": result.get("trust_report"),  # 데이터 신뢰도 리포트 (A-1)
         "zoning": result.get("zoning"),  # 용도지역 (arch-law-graph 연동, layers.zoning=True 시)
@@ -164,6 +185,19 @@ def generate_tile_endpoint(req: GenerateTileRequest) -> dict:
             status_code=400,
             detail="bbox_4326/bbox_5186는 4개, origin_offset은 2개여야 합니다",
         )
+    import math
+
+    vals = (*req.bbox_4326, *req.bbox_5186, *req.origin_offset)
+    if any(not math.isfinite(v) for v in vals):
+        raise HTTPException(status_code=400, detail="bbox 값이 유효하지 않습니다")
+    # 5186 span(m) 상한 — 미인증 자원증폭 방지(거대 bbox로 VWorld/DEM 남용 차단).
+    sx = req.bbox_5186[2] - req.bbox_5186[0]
+    sy = req.bbox_5186[3] - req.bbox_5186[1]
+    if not (0 < sx <= _MAX_TILE_SPAN_M and 0 < sy <= _MAX_TILE_SPAN_M):
+        raise HTTPException(
+            status_code=400,
+            detail=f"타일 bbox span 허용 범위 초과 (한 변 ≤ {_MAX_TILE_SPAN_M:.0f}m)",
+        )
     result = generate_tile(
         tuple(req.bbox_4326), tuple(req.bbox_5186), tuple(req.origin_offset),
         layers=req.layers, floor_h_m=req.floor_height_m,
@@ -184,7 +218,11 @@ def get_file(job_id: str, kind: str) -> FileResponse:
     if not _safe_component(job_id) or kind not in ("3dm", "ortho"):
         raise HTTPException(status_code=400, detail="잘못된 요청")
     job_dir = (JOBS_DIR / job_id).resolve()
-    if not str(job_dir).startswith(str(JOBS_DIR)) or not job_dir.is_dir():
+    try:
+        job_dir.relative_to(JOBS_DIR)  # 경로 탈출 방지(startswith prefix 매칭 아님)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="잡 없음")
+    if not job_dir.is_dir():
         raise HTTPException(status_code=404, detail="잡 없음")
 
     matches = (

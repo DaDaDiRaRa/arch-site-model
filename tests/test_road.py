@@ -105,12 +105,13 @@ def test_clip_roads_remote_url_fetches_and_caches(tmp_path, monkeypatch):
     calls = {"n": 0}
 
     class _Resp:
-        text = body
-
         def raise_for_status(self):
             pass
 
-    def fake_get(u, timeout=30):
+        def iter_content(self, chunk_size=65536):
+            yield body.encode("utf-8")
+
+    def fake_get(u, timeout=30, stream=False):
         calls["n"] += 1
         assert u == url
         return _Resp()
@@ -134,7 +135,7 @@ def test_clip_roads_remote_failure_returns_empty(monkeypatch):
     url = "https://storage.googleapis.com/test-bucket/roads/missing.geojson"
     road_mod._GEOJSON_CACHE.pop(url, None)
 
-    def fake_get(u, timeout=30):
+    def fake_get(u, timeout=30, stream=False):
         raise requests.RequestException("boom")
 
     monkeypatch.setattr("requests.get", fake_get)

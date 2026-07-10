@@ -251,3 +251,35 @@ def test_clip_dem_mosaic_all_missing_raises(tmp_path):
             [str(tmp_path / "a.tif"), str(tmp_path / "b.tif")],
             (0.0, 0.0, 100.0, 100.0), (0.0, 0.0),
         )
+
+
+# ---------------------------------------------------------------------------
+# sample() / 퇴화 격자 (회귀 — in-range NaN 침몰·wraparound 방지)
+# ---------------------------------------------------------------------------
+
+def _patch(grid, cell=10.0):
+    tf = Affine(cell, 0, 0.0, 0, -cell, len(grid) * cell)
+    return DEMPatch(grid=np.asarray(grid, dtype=np.float32), transform=tf, offset=(0.0, 0.0))
+
+
+def test_sample_none_for_all_nan_but_elev_at_zero():
+    dem = _patch([[np.nan, np.nan], [np.nan, np.nan]])
+    assert dem.sample(5.0, 5.0) is None      # 실데이터 없음 → None
+    assert dem.elev_at(5.0, 5.0) == 0.0       # elev_at은 하위호환 0.0
+
+
+def test_sample_valid_where_data_exists():
+    dem = _patch([[10.0, 20.0], [30.0, 40.0]])
+    v = dem.sample(5.0, 5.0)
+    assert v is not None and 10.0 <= v <= 40.0
+
+
+def test_sample_partial_nan_averages_valid():
+    dem = _patch([[10.0, 20.0], [30.0, np.nan]])
+    v = dem.sample(5.0, 5.0)
+    assert v is not None and 10.0 <= v <= 30.0
+
+
+def test_degenerate_grid_no_wraparound():
+    assert _patch([[10.0, 20.0, 30.0]]).sample(0.0, 0.0) is not None   # 1x3 — 크래시/wraparound 없음
+    assert _patch([[42.0]]).sample(0.0, 0.0) == 42.0                    # 1x1

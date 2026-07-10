@@ -69,14 +69,15 @@ def _check_seating(solids, dem, out):
         fp = s.footprint_m
         if len(fp) < 3:
             continue
-        zs_all = [_grid_z(dem, x, y) for x, y in fp]
-        zs = [z for z in zs_all if z is not None]
-        if len(zs) < len(zs_all):  # 일부 정점이 DEM 밖(nan)
+        cov = [_grid_z(dem, x, y) for x, y in fp]  # 범위밖/NaN 감지용(코너 셀)
+        if any(z is None for z in cov):
             if noterr < MAX_FINDINGS_PER_KIND:
                 out.append(_f("info", "building_no_terrain",
                              f"건물 '{s.name}' footprint 일부가 DEM 커버리지 밖 — 앉힘 부정확 가능",
                              _centroid(fp), s.name))
             noterr += 1
+        # 값 비교는 seat_building과 동일한 bilinear sample로(샘플링 불일치 false 경고 방지).
+        zs = [z for z in (dem.sample(x, y) for x, y in fp) if z is not None]
         if not zs:
             continue
         tmin, tmax = min(zs), max(zs)

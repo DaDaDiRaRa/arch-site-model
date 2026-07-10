@@ -121,7 +121,7 @@ def adaptive_select(dem: DEMPatch, max_error_m: float, max_iters: int = 25):
     n = pts_all.shape[0]
 
     selected = list(dict.fromkeys([0, cols - 1, (rows - 1) * cols, n - 1]))
-    cap = max(4, int(n * 0.5))
+    cap = max(4, int(n * 0.9))  # 급경사서 오차한계 충족 위해 높게(정점↑ 대신 ±오차 보장 우선)
 
     for _ in range(max_iters):
         sel = np.array(selected)

@@ -26,8 +26,12 @@ class DEMPatch:
     offset: tuple[float, float]  # origin_offset (건물과 동일 로컬 좌표 기준)
 
     def elev_at(self, x_local: float, y_local: float) -> float:
-        """로컬 미터좌표 → 보간 표고(m). 범위 밖·NaN이면 0.0."""
+        """로컬 미터좌표 → 보간 표고(m). 범위 밖·NaN이면 0.0 (하위호환)."""
         return elev_at(x_local, y_local, self)
+
+    def sample(self, x_local: float, y_local: float) -> float | None:
+        """보간 표고 or None(실데이터 없음: in-range NaN 구멍). seating/QA용 — 0.0 침몰 방지."""
+        return _sample(x_local, y_local, self)
 
     def z_range(self) -> tuple[float, float] | None:
         """NaN 제외 (min_m, max_m). 유효값 없으면 None."""
@@ -71,6 +75,8 @@ def clip_dem(
     # float 타일에서 inf 방어
     grid[~np.isfinite(grid)] = np.nan
 
+    if grid.size == 0 or min(grid.shape) < 1:
+        raise ValueError("clip_dem: 클립 결과가 빈 격자 (bbox가 타일 밖) — 지형 생략")
     return DEMPatch(grid=grid, transform=transform, offset=offset)
 
 
@@ -124,36 +130,35 @@ def clip_dem_mosaic(
     grid = mosaic[0].astype(np.float32)
     grid[grid == sentinel] = np.nan
     grid[~np.isfinite(grid)] = np.nan
+    if grid.size == 0 or min(grid.shape) < 1:
+        raise ValueError("clip_dem_mosaic: 병합 결과가 빈 격자 (bbox가 타일 밖) — 지형 생략")
     return DEMPatch(grid=grid, transform=transform, offset=offset)
 
 
-def elev_at(x_local: float, y_local: float, dem: DEMPatch) -> float:
-    """로컬 미터좌표 → bilinear 보간 표고(m).
+def _sample(x_local: float, y_local: float, dem: DEMPatch) -> float | None:
+    """로컬 미터좌표 → bilinear 보간 표고(m). 범위 밖은 가장자리로 클램프.
 
-    x_local, y_local: origin_offset 적용된 로컬 좌표(m).
-    범위 밖이면 가장 가까운 가장자리 픽셀로 클램프한다. (0.0 반환 금지 — 절대표고
-    지형(예: 65~116m)에서는 0.0이 건물을 z≈0으로 침몰시킨다: seating의 min과 결합해
-    footprint 꼭짓점 하나만 경계를 넘어도 건물 전체가 지형 아래로 빠짐.)
-    4개 이웃이 모두 NaN이면 0.0(그 자리에 유효 표고 없음).
+    반환 None = 실데이터 없음(격자 무효, 또는 4개 이웃이 모두 NaN인 in-range 구멍).
+    elev_at은 None을 0.0으로 바꾸지만(하위호환), seating/QA는 sample()로 None을 걸러
+    footprint 꼭짓점 하나가 NaN 구멍에 걸려 건물 전체가 침몰하는 버그를 막는다.
     """
-    # 로컬 → EPSG:5186 절대 좌표
-    ox, oy = dem.offset
-    x_abs = x_local + ox
-    y_abs = y_local + oy
-
-    # 절대 좌표 → 연속 픽셀 좌표
-    # Affine: x_abs = tf.c + tf.a * col, y_abs = tf.f + tf.e * row  (tf.e < 0, 북→남)
-    tf = dem.transform
-    col_f = (x_abs - tf.c) / tf.a
-    row_f = (y_abs - tf.f) / tf.e
-
     rows, cols = dem.grid.shape
-    # 범위 밖 → 가장 가까운 가장자리로 클램프(0.0 침몰 버그 방지). 경계를 살짝 넘는
-    # footprint 꼭짓점이 가장자리 표고를 받아 건물이 지형 위에 앉는다.
-    col_f = min(max(col_f, 0.0), float(cols - 1))
+    tf = dem.transform
+    if rows < 1 or cols < 1 or tf.a == 0 or tf.e == 0:
+        return None
+
+    # 로컬 → EPSG:5186 절대 → 연속 픽셀 좌표 (Affine: x=c+a·col, y=f+e·row, e<0)
+    ox, oy = dem.offset
+    col_f = (x_local + ox - tf.c) / tf.a
+    row_f = (y_local + oy - tf.f) / tf.e
+    col_f = min(max(col_f, 0.0), float(cols - 1))  # 범위 밖 → 가장자리 클램프
     row_f = min(max(row_f, 0.0), float(rows - 1))
 
-    # 클램핑: 정확히 경계(col_f=cols-1, row_f=rows-1)일 때 bilinear 인덱스 오버플로 방지
+    # 퇴화 격자(1행/1열): bilinear 불가 → 최근접 셀. (cols-2 음수 인덱스 wraparound 방지)
+    if rows < 2 or cols < 2:
+        v = float(dem.grid[min(int(row_f), rows - 1), min(int(col_f), cols - 1)])
+        return v if np.isfinite(v) else None
+
     c0 = min(int(col_f), cols - 2)
     r0 = min(int(row_f), rows - 2)
     dc = col_f - c0
@@ -167,7 +172,7 @@ def elev_at(x_local: float, y_local: float, dem: DEMPatch) -> float:
     neighbors = (v00, v01, v10, v11)
     if any(np.isnan(v) for v in neighbors):
         valid = [v for v in neighbors if not np.isnan(v)]
-        return float(np.mean(valid)) if valid else 0.0
+        return float(np.mean(valid)) if valid else None  # 4이웃 전부 NaN → None(0.0 침몰 방지)
 
     z = (
         v00 * (1.0 - dc) * (1.0 - dr)
@@ -176,3 +181,9 @@ def elev_at(x_local: float, y_local: float, dem: DEMPatch) -> float:
         + v11 * dc       * dr
     )
     return float(z)
+
+
+def elev_at(x_local: float, y_local: float, dem: DEMPatch) -> float:
+    """로컬 미터좌표 → bilinear 보간 표고(m). 범위 밖·NaN이면 0.0 (하위호환; 침몰 방지는 sample())."""
+    v = _sample(x_local, y_local, dem)
+    return v if v is not None else 0.0

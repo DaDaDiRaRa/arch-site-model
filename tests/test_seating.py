@@ -22,6 +22,17 @@ def _flat_dem(elev: float = 50.0, cell: float = 10.0) -> DEMPatch:
     return DEMPatch(grid=grid, transform=transform, offset=(minx, miny))
 
 
+def test_seating_not_sunk_over_nan_hole():
+    """footprint 정점이 in-range NaN 구멍에 걸려도 건물이 -0.5로 침몰하지 않는다(회귀)."""
+    dem = _flat_dem(elev=50.0)
+    dem.grid[3:7, 3:7] = np.nan   # 내부 NaN 구멍(등고선 채움 한계 모사)
+    # (50,50)은 NaN 구멍 위, 나머지 3정점은 유효
+    fp = [(50, 50), (90, 10), (90, 90), (10, 90)]
+    b = BuildingSolid(name="A", footprint_m=fp, base_z_m=0.0, height_m=10.0, floors=3, attrs={})
+    base_z = seat_building(b, dem)
+    assert abs(base_z - (50.0 - BURIAL_M)) < 1e-3   # 50m 지형에 앉음(침몰 없음)
+
+
 def _slope_dem(cell: float = 10.0) -> DEMPatch:
     """Y 방향 경사 DEMPatch: corner-sample 기준 표고 = y_abs = 100 - row*cell.
 
