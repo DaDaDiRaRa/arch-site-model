@@ -47,7 +47,8 @@ Copy-Item .env.example .env
 | `DEM_TILE_BASE` | (선택) DEM 타일 읽기 위치. 기본=로컬 `geo_store`. GCS 서빙 시 `/vsicurl/https://storage.googleapis.com/<버킷>/<프리픽스>` — 로컬 개발엔 불필요 |
 | `ROAD_BASE` | (선택) 도로 GeoJSON 읽기 위치. 기본=로컬 `geo_store`. `gs://<버킷>/roads`(또는 `https://…`)로 두면 공개 GCS에서 HTTP fetch(도로는 json+shapely라 DEM과 달리 `/vsicurl` 아닌 HTTP) |
 | `WATER_BASE` | (선택) 수계 GeoJSON 읽기 위치. `ROAD_BASE`와 동형(기본=로컬 `geo_store`, `gs://<버킷>/water` 지정 시 GCS HTTP) |
-| `TERRAIN_MAX_ERROR_M` | (선택) 지형 TIN 적응형 단순화 오차 한도(m, 기본 `0.25`). `>0` = 오차 유계 적응형 TIN(평탄부는 큰 삼각형, 복잡부는 조밀 삼각형 — 수직오차 ≤ 이 값 보장). `0` = 균일 5m 격자 |
+| `ZONING_BASE` | (선택) 용도지역 조회용 형제 앱 **arch-law-graph** base URL. 설정 시 `layers.zoning`이 `GET /api/zoning?address=`로 사이트 용도지역을 받아 `result.zoning`에 담음. 미설정/미도달 시 조용히 생략 |
+| `TERRAIN_MAX_ERROR_M` | (선택) 지형 TIN 적응형 단순화 오차 한도(m, 기본 `0.25`). `>0` = 오차 유계 적응형 TIN(평탄부는 큰 삼각형, 복잡부는 조밀 삼각형 — 수직오차 ≤ 이 값을 **목표로**; 대부분 충족하나 극단 급경사서 정점 상한 도달 시 예외 가능). `0` = 균일 5m 격자 |
 
 > **키 발급**: [VWorld 공간정보 오픈플랫폼](https://www.vworld.kr) → 개발자 → 인증키 발급
 
@@ -182,7 +183,7 @@ check_site_data("대전광역시 서구 괴정동 358", radius_m=250)
 | `radius_m` | `250` | 반경 (m) — **2km 이상도 지원**(VWorld 박스당 10km² 한도를 클라이언트가 bbox 분할로 자동 우회, 상한 ~반경 15km) |
 | `floor_height_m` | `3.0` | 기본 층고 (m) |
 | `outputs` | `["skp"]` | `"skp"` · `"3dm"` 선택 |
-| `layers` | `{"buildings": true}` | 레이어 활성화 — `buildings`·`terrain`·`cadastral`·`roads`·`water`·`orthophoto`·`qa` |
+| `layers` | `{"buildings": true}` | 레이어 활성화 — `buildings`·`terrain`·`cadastral`·`roads`·`water`·`orthophoto`·`qa`·`zoning` |
 | `output_dir` | `"output/"` | .3dm 저장 경로 |
 | `missing_floors_policy` | `"default"` | 층수 누락 처리 정책 |
 | `setback` | `false` | 이격면 분석 (stub) |
@@ -313,7 +314,8 @@ generate_site_model(
 `layers.qa: true` 로 생성물을 자동 검사합니다(`src/qa.py::run_qa`). KBS TopoMap의 "사람 눈검사→수동
 수리"를 코드로 대체하는 지점 — 건물 앉힘(급경사 `steep_site`·부유·침몰·지형밖), 건물 겹침(중복),
 footprint 유효성(자기교차·슬리버), 지형 스파이크를 검사해 구조화된 `findings`
-(`{severity, kind, message, at, name}`) 목록을 냅니다. 응답의 `result.qa`(및 `/api/generate` 응답의 `qa`)에
+(`{severity(warn/info), kind, label(심의어), message, at, name}`)와 `summary`
+(`{total, warnings, passed, stamp, by_kind}` — `passed`=경고 0건, `stamp`="검수 통과…") 목록을 냅니다. 응답의 `result.qa`(및 `/api/generate` 응답의 `qa`)에
 담기고, 웹 UI가 결함 목록 패널을 표시하며 F2 3D 뷰어·SketchUp 확장이 결함 위치(`at`)에 **수직 핀**
 (경고=빨강 / info=주황)을 세웁니다.
 
@@ -323,6 +325,15 @@ generate_site_model(
   layers={"buildings": True, "terrain": True, "qa": True},
 )
 ```
+
+#### 데이터 신뢰도 리포트 + 용도지역 (A-1 / zoning)
+
+모든 `/api/generate` 응답에 `result.trust_report`가 **항상** 포함됩니다 — 건물 실측/추정 층수 비율,
+지형 출처·정확도, 정사영상, QA 요약, 정직한 한계 고지(층수×3m 가정·DSM 제외). 이미 있는 데이터의 순수
+뷰(`src/trust_report.py`)이며 웹 UI가 "데이터 신뢰도 리포트" 패널로 표시합니다. 추정 층수 건물은 뷰어에서
+주황(`geometry.verified=false`)으로 구분됩니다(A-2). `layers.zoning: true` + `ZONING_BASE`(형제 앱
+arch-law-graph) 설정 시 사이트 용도지역(`result.zoning{zone_name, zone_key, sido, sigungu}`)을 조회해
+결과에 배지로 표시합니다(미설정/미도달 시 조용히 생략).
 
 #### 층수 누락 정책
 
@@ -359,7 +370,7 @@ build_model(code=result["outputs"]["skp"]["code"])
 | 레이어 | 색상 | 내용 |
 | --- | --- | --- |
 | `buildings` | 파란색 | 층수 확인된 건물 Extrusion |
-| `buildings_unverified` | 주황색 | 층수 미확인 (policy=flag 시) |
+| `buildings_unverified` | 주황색 | 층수 추정(미확인) 건물 — flag 정책뿐 아니라 default 정책의 추정도 포함(A-2) |
 | `terrain` | 올리브 | 지형 TIN Mesh |
 | `cadastral` | 황색 | 대지 경계 PolylineCurve |
 | `roads` | 아스팔트 그레이 | 도로 노면 Mesh (Phase R) |
@@ -390,9 +401,9 @@ COG로 있고, 배포된 Cloud Run 앱이 GDAL `/vsicurl` 윈도우 범위읽기
 타일을 못 열면(로컬 부재/GCS 불가) 파이프라인은 경고와 함께 건물만 생성으로 조용히 폴백합니다.
 
 > **지형 TIN — 적응형 LOD**: 런타임 지형 삼각망은 `TERRAIN_MAX_ERROR_M`(기본 0.25m) 오차 한도의
-> 적응형 TIN으로 생성됩니다 — 평탄부는 큰 삼각형, 복잡부는 조밀 삼각형으로 수직오차를 보장하면서
-> 삼각형 수를 크게 줄입니다(신반포 250m: 19,602→2,467, 약 86% 감소). 대반경일수록 모델이 가벼워지며
-> 정확도 손실은 없습니다. (`0`으로 두면 균일 5m 격자.) `scipy`가 런타임 의존성으로 추가되었습니다.
+> 적응형 TIN으로 생성됩니다 — 평탄부는 큰 삼각형, 복잡부는 조밀 삼각형으로 수직오차를 **목표로**(대부분
+> 충족, 극단 급경사서 정점 상한 도달 시 예외) 삼각형 수를 크게 줄입니다(신반포 250m: 19,602→2,467, 약 86%
+> 감소). 대반경일수록 모델이 가벼워집니다. (`0`으로 두면 균일 5m 격자.) `scipy`가 런타임 의존성으로 추가되었습니다.
 
 새 지역 추가(반복 루프):
 
@@ -440,7 +451,7 @@ gcloud storage cp cog_out/dem_<지역>*.tif gs://arch-site-model-dem/dem/
 ## 6. 테스트 실행
 
 ```powershell
-# 단위 테스트 (오프라인, API mock) — 전체 291개
+# 단위 테스트 (오프라인, API mock) — 전체 318개
 python -m pytest tests/ --ignore=tests/test_integration_api.py -v
 
 # 실제 VWorld API 연동 테스트 (키 필요)
