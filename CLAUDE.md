@@ -26,12 +26,15 @@
       자동 반영): ⓐ **차선 대시**(구분선은 점선 `_dash_line` 칠3·공백5m, 중앙선 median은 실선 유지), ⓑ **보도 표현
       강화**(A0033320 보도가 A0010000 도로경계에 97% 겹쳐 도로우선이면 거의 컬링→**보도 우선으로 뒤집어** 인도가
       제대로 보임, 도로는 보도 몫만 빠짐, 실측 보도 삼각형 110→5637), ⓒ **도로 경계 샤프닝**(통합표면 경계 densify를
-      내부 격자(`ROAD_CELL_M` 2.5m)보다 촘촘한 `ROAD_EDGE_CELL_M`(1m)로 → 경계가 곡선 정밀 추종). **클라우드 도로 서빙 구현 완료**(DEM과 동일 원칙): `roads_*.geojson`(gitignore)을
-      공개 GCS에 올리고 `ROAD_BASE=gs://<버킷>/roads`로 두면 앱이 HTTP로 fetch+캐시해 읽는다
-      (`config.road_file_path` gs→https 변환, `road._read_geojson_text` fetch, DEM은 GDAL /vsicurl이라 도로만
-      HTTP). **남은 건 실제 배포 액션**(당신 GCP): `gcloud storage cp geo_store/roads_*.geojson
-      gs://arch-site-model-dem/roads/` + Cloud Run `--set-env-vars ROAD_BASE=gs://arch-site-model-dem/roads`.
-      미배포 시 클라우드 도로는 조용히 생략(로컬 백엔드는 정상). 상세 `docs/deploy.md` §5. 입체 데크(고가/
+      내부 격자(`ROAD_CELL_M` 2.5m)보다 촘촘한 `ROAD_EDGE_CELL_M`(1m)로 → 경계가 곡선 정밀 추종). **클라우드 도로/수계 서빙 = 배포 완료**(DEM과 동일 원칙): `roads_*/water_*.geojson`(gitignore)을
+      공개 GCS에 올리고 `ROAD_BASE`/`WATER_BASE=gs://<버킷>/{roads,water}`로 두면 앱이 HTTP로 fetch+캐시해
+      읽는다(`config.road_file_path`/`water_file_path` gs→https 변환, `road._read_geojson_text` fetch, DEM은
+      GDAL /vsicurl이라 도로만 HTTP). **대전·서울 배포됨**(`ROAD_BASE`/`WATER_BASE` Cloud Run 설정 완료).
+      ⚠️ **메트로 도로는 반드시 타일링**: 지역 1파일이면 서울 311MB→요청당 3분+/2GB(런타임 전량 파싱). DEM처럼
+      `road_bake --tile-km 2`(`bake_roads_tiled`, 2km 하드클립·공간분할)로 쪼개고 런타임 `find_road_files`가
+      겹치는 타일만 읽는다(서울 247타일, 강남 250m 0.46s·400배↑). 수계는 소량(서울 5.79MB)이라 단일 파일 OK.
+      **남은 건 타 광역시**(부산·대구·울산·세종) 같은 레시피 반복(SHP는 [[desktop-shp-source]]). 상세
+      `docs/deploy.md` §5, [[road-tiling-metro-serving]]. 입체 데크(고가/
       교량 A0070000/A0090000/A0110020)는 DSM 블로커 — `구분` 필드로 분류만 됨(고가=T0 휴리스틱, 지하/터널=
       생략, 복층=QA 플래그). 상세 `docs/road_surface_plan.md`.
 - [ ] **DEM/DSM 이원화(고가/교량 데크 실측) — 블로커**: 지면=DEM, 공중 구조물=DSM 원리는 유효하나
@@ -161,15 +164,15 @@ src/
     terrain_mesh.py      DEMPatch → TerrainMesh (TIN 삼각망, Phase 3B). grid_to_tin(균일) + adaptive_tin(오차 한계 적응형, scipy greedy insertion) + adaptive_select/pixel_to_local_m(통합표면용 분리) + build_tin(디스패처, config.TERRAIN_MAX_ERROR_M)
     seating.py           BuildingSolid + DEMPatch → base_z 앉힘 (Phase 3B)
     cadastral.py         LP_PA_CBND_BUBUN features → CadastralParcel (Phase 5)
-    road.py              도로/보도 런타임 (Phase R). clip_roads/clip_sidewalks/clip_centerlines(GeoJSON→로컬미터, json+shapely) + burn_roads(도로를 DEM에 소각: footprint 절토/성토·스커트·IDW교차블렌딩·자기지면 클램프) + build_unified_surface(★지형·도로·보도를 1번 Delaunay로 삼각화→재질별 3메시, 정점공유로 이음매0. 보도우선(도로겹침 컬링 방지)·경계 edge_cell 샤프닝) + clip_lane_markings(중심선 props 차로수·도로폭→평행 차선 구분선, offset_curve, 구분선은 _dash_line 점선·중앙선 실선)/drape_centerlines(차선 드레이프) + _read_geojson_text(로컬/HTTP fetch+캐시 — 클라우드 도로 서빙) + apply_crown + build_road_mesh/carve_terrain/build_terrain_conformed(폴백·구버전)
+    road.py              도로/보도 런타임 (Phase R). clip_roads/clip_sidewalks/clip_centerlines/clip_lane_markings(GeoJSON→로컬미터, json+shapely — _load_features로 단일 경로 또는 겹치는 타일 리스트 병합 수용, 메트로 타일 서빙) + burn_roads(도로를 DEM에 소각: footprint 절토/성토·스커트·IDW교차블렌딩·자기지면 클램프) + build_unified_surface(★지형·도로·보도를 1번 Delaunay로 삼각화→재질별 3메시, 정점공유로 이음매0. 보도우선(도로겹침 컬링 방지)·경계 edge_cell 샤프닝) + clip_lane_markings(중심선 props 차로수·도로폭→평행 차선 구분선, offset_curve, 구분선은 _dash_line 점선·중앙선 실선)/drape_centerlines(차선 드레이프) + _read_geojson_text(로컬/HTTP fetch+캐시 — 클라우드 도로 서빙) + apply_crown + build_road_mesh/carve_terrain/build_terrain_conformed(폴백·구버전)
     water.py             수계 런타임 (수계). clip_water(E계열 폴리곤→로컬미터) + water_surface_z(경계 둑 DEM 저백분위=수면표고) + burn_water(지형을 물 아래로 평탄화) + build_water_mesh(★표고고정 평면 수면, road와 달리 드레이프 아님). road.py 헬퍼 재사용
   output/
     skp_mcp.py           BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk) → SketchUp MCP 코드 문자열
     rhino.py             BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk) → .3dm (Phase 4-R)
   terrain/
-    store.py             manifest.json/road_manifest.json 조회 (find_tiles/find_road_file)
+    store.py             manifest.json/road_manifest.json 조회 (find_tiles/find_road_files(겹치는 도로 타일 전부)/find_road_file(대표 1개)/find_water_file)
     contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A) + bake_tiled(대용량 지역 타일 배치) + 좌표대 재투영(5187→5186)·도엽 중복제거·거리제한 채움(fill_dist_m) + method: clough(기본)/linear/solver(라플라스 조화 격자 솔버 _grid_relax — 계단 완전제거, opt-in)
-    road_bake.py         수치지도 A0010000 도로경계·A0020000 중심선(+실측 `도로폭`·`차로수`)·A0033320 보도 SHP → 지역 GeoJSON(EPSG:5186) 오프라인 굽기 (Phase R) + road_manifest.json 갱신 (contour_bake 헬퍼 재사용) + synthesize_gap_roads(경계 폴리곤 없는 도로를 실측 도로폭으로 버퍼해 노면 합성 {"syn":1}, --no-fill-gaps로 끔) + 중심선 props에 도로폭/차로수 담음(다차선 마킹용)
+    road_bake.py         수치지도 A0010000 도로경계·A0020000 중심선(+실측 `도로폭`·`차로수`)·A0033320 보도 SHP → 지역 GeoJSON(EPSG:5186) 오프라인 굽기 (Phase R) + road_manifest.json 갱신 (contour_bake 헬퍼 재사용) + synthesize_gap_roads(경계 폴리곤 없는 도로를 실측 도로폭으로 버퍼해 노면 합성 {"syn":1}, --no-fill-gaps로 끔) + 중심선 props에 도로폭/차로수 담음(다차선 마킹용) + bake_roads_tiled(--tile-km: 메트로용 2km 하드클립 타일링, STRtree 후보추출+타일박스 교집합, 갭채움 union은 타일 내부로 한정 → 단일파일 311MB/요청당 3분+ 회피, 서울 247타일)
     water_bake.py        수치지도 E계열 수계 면(N3A_E0* 하천경계·호소) SHP → 지역 GeoJSON(EPSG:5186) 오프라인 굽기 + water_manifest.json 갱신 (road_bake 동형)
     dem.py               DEM 타일 클립 + 표고 보간 (Phase 3B) + clip_dem_mosaic(다중 타일 rasterio.merge 병합)
 
@@ -444,6 +447,7 @@ result = generate_site_model(
 | R3 | 보도(A0033320)·차선(A0020000) — 차로수 기반 **다차선**(중앙선 실선/구분선 점선, 노란 면 리본) | ✅ 완료 |
 | R★ | 통합 표면 — 지형·도로·보도를 1번 Delaunay로(정점 공유) → 이음매·구멍·뜸·z-fighting 구조적 제거 | ✅ 완료 |
 | R4 | 도로 정교화 — 실측폭 갭채움(소로/골목)·경계 샤프닝·보도우선(도로겹침 컬링 방지)·타일경로/확장 렌더·**클라우드 서빙**(`WATER_BASE`처럼 `ROAD_BASE`=GCS) | ✅ 완료 |
+| R5 도로 타일링 | 메트로 도로 = 2km 하드클립 타일(`road_bake --tile-km 2`→`bake_roads_tiled`) + 런타임 `find_road_files` 다파일 클립(`_load_features`). 단일 311MB/요청당 3분+ → 서울 247타일/0.46s(400배↑). 대전·서울 GCS 배포 | ✅ (서울, 타 광역시 반복) |
 | 수계 | E계열 하천·호소 → 표고고정 평면 수면 + 지형 물아래 버닝 (`water_bake`·`water.py`, F2/.3dm/.skp/확장) | ✅ 완료 (클라우드 서빙 `WATER_BASE`) |
 | 지형솔버 | 계단현상 라플라스 조화 격자 솔버 `--method solver`(등고선 Dirichlet 제약+∇²z=0 완화, 오버슈트 없음, 힐셰이드 검증) | ✅ opt-in (기본 clough, ~10× 느림) |
 | QA | 자동 검증 — 건물 앉힘(급경사/부유/침몰/지형밖)·겹침·footprint 유효성·지형 스파이크 → findings, 웹 패널+F2/확장 3D 핀 | ✅ 완료 (KBS "눈검사→코드") |
