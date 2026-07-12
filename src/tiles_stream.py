@@ -248,11 +248,12 @@ def generate_tile(
             clip_sidewalks,
             drape_centerlines,
         )
-        from src.terrain.store import find_road_file
+        from src.terrain.store import find_road_files
 
-        rf = find_road_file(_bbox_5186_to_4326(clip_5186))
-        if rf is not None:
-            road_path = config.road_file_path(rf["file"])
+        rfs = find_road_files(_bbox_5186_to_4326(clip_5186))
+        if rfs:
+            # 메트로 도로 타일 여럿을 합쳐 읽음(하드클립 → 중복 없음).
+            road_path = [config.road_file_path(rf["file"]) for rf in rfs]
             road_features = clip_roads(road_path, clip_5186, offset)
             sidewalk_features = clip_sidewalks(road_path, clip_5186, offset)
             if road_features or sidewalk_features:

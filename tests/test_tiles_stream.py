@@ -248,7 +248,7 @@ def test_generate_tile_roads(monkeypatch, tmp_path):
 
     # 도로 매니페스트 조회·경로 해석을 임시 GeoJSON으로 우회.
     monkeypatch.setattr(
-        store_mod, "find_road_file", lambda bbox, manifest=None: {"file": str(gj)}
+        store_mod, "find_road_files", lambda bbox, manifest=None: [{"file": str(gj)}]
     )
     monkeypatch.setattr(ts.config, "road_file_path", lambda f: f)
 
