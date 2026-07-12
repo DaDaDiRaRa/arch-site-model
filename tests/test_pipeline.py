@@ -536,8 +536,8 @@ def _patch_synth_roads(monkeypatch):
     from src.geometry.road import RoadFeature
 
     monkeypatch.setattr(
-        store_mod, "find_road_file",
-        lambda bbox, manifest=None: {"file": "roads_synth.geojson", "region": "합성"},
+        store_mod, "find_road_files",
+        lambda bbox, manifest=None: [{"file": "roads_synth.geojson", "region": "합성"}],
     )
     monkeypatch.setattr(
         road_mod, "clip_roads",

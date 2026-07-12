@@ -327,17 +327,18 @@ def generate(
             clip_sidewalks,
             drape_centerlines,
         )
-        from src.terrain.store import find_road_file
+        from src.terrain.store import find_road_files
 
-        rf = find_road_file(bbox)
-        if rf is None:
+        rfs = find_road_files(bbox)
+        if not rfs:
             warnings.append(
                 "도로 비축 없음: 반경이 도로 GeoJSON 밖입니다 "
                 "(road_manifest.json 확인 또는 road_bake 실행 필요)."
             )
         else:
             bbox_5186_road = _bbox_4326_to_5186(bbox)
-            road_path = config.road_file_path(rf["file"])
+            # 메트로는 도로가 타일로 쪼개져 겹치는 타일이 여럿 — 전부 읽어 합침(하드클립이라 중복 없음).
+            road_path = [config.road_file_path(rf["file"]) for rf in rfs]
             road_features = clip_roads(road_path, bbox_5186_road, offset)
             sidewalk_features = clip_sidewalks(road_path, bbox_5186_road, offset)
             road_count = len(road_features)

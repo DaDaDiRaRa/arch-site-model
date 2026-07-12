@@ -266,8 +266,167 @@ def bake_roads(
     }
 
 
+def _iter_line_geoms(geom):
+    """LineString/MultiLineString/GeometryCollection → LineString 이터레이터."""
+    t = getattr(geom, "geom_type", None)
+    if t == "LineString":
+        yield geom
+    elif t in ("MultiLineString", "GeometryCollection"):
+        for g in geom.geoms:
+            yield from _iter_line_geoms(g)
+
+
+def _clip_polys_to(tree, geoms, tbox, min_area_m2: float) -> list:
+    """STRtree 후보 → tbox와 정확 교차 폴리곤(타일 박스로 하드 클립) 목록."""
+    if tree is None:
+        return []
+    out = []
+    for i in tree.query(tbox):
+        g = geoms[int(i)]
+        if not g.intersects(tbox):
+            continue
+        for p in _iter_poly_geoms(g.intersection(tbox)):
+            if not p.is_empty and p.area >= min_area_m2:
+                out.append(p)
+    return out
+
+
+def _clip_cls_to(tree, centerlines, tbox) -> list:
+    """STRtree 후보 → tbox로 하드 클립된 중심선 조각 (geom, 도로폭, 도로구분, 차로수) 목록."""
+    if tree is None:
+        return []
+    out = []
+    for i in tree.query(tbox):
+        g, w, cls, n = centerlines[int(i)]
+        if not g.intersects(tbox):
+            continue
+        for ls in _iter_line_geoms(g.intersection(tbox)):
+            if not ls.is_empty and ls.length > 0:
+                out.append((ls, w, cls, n))
+    return out
+
+
+def bake_roads_tiled(
+    shp_dir: str | Path,
+    out_path: str | Path,
+    region: str,
+    target_crs: str = "EPSG:5186",
+    tile_km: float = 2.0,
+    min_area_m2: float = 1.0,
+    fill_gaps: bool = True,
+) -> dict:
+    """대용량 지역(메트로)용: 도로/보도/중심선을 1회 읽고 tile_km 격자로 **하드 클립**해 타일별
+    GeoJSON을 굽는다.
+
+    단일 지역 파일(bake_roads)은 메트로에서 수백 MB가 돼 런타임이 요청마다 전량 파싱+선형스캔
+    해야 한다(서울 실측 요청당 3분+/2GB). DEM(bake_tiled)과 동일하게 공간 타일로 쪼개면 런타임은
+    질의 bbox와 겹치는 타일만 읽어(find_road_files) <1초로 떨어진다. 타일은 정확히 타일 박스로
+    잘라(교집합) 공간을 분할 — 인접 타일과 겹침(중복)도, 사이 틈도 구조적으로 없다. 갭채움 합성은
+    타일 안에서만 union하므로(작은 영역) 전역 union 폭발도 사라진다. 파일명은 dem_*_r{r}c{c}와
+    동형인 roads_<지역>_r{r}c{c}.geojson. 좌표=5186 m.
+    """
+    import math
+
+    from shapely.geometry import box as _box, mapping
+    from shapely.strtree import STRtree
+
+    out_path = Path(out_path)
+    polys = [p for p in read_road_polygons(shp_dir, target_crs) if p.area >= min_area_m2]
+    if not polys:
+        raise ValueError("유효 도로 폴리곤이 없습니다(슬리버 제거 후 0).")
+    centerlines = read_road_centerlines(shp_dir, target_crs)
+    sidewalks = [p for p in read_sidewalks(shp_dir, target_crs) if p.area >= min_area_m2]
+    cl_geoms = [c[0] for c in centerlines]
+
+    poly_tree = STRtree(polys)
+    sw_tree = STRtree(sidewalks) if sidewalks else None
+    cl_tree = STRtree(cl_geoms) if cl_geoms else None
+
+    # 전역 bbox(5186) — 폴리곤/중심선/보도 전부 포함.
+    xs0 = [g.bounds for g in polys] + [g.bounds for g in cl_geoms] + [g.bounds for g in sidewalks]
+    minx = min(b[0] for b in xs0); miny = min(b[1] for b in xs0)
+    maxx = max(b[2] for b in xs0); maxy = max(b[3] for b in xs0)
+
+    tile_m = tile_km * 1000.0
+    ncols = max(1, int(math.ceil((maxx - minx) / tile_m)))
+    nrows = max(1, int(math.ceil((maxy - miny) / tile_m)))
+    log.info(
+        "=== road tiled bake === 전역 %.1f×%.1f km → 최대 %d×%d 타일 (tile_km=%.1f, 도로 %d/중심선 %d/보도 %d)",
+        (maxx - minx) / 1000, (maxy - miny) / 1000, nrows, ncols, tile_km,
+        len(polys), len(centerlines), len(sidewalks),
+    )
+    epsg = int(str(target_crs).split(":")[-1])
+    entries: list[dict] = []
+    made: list[str] = []
+    tot_poly = tot_synth = 0
+    for r in range(nrows):
+        ty1 = maxy - r * tile_m
+        ty0 = max(ty1 - tile_m, miny)
+        for c in range(ncols):
+            tx0 = minx + c * tile_m
+            tx1 = min(tx0 + tile_m, maxx)
+            tbox = _box(tx0, ty0, tx1, ty1)
+            tpolys = _clip_polys_to(poly_tree, polys, tbox, min_area_m2)
+            tcls = _clip_cls_to(cl_tree, centerlines, tbox)
+            tsw = _clip_polys_to(sw_tree, sidewalks, tbox, min_area_m2)
+            if not (tpolys or tcls or tsw):
+                continue
+            # 갭채움은 타일 안에서만(작은 영역 union → 저렴). 버퍼가 타일 밖으로 나가면 tbox로 재클립.
+            synth = synthesize_gap_roads(tpolys, tcls, min_area_m2) if fill_gaps else []
+            if synth:
+                synth = [
+                    s for poly in synth
+                    for s in _iter_poly_geoms(poly.intersection(tbox))
+                    if not s.is_empty and s.area >= min_area_m2
+                ]
+            features = [{"type": "Feature", "properties": {}, "geometry": mapping(p)} for p in tpolys]
+            features += [{"type": "Feature", "properties": {"syn": 1}, "geometry": mapping(p)} for p in synth]
+            features += [
+                {"type": "Feature", "properties": _cl_props(w, n), "geometry": mapping(g)}
+                for g, w, _c, n in tcls
+            ]
+            features += [{"type": "Feature", "properties": {"sw": 1}, "geometry": mapping(p)} for p in tsw]
+            fc = {"type": "FeatureCollection", "crs_epsg": epsg, "features": features}
+            tile_out = out_path.with_name(f"{out_path.stem}_r{r}c{c}{out_path.suffix}")
+            tile_out.parent.mkdir(parents=True, exist_ok=True)
+            tile_out.write_text(json.dumps(fc), encoding="utf-8")
+            # 타일 박스의 4326 엔벨로프(질의 매칭용 — 클립된 피처가 아니라 타일 경계 기준).
+            b4326 = [float(v) for v in gpd.GeoSeries([tbox], crs=target_crs).to_crs("EPSG:4326").total_bounds]
+            entries.append(
+                {"region": region, "file": tile_out.name, "bounds_4326": b4326,
+                 "polygons": len(tpolys) + len(synth)}
+            )
+            made.append(tile_out.name)
+            tot_poly += len(tpolys); tot_synth += len(synth)
+
+    _replace_region_tiles_manifest(region, out_path.stem, entries)
+    log.info(
+        "=== road tiled bake 완료: %d개 타일 (도로 %d + 합성 %d) → %s_r*c*.geojson (region=%s) ===",
+        len(made), tot_poly, tot_synth, out_path.stem, region,
+    )
+    return {"tiles": len(made), "polygons": tot_poly, "synthetic": tot_synth, "files": made}
+
+
 def _road_manifest_path() -> Path:
     return config.GEO_STORE / "road_manifest.json"
+
+
+def _replace_region_tiles_manifest(region: str, base_stem: str, entries: list[dict]) -> None:
+    """road_manifest.json에서 이 지역의 기존 항목(단일 base_stem.geojson + 이전 타일 base_stem_r*)을
+    모두 걷어내고 새 타일 항목들로 교체. 다른 지역(예: 대전)은 보존."""
+    path = _road_manifest_path()
+    existing: list = []
+    if path.exists():
+        data = json.loads(path.read_text(encoding="utf-8"))
+        existing = data.get("roads", []) if isinstance(data, dict) else data
+    prefix = base_stem + "_"
+    kept = [
+        e for e in existing
+        if not (e.get("file") == base_stem + ".geojson" or str(e.get("file", "")).startswith(prefix))
+    ]
+    kept.extend(entries)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(kept, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _update_road_manifest(region: str, file: str, bounds_4326: list, n_polys: int) -> None:
@@ -297,10 +456,20 @@ def main(argv: list[str] | None = None) -> int:
         "--no-fill-gaps", dest="fill_gaps", action="store_false",
         help="경계 폴리곤 없는 도로를 실측 도로폭으로 버퍼링해 메우는 합성을 끔(A0010000만)",
     )
-    args = ap.parse_args(argv)
-    res = bake_roads(
-        args.shp_dir, args.out, args.region, args.target_crs, args.min_area, args.fill_gaps
+    ap.add_argument(
+        "--tile-km", type=float, default=0.0,
+        help="0=단일 지역 파일(기본). >0이면 그 km 격자로 하드클립 타일링(메트로 서빙 필수, 예: 2)",
     )
+    args = ap.parse_args(argv)
+    if args.tile_km and args.tile_km > 0:
+        res = bake_roads_tiled(
+            args.shp_dir, args.out, args.region, args.target_crs,
+            tile_km=args.tile_km, min_area_m2=args.min_area, fill_gaps=args.fill_gaps,
+        )
+    else:
+        res = bake_roads(
+            args.shp_dir, args.out, args.region, args.target_crs, args.min_area, args.fill_gaps
+        )
     print(json.dumps(res, ensure_ascii=False))
     return 0
 

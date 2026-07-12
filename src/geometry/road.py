@@ -57,6 +57,25 @@ def _read_geojson_text(loc) -> str | None:
     return p.read_text(encoding="utf-8")
 
 
+def _load_features(geojson_path) -> list:
+    """단일 경로 또는 경로 리스트(겹치는 도로 타일들)의 features를 하나로 이어 반환.
+
+    메트로는 도로가 타일로 쪼개져(find_road_files가 겹치는 타일 전부 반환) 여러 파일이 들어온다.
+    타일은 하드클립(공간 분할)이라 조각들이 서로 겹치지 않으므로 그냥 이어 붙이면 된다(중복 없음).
+    파일이 없거나(None) 깨진 항목은 조용히 건너뛴다. 단일 파일(대전 등) 하위호환 유지.
+    """
+    paths = geojson_path if isinstance(geojson_path, (list, tuple)) else [geojson_path]
+    feats: list = []
+    for path in paths:
+        text = _read_geojson_text(path)
+        if text is None:
+            continue
+        data = json.loads(text)
+        if isinstance(data, dict):
+            feats.extend(data.get("features", []))
+    return feats
+
+
 @dataclass
 class RoadFeature:
     """도로 폴리곤 하나. rings[0]=외곽, 이후=구멍(중앙분리대 등). 로컬 미터(offset 적용)."""
@@ -113,13 +132,10 @@ def _clip_polys(geojson_path, bbox_5186, offset, want_sidewalk: bool) -> list[Ro
 
     want_sidewalk=False: 보도(properties.sw) 제외한 도로 폴리곤. True: 보도만.
     bbox_5186: (minx,miny,maxx,maxy) EPSG:5186. offset: origin_offset. 파일 없으면 빈 목록.
-    geojson_path는 로컬 경로 또는 HTTP(S) URL(배포 시 GCS) — _read_geojson_text가 흡수.
+    geojson_path는 로컬 경로 또는 HTTP(S) URL(배포 시 GCS), 또는 그 리스트(겹치는 타일들)
+    — _load_features가 흡수.
     """
-    text = _read_geojson_text(geojson_path)
-    if text is None:
-        return []
-    data = json.loads(text)
-    feats = data.get("features", []) if isinstance(data, dict) else []
+    feats = _load_features(geojson_path)
     clip = box(*bbox_5186)
     out: list[RoadFeature] = []
     for f in feats:
@@ -149,13 +165,13 @@ def _clip_polys(geojson_path, bbox_5186, offset, want_sidewalk: bool) -> list[Ro
     return out
 
 
-def clip_roads(geojson_path: str | Path, bbox_5186, offset) -> list[RoadFeature]:
-    """지역 GeoJSON의 도로 폴리곤(보도 제외)을 bbox 클립 → 로컬 미터 RoadFeature 목록."""
+def clip_roads(geojson_path, bbox_5186, offset) -> list[RoadFeature]:
+    """지역 GeoJSON(단일 경로 또는 겹치는 타일 리스트)의 도로 폴리곤(보도 제외)을 bbox 클립."""
     return _clip_polys(geojson_path, bbox_5186, offset, want_sidewalk=False)
 
 
-def clip_sidewalks(geojson_path: str | Path, bbox_5186, offset) -> list[RoadFeature]:
-    """지역 GeoJSON의 보도(A0033320) 폴리곤을 bbox 클립 → 로컬 미터 RoadFeature 목록."""
+def clip_sidewalks(geojson_path, bbox_5186, offset) -> list[RoadFeature]:
+    """지역 GeoJSON(단일 경로 또는 겹치는 타일 리스트)의 보도(A0033320)를 bbox 클립."""
     return _clip_polys(geojson_path, bbox_5186, offset, want_sidewalk=True)
 
 
@@ -275,13 +291,9 @@ def _iter_lines(geom):
             yield from _iter_lines(g)
 
 
-def clip_centerlines(geojson_path: str | Path, bbox_5186, offset) -> list[list[tuple[float, float]]]:
+def clip_centerlines(geojson_path, bbox_5186, offset) -> list[list[tuple[float, float]]]:
     """지역 GeoJSON의 도로중심선(LineString)만 bbox 클립 → 로컬 미터 폴리라인 목록."""
-    text = _read_geojson_text(geojson_path)
-    if text is None:
-        return []
-    data = json.loads(text)
-    feats = data.get("features", []) if isinstance(data, dict) else []
+    feats = _load_features(geojson_path)
     clip = box(*bbox_5186)
     ox, oy = offset
     out: list[list[tuple[float, float]]] = []
@@ -358,17 +370,13 @@ def _offset_lines(line, dist: float):
     return list(_iter_lines(oc))
 
 
-def clip_lane_markings(geojson_path: str | Path, bbox_5186, offset) -> list[list[tuple[float, float]]]:
+def clip_lane_markings(geojson_path, bbox_5186, offset) -> list[list[tuple[float, float]]]:
     """중심선(cl) feature의 도로폭(w)·차로수(n)로 **다차선 마킹** 폴리라인 생성 → bbox 클립 → 로컬 미터.
 
     차로수>=2면 차선 사이 구분선 n-1개를 도로폭에 맞춰 오프셋 생성(다차로 도로), 아니면 중심선 1개
     (소로·폭/차로수 없음). z는 drape_centerlines에서 노면에 드레이프. 표시 전용 — 버닝은 clip_centerlines가.
     """
-    text = _read_geojson_text(geojson_path)
-    if text is None:
-        return []
-    data = json.loads(text)
-    feats = data.get("features", []) if isinstance(data, dict) else []
+    feats = _load_features(geojson_path)
     clip = box(*bbox_5186)
     ox, oy = offset
     out: list[list[tuple[float, float]]] = []

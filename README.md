@@ -260,11 +260,15 @@ generate_site_model(
 > **도로 데이터 굽기**: `python -m src.terrain.road_bake "<수치지도 폴더>" --out geo_store/roads_<지역>.geojson
 > --region "<지역명>"` → A0010000/A0020000/A0033320을 읽어 지역 GeoJSON + `road_manifest.json` 갱신
 > (동부원점 5187→5186 재투영·도엽 중복제거 자동, contour_bake 헬퍼 재사용). `manifest`만 깃 추적, `roads_*.geojson`은 gitignore.
+> **메트로(시 전체)는 `--tile-km 2` 필수**: 지역 1파일은 서울 311MB가 돼 런타임이 요청마다 전량 파싱합니다(강남
+> 250m 3분+/2GB). `--tile-km 2`(`bake_roads_tiled`)가 2km 격자로 **하드클립**(공간 분할 → 중복·틈 없음)해
+> `roads_<지역>_r{r}c{c}.geojson` 타일로 쪼개고, 런타임 `find_road_files`가 겹치는 타일만 읽어 **0.46s**로
+> 떨어집니다(서울 247타일, 결과 동일). 수계는 폴리곤이 적어(서울 5.79MB) 단일 파일 OK.
 >
-> **클라우드 서빙**: `roads_*.geojson`을 공개 GCS(`gs://…/roads/`)에 올리고 `ROAD_BASE=gs://…/roads`로 두면
-> 앱이 HTTP fetch+캐시(`road._read_geojson_text`, `config.road_file_path`가 `gs://`→`https://` 변환)합니다.
-> DEM(GDAL `/vsicurl` 범위읽기)과 달리 도로는 json+shapely라 파일 전체를 HTTP로 받습니다. **코드는 완성이며 실제
-> 업로드/배포 env 설정은 사용자 액션**(미설정 시 클라우드에서 도로만 조용히 생략 → `ROAD_BASE` 확인).
+> **클라우드 서빙(배포됨)**: `roads_*/water_*.geojson`을 공개 GCS(`gs://…/{roads,water}/`)에 올리고
+> `ROAD_BASE`/`WATER_BASE=gs://…`로 두면 앱이 HTTP fetch+캐시(`road._read_geojson_text`, `config.road_file_path`가
+> `gs://`→`https://` 변환)합니다. DEM(GDAL `/vsicurl` 범위읽기)과 달리 도로는 json+shapely라 타일 파일을 HTTP로
+> 받습니다. **대전·서울 배포 완료**(`ROAD_BASE`/`WATER_BASE` Cloud Run 설정됨) — 미배포 지역은 조용히 생략.
 
 #### 수계 — 하천·호소 (water)
 
@@ -451,7 +455,7 @@ gcloud storage cp cog_out/dem_<지역>*.tif gs://arch-site-model-dem/dem/
 ## 6. 테스트 실행
 
 ```powershell
-# 단위 테스트 (오프라인, API mock) — 전체 318개
+# 단위 테스트 (오프라인, API mock) — 전체 323개
 python -m pytest tests/ --ignore=tests/test_integration_api.py -v
 
 # 실제 VWorld API 연동 테스트 (키 필요)
@@ -488,7 +492,8 @@ python -m pytest tests/test_integration_api.py -v
 | 도로 R1~R3 (Phase R) | 노면(A0010000)·보도(A0033320) → F2/.3dm/.skp/확장 · 차선(A0020000 차로수 기반 다차선) → F2·확장만. 지형 정합=버닝(절토/성토·스커트·IDW 교차블렌딩·클램프)+크라운 | ✅ |
 | 통합 표면 | 지형·도로·보도를 1번 Delaunay로 삼각화(정점 공유) → 이음매·구멍·뜸·z-fighting 구조적 제거 | ✅ |
 | 도로 정교화 | 다차선 마킹(`차로수`·`도로폭` → 중앙 실선/구분 점선, `clip_lane_markings`, F2·확장 렌더) + 소로 합성(`synthesize_gap_roads`, 커버리지 89→100%) + 경계 샤프닝(`ROAD_EDGE_CELL_M`) + 보도 우선 | ✅ |
-| 도로/수계 클라우드 서빙 | `roads_*/water_*.geojson` GCS 업로드 + `ROAD_BASE`/`WATER_BASE` HTTP fetch+캐시(json+shapely) | ✅ 코드 완성 (업로드·env 설정은 사용자 액션) |
+| 도로/수계 클라우드 서빙 | `roads_*/water_*.geojson` GCS 업로드 + `ROAD_BASE`/`WATER_BASE` HTTP fetch+캐시(json+shapely) | ✅ 배포(대전·서울) |
+| 메트로 도로 타일링 | `road_bake --tile-km 2`(`bake_roads_tiled`, 2km 하드클립·공간분할) + 런타임 `find_road_files` 다파일 클립 — 단일 311MB/요청당 3분+ → 서울 247타일/0.46s(400배↑) | ✅ (서울, 타 광역시 반복 대기) |
 | 대반경 타일 도로 | `generate_tile`이 도로/보도/차선 통합 표면 생성 + SketchUp 확장 `builder.rb`가 태그별 렌더(단일+타일) | ✅ (데스크톱 실기 검증 대기) |
 | 수계 (water) | E계열 면 SHP(하천 E0010001·호소 E0052114) → `water_bake` 지역 GeoJSON + `water_manifest.json`. 런타임 `water.py` 표고고정 평면 수면 + 지형 버닝 → F2(파랑)/.3dm/.skp/확장 | ✅ |
 | 자동 QA | `src/qa.py::run_qa` — 건물 앉힘(급경사·부유·침몰·지형밖)·겹침·footprint 유효성·지형 스파이크 → `findings`. 웹 결함 패널 + F2/확장 수직 핀(`layers.qa`) | ✅ |
