@@ -168,7 +168,7 @@ src/
     water.py             수계 런타임 (수계). clip_water(E계열 폴리곤→로컬미터) + water_surface_z(경계 둑 DEM 저백분위=수면표고) + burn_water(지형을 물 아래로 평탄화) + build_water_mesh(★표고고정 평면 수면, road와 달리 드레이프 아님). road.py 헬퍼 재사용
   output/
     skp_mcp.py           BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk) → SketchUp MCP 코드 문자열
-    rhino.py             BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk) → .3dm (Phase 4-R)
+    rhino.py             BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk/water+차선 lanes+QA 핀) → .3dm (Phase 4-R). _add_lanes(차선 PolylineCurve)·_add_qa_pins(결함 수직 핀)로 F2·확장과 3경로 정합
   terrain/
     store.py             manifest.json/road_manifest.json 조회 (find_tiles/find_road_files(겹치는 도로 타일 전부)/find_road_file(대표 1개)/find_water_file)
     contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A) + bake_tiled(대용량 지역 타일 배치) + 좌표대 재투영(5187→5186)·도엽 중복제거·거리제한 채움(fill_dist_m) + method: clough(기본)/linear/solver(라플라스 조화 격자 솔버 _grid_relax — 계단 완전제거, opt-in)
@@ -192,7 +192,7 @@ frontend/                React + Vite + Tailwind 웹 UI (주소 입력 → /api/
 
 sketchup_ext/            SketchUp 확장(.rbz) — 주소→백엔드 geometry JSON→SketchUp 조립 (Phase B) [B1: 지형+건물]
   arch_site_model.rb     로더(SketchupExtension 등록)
-  arch_site_model/       main(메뉴·HtmlDialog)·api_client(Sketchup::Http)·builder(지형mesh+건물돌출+정사영상 드레이프+도로/보도 메시·차선·수계 평면·QA 결함 핀)·settings·dialog.html
+  arch_site_model/       main(메뉴·HtmlDialog)·api_client(Sketchup::Http)·builder(지형mesh+건물돌출+정사영상 드레이프+도로/보도 메시·차선·수계 평면·지적 경계(build_cadastral)·QA 결함 핀 — .3dm/F2와 3경로 정합)·settings·dialog.html
   build_rbz.py           확장 폴더 → dist/arch_site_model.rbz 패키징
 
 docs/

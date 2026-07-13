@@ -19,6 +19,7 @@ module ArchSiteModel
     C_WATER    = [58, 110, 165].freeze  # 강물 블루 — 수계 (F2 C_WATER)
     C_QA_WARN  = [220, 38, 38].freeze   # 빨강 — QA 경고 핀
     C_QA_INFO  = [245, 158, 11].freeze  # 주황 — QA info 핀
+    C_CADASTRAL = [220, 200, 100].freeze # 샌디 옐로 — 지적 경계 (rhino .3dm / F2와 동일)
 
     # 노면을 지형 바로 위로 살짝 띄우는 리프트(m) — 경계선 z-fighting 방지(src road.py ROAD_LIFT_M와 동일).
     ROAD_LIFT_M = 0.03
@@ -69,6 +70,7 @@ module ArchSiteModel
       # 수계 — 평면 수면(z는 백엔드가 이미 리프트) → lift_m=0.
       build_surface_mesh(model, parent_ents, geometry["water"], "water", C_WATER, 0.0)
       build_buildings(model, parent_ents, geometry["buildings"] || [])
+      build_cadastral(model, parent_ents, geometry["cadastral"])
       build_qa(model, parent_ents, qa, geometry) if qa
     end
 
@@ -318,6 +320,36 @@ module ArchSiteModel
       end
     rescue StandardError => e
       puts "[road] lanes 조립 오류: #{e.message}"
+    end
+
+    # 지적 경계(대지 경계선) → 드레이프된 폴리라인(엣지 루프). geometry["cadastral"] 없으면 생략.
+    # F2·.3dm의 지적과 동일 피처(세 경로 정합). ring z는 백엔드가 DEM으로 드레이프한 값.
+    # parcels = [{"pnu"=>..., "ring"=>[[x,y,z], ...]}, ...] (로컬 미터).
+    def self.build_cadastral(model, parent_ents, parcels)
+      return unless parcels && !parcels.empty?
+      grp = parent_ents.add_group
+      grp.name = "cadastral"
+      t = tag(model, "cadastral")
+      begin
+        t.color = Sketchup::Color.new(*C_CADASTRAL)
+      rescue StandardError
+        nil
+      end
+      grp.layer = t
+      ents = grp.entities
+      parcels.each do |parcel|
+        ring = parcel["ring"] || []
+        next if ring.length < 3
+        begin
+          pts = ring.map { |p| Geom::Point3d.new(p[0] * M2I, p[1] * M2I, p[2] * M2I) }
+          pts << pts[0] # 닫기
+          ents.add_edges(pts)
+        rescue StandardError
+          next
+        end
+      end
+    rescue StandardError => e
+      puts "[cadastral] 조립 오류: #{e.message}"
     end
 
     def self.build_buildings(model, parent_ents, buildings)

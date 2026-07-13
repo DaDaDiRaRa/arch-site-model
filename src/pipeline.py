@@ -494,6 +494,13 @@ def generate(
             "cadastral_parcels": cadastral_count,
             "road_triangles": len(road_mesh.triangles) if road_mesh else 0,
         }
+    # 자동 QA(검증) — .3dm 결함 핀에도 실으려면 출력 조립 전에 계산(F2·확장과 정합).
+    qa_result = None
+    if layers.get("qa"):
+        from src.qa import run_qa
+
+        qa_result = run_qa(solids, dem=dem, terrain_mesh=terrain_mesh, m2i=config.M2I)
+
     if "3dm" in outputs:
         from src.output.rhino import write_3dm
 
@@ -506,6 +513,8 @@ def generate(
             water=water_mesh,
             ortho_image=ortho_info["image_path"] if ortho_info else None,
             ortho_extent_m=ortho_info["extent_local_m"] if ortho_info else None,
+            lanes=lanes,
+            qa=qa_result,
         )
         out["3dm"] = {
             "path": saved,
@@ -554,12 +563,7 @@ def generate(
         else None
     )
 
-    # 자동 QA (검증 자동화) — layers.qa=True 시 생성물 결함 검사(건물 앉힘·겹침·지형 스파이크).
-    qa_result = None
-    if layers.get("qa"):
-        from src.qa import run_qa
-
-        qa_result = run_qa(solids, dem=dem, terrain_mesh=terrain_mesh, m2i=config.M2I)
+    # 자동 QA(검증)는 위 출력 조립 전에 계산됨(qa_result) — .3dm/F2/확장 모두 동일 결과 사용.
 
     # 용도지역 조회 (arch-law-graph 연동) — 옵션. 미설정/미도달 시 조용히 생략.
     zoning = None

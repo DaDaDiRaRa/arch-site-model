@@ -244,7 +244,7 @@ generate_site_model(
 - **다차선 마킹**: A0020000 중심선의 실측 `차로수`·`도로폭`으로 평행 차선을 생성합니다
   (`road.clip_lane_markings`) — 중앙선(median)은 실선, 차선 구분선은 점선(`road._dash_line`).
   **F2 뷰어**(노란 라인)와 **SketchUp 데스크톱 확장**(노면 위 얇은 **노란 면 리본**, `builder.rb::build_lanes`)이
-  렌더합니다. (`.3dm`·클라우드 `.skp` 코드에는 차선 마킹이 포함되지 않습니다 — 노면·보도·수계만.)
+  렌더합니다. **`.3dm`(rhino)도 차선을 렌더**(`lanes` 레이어, PolylineCurve) — 세 소비자(F2·.3dm·확장) 정합. 클라우드 `.skp` MCP 코드만 미포함(샌드박스).
 - **도로 정교화**: 경계 폴리곤(A0010000)이 없는 소로·골목은 A0020000 실측 `도로폭`으로 버퍼링해 노면을
   합성합니다(`road_bake.synthesize_gap_roads`, 커버리지 89%→100%). 통합 표면의 도로 경계는 `ROAD_EDGE_CELL_M`
   로 샤프닝하고, 보도는 도로 겹침 구간에서도 컬링하지 않아(보도 우선) 보도 삼각형이 크게 늘었습니다.
@@ -380,8 +380,10 @@ build_model(code=result["outputs"]["skp"]["code"])
 | `roads` | 아스팔트 그레이 | 도로 노면 Mesh (Phase R) |
 | `sidewalks` | 콘크리트 베이지 | 보도 Mesh (Phase R) |
 | `water` | 강 파랑 | 하천·호소 평면 수면 Mesh |
+| `lanes` | 노랑 | 차선 마킹 PolylineCurve (F2·확장과 정합) |
+| `qa_warn` / `qa_info` | 빨강 / 주황 | 자동 QA 결함 수직 핀 (심각도별) |
 
-> QA 결함은 결함 위치에 수직 핀으로 함께 출력됩니다. (차선 마킹은 `.3dm`에는 포함되지 않고 F2 뷰어·SketchUp 확장에서만 렌더됩니다.)
+> **세 소비자 정합**: `.3dm`(rhino)·F2 뷰어·SketchUp 확장이 **같은 레이어 세트**(건물·지형·지적·도로·보도·차선·수계·QA 핀·정사영상)를 렌더합니다. 예전엔 차선·QA가 `.3dm`에 빠지고 지적이 확장에 빠져 어긋났으나 정렬됨. 클라우드 `.skp` MCP 코드만 차선·QA·텍스처 미포함(샌드박스 제약).
 
 ### 실제 위치 복원
 
@@ -455,7 +457,7 @@ gcloud storage cp cog_out/dem_<지역>*.tif gs://arch-site-model-dem/dem/
 ## 6. 테스트 실행
 
 ```powershell
-# 단위 테스트 (오프라인, API mock) — 전체 323개
+# 단위 테스트 (오프라인, API mock) — 전체 325개
 python -m pytest tests/ --ignore=tests/test_integration_api.py -v
 
 # 실제 VWorld API 연동 테스트 (키 필요)
@@ -489,7 +491,8 @@ python -m pytest tests/test_integration_api.py -v
 | geocode | 지번+도로명(PARCEL→ROAD) 지원 | ✅ |
 | 전국 DEM 확장 | 6개 광역단체 120타일 GCS COG 서빙(/vsicurl) + 다중 타일 mosaic + 배치 베이크(bake_tiled) + 좌표대 재투영(5187→5186) + 도엽 중복제거 + bbox 분할(반경 2km+) | ✅ 프로덕션 |
 | F2 뷰어 표현 | 높이별 색 그라디언트·건물 외곽선·그림자·뷰모드·지적/도로/보도/차선/수계 표시·레이어 토글 + SSAO(GTAOPass 주변광 차폐) | ✅ |
-| 도로 R1~R3 (Phase R) | 노면(A0010000)·보도(A0033320) → F2/.3dm/.skp/확장 · 차선(A0020000 차로수 기반 다차선) → F2·확장만. 지형 정합=버닝(절토/성토·스커트·IDW 교차블렌딩·클램프)+크라운 | ✅ |
+| 도로 R1~R3 (Phase R) | 노면(A0010000)·보도(A0033320) → F2/.3dm/.skp/확장 · 차선(A0020000 차로수 기반 다차선) → F2/.3dm/확장. 지형 정합=버닝(절토/성토·스커트·IDW 교차블렌딩·클램프)+크라운 | ✅ |
+| 출력 3경로 정합 | `.3dm`·F2·확장이 동일 레이어 렌더 — `.3dm`에 차선·QA 핀 추가(`rhino.py`), 확장에 지적 추가(`builder.rb::build_cadastral`) | ✅ |
 | 통합 표면 | 지형·도로·보도를 1번 Delaunay로 삼각화(정점 공유) → 이음매·구멍·뜸·z-fighting 구조적 제거 | ✅ |
 | 도로 정교화 | 다차선 마킹(`차로수`·`도로폭` → 중앙 실선/구분 점선, `clip_lane_markings`, F2·확장 렌더) + 소로 합성(`synthesize_gap_roads`, 커버리지 89→100%) + 경계 샤프닝(`ROAD_EDGE_CELL_M`) + 보도 우선 | ✅ |
 | 도로/수계 클라우드 서빙 | `roads_*/water_*.geojson` GCS 업로드 + `ROAD_BASE`/`WATER_BASE` HTTP fetch+캐시(json+shapely) | ✅ 배포(대전·서울) |

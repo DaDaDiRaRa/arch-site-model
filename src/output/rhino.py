@@ -35,6 +35,8 @@ def write_3dm(
     water: RoadMesh | None = None,
     ortho_image: str | Path | None = None,
     ortho_extent_m: tuple[float, float, float, float] | None = None,
+    lanes: list | None = None,
+    qa: dict | None = None,
 ) -> str:
     """BuildingSolid(+TerrainMesh+CadastralParcel) → .3dm 파일.
 
@@ -87,6 +89,21 @@ def write_3dm(
     l_water.Color = (58, 110, 165, 255)        # river blue
     idx_water = model.Layers.Add(l_water)
 
+    l_lane = rhino3dm.Layer()
+    l_lane.Name = "lanes"
+    l_lane.Color = (232, 200, 74, 255)         # 노랑 — 차선 마킹 (F2·확장과 동일)
+    idx_lane = model.Layers.Add(l_lane)
+
+    l_qa_w = rhino3dm.Layer()
+    l_qa_w.Name = "qa_warn"
+    l_qa_w.Color = (220, 38, 38, 255)          # 빨강 — QA 경고 핀
+    idx_qa_w = model.Layers.Add(l_qa_w)
+
+    l_qa_i = rhino3dm.Layer()
+    l_qa_i.Name = "qa_info"
+    l_qa_i.Color = (245, 158, 11, 255)         # 주황 — QA info 핀
+    idx_qa_i = model.Layers.Add(l_qa_i)
+
     # origin_offset → 문서 수준 Strings (좌표 복원용, 사양서 §6.1)
     ox, oy = offset
     model.Strings["origin_offset_x"] = str(ox)
@@ -115,6 +132,12 @@ def write_3dm(
     # 수계(평면 수면) — z에 이미 리프트가 있으므로 lift=0.
     if water is not None:
         _add_roads(model, water, idx_water, "water", lift=0.0)
+    # 차선 마킹(R3) — 드레이프 폴리라인 (F2·확장과 동일 피처, .3dm 정합)
+    if lanes:
+        _add_lanes(model, lanes, idx_lane)
+    # 자동 QA 결함 핀(수직 마커) — F2·확장과 동일 피처 (.3dm 정합)
+    if qa:
+        _add_qa_pins(model, qa, terrain, idx_qa_w, idx_qa_i)
 
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -312,3 +335,78 @@ def _add_cadastral(
     attrs.Name = parcel.pnu
 
     model.Objects.AddCurve(curve, attrs)
+
+
+def _add_lanes(
+    model: rhino3dm.File3dm,
+    lanes: list,
+    layer_idx: int,
+) -> None:
+    """차선 마킹 폴리라인(로컬 미터·드레이프 z) → PolylineCurve. F2/확장의 차선과 동일 피처.
+
+    lanes: 폴리라인 목록. 각 폴리라인 = [(x, y, z), ...] (로컬 미터). 노면 리프트만큼 살짝 띄운다.
+    """
+    from src.geometry.road import ROAD_LIFT_M
+
+    for line in lanes:
+        if not line or len(line) < 2:
+            continue
+        pts = [rhino3dm.Point3d(float(x), float(y), float(z) + ROAD_LIFT_M) for x, y, z in line]
+        curve = rhino3dm.PolylineCurve(pts)
+        attrs = rhino3dm.ObjectAttributes()
+        attrs.LayerIndex = layer_idx
+        attrs.Name = "lane"
+        model.Objects.AddCurve(curve, attrs)
+
+
+def _add_qa_pins(
+    model: rhino3dm.File3dm,
+    qa: dict,
+    terrain: TerrainMesh | None,
+    idx_warn: int,
+    idx_info: int,
+) -> None:
+    """자동 QA findings → 결함 위치(at)에 수직 핀(교차 쿼드 메시). 색=심각도(warn/info).
+
+    F2 뷰어·SketchUp 확장의 결함 핀과 동일 개념. 핀 밑동 z는 가장 가까운 지형 정점 표고에
+    맞춘다(지형 없으면 0). qa = {"findings": [{"at": [x, y], "severity": "warn"|"info", ...}]}.
+    """
+    findings = (qa or {}).get("findings") or []
+    if not findings:
+        return
+    tv = None
+    if terrain is not None and terrain.vertices:
+        tv = [(x / M2I, y / M2I, z / M2I) for x, y, z in terrain.vertices]
+
+    def _base_z(x: float, y: float) -> float:
+        if not tv:
+            return 0.0
+        best_z, best_d = 0.0, None
+        for vx, vy, vz in tv:
+            d = (vx - x) ** 2 + (vy - y) ** 2
+            if best_d is None or d < best_d:
+                best_d, best_z = d, vz
+        return best_z
+
+    pin_h, hw = 15.0, 0.7
+    for f in findings:
+        at = f.get("at")
+        if not at or len(at) < 2:
+            continue
+        x, y = float(at[0]), float(at[1])
+        z0 = _base_z(x, y)
+        z1 = z0 + pin_h
+        layer_idx = idx_warn if f.get("severity") == "warn" else idx_info
+        mesh = rhino3dm.Mesh()
+        for vx, vy, vz in [
+            (x - hw, y, z0), (x + hw, y, z0), (x + hw, y, z1), (x - hw, y, z1),  # X축 쿼드
+            (x, y - hw, z0), (x, y + hw, z0), (x, y + hw, z1), (x, y - hw, z1),  # Y축 쿼드
+        ]:
+            mesh.Vertices.Add(vx, vy, vz)
+        mesh.Faces.AddFace(0, 1, 2, 3)
+        mesh.Faces.AddFace(4, 5, 6, 7)
+        mesh.Normals.ComputeNormals()
+        attrs = rhino3dm.ObjectAttributes()
+        attrs.LayerIndex = layer_idx
+        attrs.Name = "qa_" + str(f.get("kind", "finding"))
+        model.Objects.AddMesh(mesh, attrs)

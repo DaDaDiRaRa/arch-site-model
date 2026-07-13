@@ -149,6 +149,47 @@ def test_write_3dm_with_sidewalks_layer():
         assert any(m.Layers[o.Attributes.LayerIndex].Name == "sidewalks" for o in meshes)
 
 
+def test_write_3dm_with_lanes_adds_curve_on_lanes_layer():
+    """lanes 지정 → 'lanes' 레이어에 Curve 객체(차선 마킹). F2·확장과 정합."""
+    lanes = [
+        [(0.0, 0.0, 1.0), (10.0, 0.0, 1.0), (10.0, 5.0, 1.0)],
+        [(2.0, 2.0, 1.0), (8.0, 2.0, 1.0)],
+    ]
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "site.3dm"
+        write_3dm([_make_solid()], None, path, offset=(0.0, 0.0), lanes=lanes)
+        m = rhino3dm.File3dm.Read(str(path))
+        assert any(layer.Name == "lanes" for layer in m.Layers)
+        lane_objs = [o for o in m.Objects if m.Layers[o.Attributes.LayerIndex].Name == "lanes"]
+        assert len(lane_objs) == 2  # 폴리라인 2개
+
+
+def test_write_3dm_with_qa_adds_pins():
+    """qa findings 지정 → 'qa_warn'/'qa_info' 레이어에 핀 Mesh. F2·확장과 정합."""
+    terrain = _make_terrain()
+    qa = {
+        "findings": [
+            {"at": [5.0, 2.0], "severity": "warn", "kind": "steep_site"},
+            {"at": [8.0, 3.0], "severity": "info", "kind": "building_no_terrain"},
+            {"severity": "warn", "kind": "no_location"},  # at 없음 → 건너뜀
+        ],
+    }
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "site.3dm"
+        write_3dm([_make_solid()], terrain, path, offset=(0.0, 0.0), qa=qa)
+        m = rhino3dm.File3dm.Read(str(path))
+        names = {layer.Name for layer in m.Layers}
+        assert "qa_warn" in names and "qa_info" in names
+        pin_layers = [
+            m.Layers[o.Attributes.LayerIndex].Name
+            for o in m.Objects
+            if type(o.Geometry).__name__ == "Mesh"
+            and m.Layers[o.Attributes.LayerIndex].Name in ("qa_warn", "qa_info")
+        ]
+        assert pin_layers.count("qa_warn") == 1   # at 있는 warn 1개(위치없는 건 제외)
+        assert pin_layers.count("qa_info") == 1
+
+
 # ---------------------------------------------------------------------------
 # 정사영상 텍스처 (Tier 1)
 # ---------------------------------------------------------------------------
