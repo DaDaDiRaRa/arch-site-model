@@ -43,7 +43,7 @@
       같은 블로커 대기). 상세 `docs/dem_dsm_strategy.md`, [[dsm-acquisition-blocker]].
 - [ ] **Phase B — SketchUp 확장(.rbz)**: B1(지형+건물)·대반경 타일 순차조립·지형 LOD·**B2 정사영상
       드레이프**(단일+타일 경로 모두, `Face#position_material` 위→아래 평면투영·양면) 모두 **코드 완성·테스트
-      통과**(pytest 51 green: ortho/pipeline/tiles_stream, UV 정합 손검증 완료, .rbz 최신 재빌드). 남은 건
+      통과**(pytest green — ortho/pipeline/tiles_stream 등 전체 325, UV 정합 손검증 완료, .rbz 최신 재빌드). 남은 건
       **데스크톱 실기 렌더 검증뿐**(헤드리스 없어 개발자 무인 확인 불가 — 사용자 루프): (a) 1~2km 타일모드
       실기 테스트(1km 이음매 없이 검증됨), (b) B2 정사영상이 지형에 실제로 입혀지는지 SketchUp에서 확인
       (Ruby Console `[ortho]` 로그가 실패 원인 출력). 상세 `docs/sketchup_extension.md`.
@@ -451,17 +451,22 @@ result = generate_site_model(
 | 수계 | E계열 하천·호소 → 표고고정 평면 수면 + 지형 물아래 버닝 (`water_bake`·`water.py`, F2/.3dm/.skp/확장) | ✅ 완료 (클라우드 서빙 `WATER_BASE`) |
 | 지형솔버 | 계단현상 라플라스 조화 격자 솔버 `--method solver`(등고선 Dirichlet 제약+∇²z=0 완화, 오버슈트 없음, 힐셰이드 검증) | ✅ opt-in (기본 clough, ~10× 느림) |
 | QA | 자동 검증 — 건물 앉힘(급경사/부유/침몰/지형밖)·겹침·footprint 유효성·지형 스파이크 → findings, 웹 패널+F2/확장 3D 핀 | ✅ 완료 (KBS "눈검사→코드") |
+| 출력 3경로 정합 | `.3dm`·F2·확장이 동일 레이어 렌더 — `.3dm`에 차선·QA 핀 추가(`rhino.py::_add_lanes`/`_add_qa_pins`), 확장에 지적 추가(`builder.rb::build_cadastral`) | ✅ 완료 |
 
 ---
 
 ## .3dm 출력 아키텍처 (Phase 4)
 
-`src/output/rhino.py` — `write_3dm(solids, terrain, path, offset, cadastral=None)`:
+`src/output/rhino.py` — `write_3dm(solids, terrain, path, offset, cadastral=None, roads=None, sidewalks=None, water=None, ortho_image=None, ortho_extent_m=None, lanes=None, qa=None)`:
 
 - **건물**: `rhino3dm.Extrusion` (닫힌 PolylineCurve → Z 돌출, 캡 포함)
 - **지형**: `rhino3dm.Mesh` (삼각망). TerrainMesh.vertices는 인치(SketchUp)→ `/M2I` 미터 환산
-- **지적**: `rhino3dm.PolylineCurve` at Z=0
-- **레이어**: `buildings`(steel blue) / `buildings_unverified`(orange, **층수 추정 건물 = 실측 아님**; A-2에서 flag 정책뿐 아니라 default 정책의 추정 건물도 포함) / `terrain`(olive green) / `cadastral`(sandy yellow)
+- **지적**: `rhino3dm.PolylineCurve` at Z=0 (확장·F2는 지형 드레이프 z, .3dm만 Z=0 — 피처는 3경로 동일)
+- **도로/보도/수계**: `rhino3dm.Mesh` (로컬 미터, 노면 리프트). road/sidewalk/water 각 레이어
+- **차선**: `rhino3dm.PolylineCurve` (`_add_lanes`, `lanes` 레이어) — F2·확장과 3경로 정합
+- **QA 결함 핀**: `rhino3dm.Mesh` 수직 교차쿼드 (`_add_qa_pins`, `qa_warn`/`qa_info` 레이어, 심각도색·지형 표고 밑동)
+- **정사영상**: 지형 메시에 평면투영 UV + 비트맵 텍스처(`ortho_image`+`ortho_extent_m` 지정 시)
+- **레이어**(10): `buildings`(steel blue) / `buildings_unverified`(orange, **층수 추정 건물 = 실측 아님**; A-2에서 flag 정책뿐 아니라 default 정책의 추정 건물도 포함) / `terrain`(olive green) / `cadastral`(sandy yellow) / `roads`(asphalt gray) / `sidewalks`(concrete beige) / `water`(river blue) / `lanes`(yellow) / `qa_warn`(red) / `qa_info`(orange)
 - **좌표계**: 로컬 미터 (BuildingSolid.footprint_m / base_z_m / height_m 그대로)
 - **origin_offset**: 문서 `model.Strings["origin_offset_x/y"]` + 각 객체 `SetUserString` 이중 기록
 - `write_3dm` 반환값: 저장된 절대 경로 문자열
