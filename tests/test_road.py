@@ -176,7 +176,7 @@ def test_lane_offsets():
 
 
 def test_clip_lane_markings_multilane(tmp_path):
-    """cl feature의 n=4,w=20 → 평행 구분선 3개(y=-5,0,+5)."""
+    """cl feature의 n=4,w=20 → 구분선만(y=-5,+5). 중앙선(y=0)은 DRAW_CENTER_LINE=False라 생략."""
     from src.geometry.road import clip_lane_markings
 
     fc = {"type": "FeatureCollection", "features": [
@@ -186,13 +186,13 @@ def test_clip_lane_markings_multilane(tmp_path):
     p = tmp_path / "cl.geojson"
     p.write_text(json.dumps(fc), encoding="utf-8")
     lines = clip_lane_markings(p, (-10, -20, 50, 20), (0.0, 0.0))
-    # 중앙선(y=0) 실선 + ±5 구분선(점선 대시로 쪼개짐) → 오프셋 위치만 검증(개수 아님).
+    # 중앙선(y=0) 제거됨 → ±5 구분선(점선 대시)만. 오프셋 위치만 검증(개수 아님).
     ys = sorted({round(sum(y for _, y in ln) / len(ln)) for ln in lines})
-    assert ys == [-5, 0, 5]
+    assert ys == [-5, 5]
 
 
 def test_clip_lane_markings_single_line(tmp_path):
-    """n/w 없는 소로 cl feature → 중심선 1개만."""
+    """n/w 없는 소로 cl feature → 중심선뿐이라 DRAW_CENTER_LINE=False면 마킹 없음."""
     from src.geometry.road import clip_lane_markings
 
     fc = {"type": "FeatureCollection", "features": [
@@ -202,7 +202,7 @@ def test_clip_lane_markings_single_line(tmp_path):
     p = tmp_path / "cl.geojson"
     p.write_text(json.dumps(fc), encoding="utf-8")
     lines = clip_lane_markings(p, (-10, -20, 50, 20), (0.0, 0.0))
-    assert len(lines) == 1
+    assert lines == []
 
 
 def test_dash_line():
@@ -221,7 +221,7 @@ def test_dash_line():
 
 
 def test_clip_lane_markings_dividers_dashed(tmp_path):
-    """4차로 20m 직선 → 중앙선 1개(실선, 김) + 차선 구분선은 점선(짧은 대시 다수)."""
+    """4차로 20m 직선 → 중앙선(실선) 생략 + 차선 구분선은 점선(짧은 대시 다수)."""
     import math
 
     from src.geometry.road import clip_lane_markings
@@ -238,8 +238,37 @@ def test_clip_lane_markings_dividers_dashed(tmp_path):
 
     long_lines = [ln for ln in lines if length(ln) > 50]
     short = [ln for ln in lines if length(ln) < 10]
-    assert len(long_lines) == 1   # 중앙선(median) 실선 1개
+    assert len(long_lines) == 0   # 중앙선(median) 실선 제거됨(DRAW_CENTER_LINE=False)
     assert len(short) > 15        # 구분선 2개가 점선 대시 다수로
+
+
+def test_clip_lane_markings_junction_trim(tmp_path):
+    """T자 교차로(차수3 노드) → 그 노드에 닿는 차선 끝이 뒤로 물려 교차로가 비워진다."""
+    from src.geometry.road import clip_lane_markings
+
+    # 다차로 A(x:0→20, 마킹 생성) 끝이 (20,0)에서 소로 C1·C2(n=1, 마킹 없지만 노드 차수엔 기여)와
+    # 만나 (20,0)이 차수 3 = 교차로. A의 (0,0)끝은 차수 1. → A만 차선을 내고, 교차로 쪽 끝이 물린다.
+    fc = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"cl": 1, "n": 4, "w": 20},
+         "geometry": {"type": "LineString", "coordinates": [[0, 0], [20, 0]]}},
+        {"type": "Feature", "properties": {"cl": 1, "n": 1, "w": 3},
+         "geometry": {"type": "LineString", "coordinates": [[20, 0], [20, 20]]}},
+        {"type": "Feature", "properties": {"cl": 1, "n": 1, "w": 3},
+         "geometry": {"type": "LineString", "coordinates": [[20, 0], [20, -20]]}},
+    ]}
+    p = tmp_path / "j.geojson"
+    p.write_text(json.dumps(fc), encoding="utf-8")
+
+    # trim=6m: A의 구분선(y=±5,±10)은 x가 [0, 14]까지만(교차로 20에서 6 물림).
+    trimmed = clip_lane_markings(p, (-30, -30, 60, 60), (0.0, 0.0), junction_trim_m=6.0)
+    xs = [pt[0] for ln in trimmed for pt in ln]
+    assert xs, "차선이 하나도 안 나옴"
+    assert max(xs) < 15.0, f"교차로 트림 실패: max_x={max(xs)}"
+
+    # 트림 끄면(0): 교차로(x=20)까지 그려진다.
+    untrim = clip_lane_markings(p, (-30, -30, 60, 60), (0.0, 0.0), junction_trim_m=0.0)
+    xs2 = [pt[0] for ln in untrim for pt in ln]
+    assert max(xs2) > 18.0
 
 
 def test_polygon_sample_points_edge_cell_denser():

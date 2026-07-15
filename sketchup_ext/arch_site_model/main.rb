@@ -39,7 +39,13 @@ module ArchSiteModel
     end
 
     # 이 반경(m) 초과면 타일 순차조립(대반경). 이하는 단일 조립.
-    TILE_THRESHOLD_M = 500
+    #
+    # ⚠️ 단일 메시 전환(2026-07): 타일 순차조립은 타일마다 지형·도로를 독립적으로 삼각화·버닝해
+    # 경계에서 이음매(끊김·초록 틈)가 생겼다. 단일 `/api/generate`는 전 영역을 한 번의 통합
+    # 삼각화(build_unified_surface)로 만들어 이음매가 원천적으로 없다(TopoShaper가 안 깨지는 원리와
+    # 동일 — 단일 표면). 그래서 임계값을 사실상 꺼(단일 항상 사용) 대반경도 단일로 조립한다.
+    # 타일 경로(start_tiled 이하)는 되돌림·초대반경 대비로 코드만 보존한다.
+    TILE_THRESHOLD_M = 100_000
 
     def self.handle_generate(dlg, payload)
       params = JSON.parse(payload)

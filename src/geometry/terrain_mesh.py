@@ -188,3 +188,103 @@ def adaptive_tin(
         ))
     triangles = [(int(a), int(b), int(c)) for a, b, c in tri.simplices]
     return TerrainMesh(vertices=vertices, triangles=triangles)
+
+
+def _boundary_loops(triangles) -> list[list[int]]:
+    """삼각망의 경계(외곽/구멍) 정점 루프들을 반환.
+
+    경계 엣지 = 정확히 한 삼각형에만 속한 엣지. 이 엣지들을 이어 닫힌 루프로 만든다.
+    매니폴드 지형이면 각 경계 정점의 경계 이웃이 2개라 깔끔히 순회된다. 외곽 1개 +
+    도로 구멍마다 1개씩 나온다(호출측이 bbox 넓이로 외곽만 고른다).
+    """
+    from collections import defaultdict
+
+    ecount: dict[tuple[int, int], int] = defaultdict(int)
+    for a, b, c in triangles:
+        for u, v in ((a, b), (b, c), (c, a)):
+            ecount[(u, v) if u < v else (v, u)] += 1
+    bedges = [e for e, n in ecount.items() if n == 1]
+    if not bedges:
+        return []
+
+    adj: dict[int, list[int]] = defaultdict(list)
+    for u, v in bedges:
+        adj[u].append(v)
+        adj[v].append(u)
+
+    visited: set[tuple[int, int]] = set()
+    loops: list[list[int]] = []
+    max_len = len(bedges) + 1
+    for seed, nbrs in adj.items():
+        for first in nbrs:
+            e0 = (seed, first) if seed < first else (first, seed)
+            if e0 in visited:
+                continue
+            visited.add(e0)
+            loop = [seed]
+            prev, cur, ok = seed, first, True
+            while cur != seed:
+                loop.append(cur)
+                nxt = None
+                for w in adj[cur]:
+                    if w == prev:
+                        continue
+                    ee = (cur, w) if cur < w else (w, cur)
+                    if ee not in visited:
+                        nxt = w
+                        break
+                if nxt is None:
+                    ok = False
+                    break
+                ee = (cur, nxt) if cur < nxt else (nxt, cur)
+                visited.add(ee)
+                prev, cur = cur, nxt
+                if len(loop) > max_len:
+                    ok = False
+                    break
+            if ok and len(loop) >= 3:
+                loops.append(loop)
+    return loops
+
+
+def add_skirt(mesh: TerrainMesh, depth_m: float) -> TerrainMesh:
+    """지형 **바깥 둘레**에만 아래로 내려가는 수직 스커트(벽)를 붙인다(TopoShaper 스타일).
+
+    통합표면 지형 메시는 도로 자리에 구멍이 있어 경계 루프가 여럿(외곽 1 + 도로 구멍 N)이다.
+    그중 **bbox 넓이 최대 = 외곽 루프**에만 벽을 세운다(도로 구멍엔 안 세움). 벽 바닥은 전체
+    최저 표고보다 depth_m 더 낮은 평평한 링(단면이 흙벽처럼 보임). 정점=인치(×M2I) 계약 유지.
+    depth_m<=0 또는 삼각형 없으면 원본 그대로.
+    """
+    if depth_m <= 0 or not mesh.triangles or len(mesh.vertices) < 3:
+        return mesh
+
+    loops = _boundary_loops(mesh.triangles)
+    if not loops:
+        return mesh
+
+    verts = list(mesh.vertices)
+    tris = list(mesh.triangles)
+
+    def _bbox_area(loop: list[int]) -> float:
+        xs = [verts[i][0] for i in loop]
+        ys = [verts[i][1] for i in loop]
+        return (max(xs) - min(xs)) * (max(ys) - min(ys))
+
+    outer = max(loops, key=_bbox_area)
+    base_z = min(v[2] for v in verts) - depth_m * M2I
+
+    bottom: dict[int, int] = {}
+    for i in outer:
+        bottom[i] = len(verts)
+        x, y, _ = verts[i]
+        verts.append((x, y, base_z))
+
+    m = len(outer)
+    for k in range(m):
+        a = outer[k]
+        b = outer[(k + 1) % m]
+        ba, bb = bottom[a], bottom[b]
+        tris.append((a, b, bb))   # 벽 쿼드 = 삼각형 2개 (양면 재질이라 winding 무관)
+        tris.append((a, bb, ba))
+
+    return TerrainMesh(vertices=verts, triangles=tris)

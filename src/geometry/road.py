@@ -318,6 +318,19 @@ def clip_centerlines(geojson_path, bbox_5186, offset) -> list[list[tuple[float, 
 LANE_DASH_PAINT_M = 3.0
 LANE_DASH_GAP_M = 5.0
 
+# 도로 중심선(중앙 실선, offset 0) 표시 여부. A0020000 중심선을 노면 폴리곤에 기하 정합하지
+# 않고 그대로 얹어(오프셋 합성) 교차로에서 서로 교차하고 노면과 어긋나 지저분하게 보인다 →
+# 사용자 요청으로 기본 끔. 차선 구분선(offset≠0, 점선)만 남는다. True면 예전처럼 중앙선도 그림.
+DRAW_CENTER_LINE = False
+
+# 차선 정합 — 교차로 클리어런스: 중심선 끝이 교차로 노드(여러 중심선이 만남)에 닿으면 그 끝을
+# 이만큼(m) 뒤로 물려 오프셋한다. 교차로 안에서 여러 도로의 차선이 서로 겹쳐 그려지는 '+' 지저분함을
+# 없앤다. 노드 차수>=3(교차로)인 끝에만 적용 — 차수 2(직선 연속)는 안 물려 도로 중간 끊김 없음.
+LANE_JUNCTION_TRIM_M = 6.0
+
+# 노드 동일성 판단 격자(m) — 중심선 끝점을 이 격자로 스냅해 같은 노드로 묶는다(부동소수 오차 흡수).
+_NODE_SNAP_M = 0.5
+
 
 def _dash_line(coords, paint_m: float, gap_m: float) -> list[list[tuple[float, float]]]:
     """폴리라인을 점선(칠 paint_m / 공백 gap_m)으로 → 짧은 2점 폴리라인(대시) 목록.
@@ -370,13 +383,72 @@ def _offset_lines(line, dist: float):
     return list(_iter_lines(oc))
 
 
-def clip_lane_markings(geojson_path, bbox_5186, offset) -> list[list[tuple[float, float]]]:
+def _node_key(x: float, y: float) -> tuple[float, float]:
+    """중심선 끝점을 _NODE_SNAP_M 격자로 스냅한 노드 키(부동소수 오차 흡수)."""
+    s = _NODE_SNAP_M
+    return (round(float(x) / s) * s, round(float(y) / s) * s)
+
+
+def _node_degrees(feats) -> dict[tuple[float, float], int]:
+    """모든 중심선(cl) LineString 끝점의 노드 차수(만나는 중심선 수). 교차로 판정용.
+
+    차수>=3 노드 = 교차로(T자·+자). 차수 2 = 직선 연속(같은 도로가 노드에서 분절된 것).
+    """
+    from collections import defaultdict
+
+    deg: dict[tuple[float, float], int] = defaultdict(int)
+    for f in feats:
+        geom = f.get("geometry") or {}
+        if not (f.get("properties") or {}).get("cl"):
+            continue
+        if geom.get("type") != "LineString":
+            continue
+        cs = geom.get("coordinates") or []
+        if len(cs) >= 2:
+            deg[_node_key(*cs[0])] += 1
+            deg[_node_key(*cs[-1])] += 1
+    return deg
+
+
+def _trim_junction_ends(g, geom, deg, trim_m: float):
+    """중심선 g의 끝이 교차로 노드(차수>=3)면 그 끝을 trim_m 뒤로 물린 LineString 반환.
+
+    양끝 모두 교차로가 아니면 원본 g. 트림 후 남는 길이가 거의 없으면(교차로 안 짧은 토막) None.
+    LineString만 처리(MultiLineString 등은 원본 유지 — cl은 사실상 LineString).
+    """
+    if geom.get("type") != "LineString":
+        return g
+    cs = geom.get("coordinates") or []
+    if len(cs) < 2:
+        return g
+    ts = trim_m if deg.get(_node_key(*cs[0]), 0) >= 3 else 0.0
+    te = trim_m if deg.get(_node_key(*cs[-1]), 0) >= 3 else 0.0
+    if ts == 0.0 and te == 0.0:
+        return g
+    from shapely.ops import substring
+
+    length = g.length
+    a, b = ts, length - te
+    if b - a < 0.5:  # 트림 후 남는 게 거의 없음 → 교차로 안 토막이라 버림
+        return None
+    try:
+        return substring(g, a, b)
+    except Exception:  # noqa: BLE001
+        return g
+
+
+def clip_lane_markings(
+    geojson_path, bbox_5186, offset, junction_trim_m: float = LANE_JUNCTION_TRIM_M
+) -> list[list[tuple[float, float]]]:
     """중심선(cl) feature의 도로폭(w)·차로수(n)로 **다차선 마킹** 폴리라인 생성 → bbox 클립 → 로컬 미터.
 
     차로수>=2면 차선 사이 구분선 n-1개를 도로폭에 맞춰 오프셋 생성(다차로 도로), 아니면 중심선 1개
-    (소로·폭/차로수 없음). z는 drape_centerlines에서 노면에 드레이프. 표시 전용 — 버닝은 clip_centerlines가.
+    (소로·폭/차로수 없음). **교차로 클리어런스**: 중심선 끝이 교차로 노드(차수>=3)에 닿으면 오프셋
+    전에 그 끝을 junction_trim_m 뒤로 물려, 교차로 안에서 여러 도로 차선이 겹쳐 그려지는 '+'를 없앤다
+    (차수 2 직선 연속은 안 물려 도로 중간 끊김 없음). z는 drape_centerlines에서 드레이프. 버닝은 clip_centerlines가.
     """
     feats = _load_features(geojson_path)
+    deg = _node_degrees(feats) if junction_trim_m > 0 else {}
     clip = box(*bbox_5186)
     ox, oy = offset
     out: list[list[tuple[float, float]]] = []
@@ -387,13 +459,23 @@ def clip_lane_markings(geojson_path, bbox_5186, offset) -> list[list[tuple[float
             continue
         if not props.get("cl"):  # 중심선 feature만(합성 도로 폴리곤 등 제외)
             continue
+        offsets = [
+            d for d in _lane_offsets(props.get("n"), props.get("w"))
+            if not (d == 0.0 and not DRAW_CENTER_LINE)  # 중심선 표시 끔(①) → 구분선만
+        ]
+        if not offsets:
+            continue
         try:
             g = shape(geom)
         except Exception:  # noqa: BLE001
             continue
         if g.is_empty or not g.intersects(clip):
             continue
-        for d in _lane_offsets(props.get("n"), props.get("w")):
+        if junction_trim_m > 0:
+            g = _trim_junction_ends(g, geom, deg, junction_trim_m)
+            if g is None or g.is_empty:
+                continue
+        for d in offsets:
             solid = d == 0.0  # 중앙선(median)은 실선, 차선 구분선은 점선
             for ls in _offset_lines(g, d):
                 for part in _iter_lines(ls.intersection(clip)):

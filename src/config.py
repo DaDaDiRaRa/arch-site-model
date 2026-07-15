@@ -31,6 +31,14 @@ try:
 except ValueError:
     TERRAIN_MAX_ERROR_M = 0.25
 
+# 지형 스커트(치마) 깊이(m) — 지형 바깥 둘레에 이만큼 아래로 내려가는 수직 벽을 세워 대지모델이
+# 흙덩어리처럼 보이게 한다(TopoShaper 스타일, 가장자리 마감). 0이면 스커트 없음. 통합표면의 도로
+# 구멍엔 안 세우고 외곽 둘레에만(terrain_mesh.add_skirt). F2/.3dm/확장 3경로에 함께 반영.
+try:
+    TERRAIN_SKIRT_M = float(os.environ.get("TERRAIN_SKIRT_M", "12.0"))
+except ValueError:
+    TERRAIN_SKIRT_M = 12.0
+
 # --- 정사영상(orthophoto) 텍스처 ---
 # 소스: "vworld"(기존 VWORLD_KEY 재사용) | "ngii"(NGII_KEY 발급 후 사용, 공공누리 1유형).
 # 기술은 동일 — TileSource만 바뀐다. NGII 키 승인 시 .env에 NGII_KEY 채우고 ORTHO_SOURCE=ngii.

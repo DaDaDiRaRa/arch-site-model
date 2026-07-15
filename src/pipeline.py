@@ -412,6 +412,13 @@ def generate(
 
             terrain_mesh = build_tin(dem, config.TERRAIN_MAX_ERROR_M)
 
+        # 지형 바깥 둘레에 스커트(벽) — 대지모델을 흙덩어리처럼 마감(TopoShaper 스타일). 도로
+        # 구멍엔 안 세우고 외곽만. 통합표면/일반 TIN 둘 다 적용. 0이면 생략.
+        if terrain_mesh is not None and config.TERRAIN_SKIRT_M > 0:
+            from src.geometry.terrain_mesh import add_skirt
+
+            terrain_mesh = add_skirt(terrain_mesh, config.TERRAIN_SKIRT_M)
+
     # 통합표면이 안 만들어진 경우(지형 미요청/DEM 없음) 도로/보도는 드레이프 메시로 폴백.
     if road_mesh is None and road_features:
         from src.geometry.road import apply_crown, build_road_mesh

@@ -198,3 +198,50 @@ def test_build_tin_dispatch():
     adaptive = build_tin(dem, max_error_m=0.25)
     assert len(uniform.triangles) == 29 * 29 * 2
     assert len(adaptive.triangles) <= 8
+
+
+# ---------------------------------------------------------------------------
+# add_skirt — 지형 바깥 둘레 벽 (TopoShaper 스타일)
+# ---------------------------------------------------------------------------
+
+def test_add_skirt_grid_wraps_outer_perimeter():
+    """RxC 격자 → 스커트는 외곽 둘레 정점(2R+2C-4)만큼 바닥 정점 + 그 2배 삼각형 추가."""
+    from src.geometry.terrain_mesh import add_skirt
+
+    dem = _make_dem(4, 4, cell=10.0)
+    mesh = grid_to_tin(dem)
+    perim = 2 * 4 + 2 * 4 - 4  # = 12
+    base = min(v[2] for v in mesh.vertices)
+
+    skirted = add_skirt(mesh, depth_m=5.0)
+    assert len(skirted.vertices) == len(mesh.vertices) + perim
+    assert len(skirted.triangles) == len(mesh.triangles) + 2 * perim
+    # 바닥 링 정점은 전부 min표고 - depth*M2I 에 평평하게.
+    bottom_z = base - 5.0 * M2I
+    bottoms = [v for v in skirted.vertices if abs(v[2] - bottom_z) < 1e-6]
+    assert len(bottoms) == perim
+
+
+def test_add_skirt_ignores_interior_hole():
+    """도로 구멍(내부 루프)엔 스커트를 세우지 않고 외곽 둘레에만 세운다."""
+    from src.geometry.terrain_mesh import TerrainMesh, add_skirt
+
+    dem = _make_dem(5, 5, cell=10.0)
+    mesh = grid_to_tin(dem)
+    center = 2 * 5 + 2  # vid[2,2] = 12 (구멍 낼 중심 정점)
+    holed = TerrainMesh(
+        vertices=mesh.vertices,
+        triangles=[t for t in mesh.triangles if center not in t],
+    )
+    perim = 2 * 5 + 2 * 5 - 4  # 외곽 둘레 = 16 (구멍 루프는 제외돼야)
+
+    skirted = add_skirt(holed, depth_m=8.0)
+    assert len(skirted.vertices) == len(holed.vertices) + perim
+
+
+def test_add_skirt_noop_when_zero_depth():
+    """depth<=0 이면 원본 그대로."""
+    from src.geometry.terrain_mesh import add_skirt
+
+    mesh = grid_to_tin(_make_dem(3, 3))
+    assert add_skirt(mesh, 0.0) is mesh

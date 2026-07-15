@@ -230,7 +230,7 @@ def _write_road_geojson(path, b5186):
         "features": [
             {"type": "Feature", "properties": {},
              "geometry": {"type": "Polygon", "coordinates": [road_poly]}},
-            {"type": "Feature", "properties": {"cl": 1, "n": 2, "w": 8},
+            {"type": "Feature", "properties": {"cl": 1, "n": 4, "w": 6},
              "geometry": {"type": "LineString", "coordinates": centerline}},
         ],
     }
