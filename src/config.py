@@ -21,6 +21,17 @@ VWORLD_DOMAIN = os.environ.get("VWORLD_DOMAIN", "")
 M2I = 39.3701              # meter → inch (SketchUp MCP는 인치 단위)
 DEFAULT_FLOOR_H_M = 3.0    # 기본 층고 (m)
 
+# --- 건물 앉힘(seating) ---
+# 커튼 가드(m): 건물 바닥은 footprint 지반 최저점에 앉히되(뜨지 않게), 대표지반(footprint 내부
+# 조밀샘플 중앙값)보다 이 값 이상은 내려가지 않도록 상한을 둔다. footprint가 절벽·옹벽·단차(또는
+# DEM 노이즈)를 가로질러 최저점이 대표지반보다 훨씬 낮을 때, min 앉힘이 건물을 구덩이 바닥에 박아
+# 생기는 과장된 수직 벽(뒤 건물을 가리는 '커튼')을 이 폭으로 제한한다. 기복 ≤ 이 값이면 결과가
+# 기존 '최저-매몰'과 동일 → 평지·완경사 건물은 무변화. 상세 seating.py::footprint_grade.
+try:
+    BUILDING_GRADE_MAX_SKIRT_M = float(os.environ.get("BUILDING_GRADE_MAX_SKIRT_M", "3.0"))
+except ValueError:
+    BUILDING_GRADE_MAX_SKIRT_M = 3.0
+
 # --- 지형 TIN ---
 # 지형 삼각망 방식: >0 이면 오차 한계 적응형 TIN(그 수직오차[m] 이내 보장, 평지는 큰
 # 삼각형·복잡한 곳만 촘촘 → 삼각형 대폭 감소, 넓은 반경도 가벼움). 0 이면 균일 격자

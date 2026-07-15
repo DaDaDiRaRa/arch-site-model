@@ -64,6 +64,7 @@ def _check_seating(solids, dem, out):
     """건물 앉힘 — 급경사·부유·침몰·지형밖. dem 없으면 생략."""
     if dem is None:
         return
+    from src.geometry.seating import footprint_grade
     steep = float_ = sink = noterr = 0
     for s in solids:
         fp = s.footprint_m
@@ -87,16 +88,20 @@ def _check_seating(solids, dem, out):
                          "평면 base 박스가 한쪽은 파묻히고 한쪽은 뜰 수 있음",
                          _centroid(fp), s.name))
             steep += 1
-        if s.base_z_m - tmin > FLOAT_M and float_ < MAX_FINDINGS_PER_KIND:
-            out.append(_f("warn", "building_float",
-                         f"건물 '{s.name}' base_z가 지형 최저보다 {s.base_z_m - tmin:.1f}m 위 (부유)",
-                         _centroid(fp), s.name))
-            float_ += 1
-        if tmin - s.base_z_m > SINK_M and sink < MAX_FINDINGS_PER_KIND:
-            out.append(_f("warn", "building_sink",
-                         f"건물 '{s.name}' base_z가 지형 최저보다 {tmin - s.base_z_m:.1f}m 아래 (침몰)",
-                         _centroid(fp), s.name))
-            sink += 1
+        # 부유/침몰은 seat_building이 실제 겨냥한 '대표지반(커튼가드 grade)' 대비로 잰다 —
+        # 최저점(tmin) 대비로 재면, 절벽 건물을 커튼가드로 의도적으로 올린 게 부유로 오탐된다.
+        grade = footprint_grade(fp, dem)
+        if grade is not None:
+            if s.base_z_m - grade > FLOAT_M and float_ < MAX_FINDINGS_PER_KIND:
+                out.append(_f("warn", "building_float",
+                             f"건물 '{s.name}' base_z가 대표지반보다 {s.base_z_m - grade:.1f}m 위 (부유)",
+                             _centroid(fp), s.name))
+                float_ += 1
+            if grade - s.base_z_m > SINK_M and sink < MAX_FINDINGS_PER_KIND:
+                out.append(_f("warn", "building_sink",
+                             f"건물 '{s.name}' base_z가 대표지반보다 {grade - s.base_z_m:.1f}m 아래 (침몰)",
+                             _centroid(fp), s.name))
+                sink += 1
 
 
 def _check_overlap(solids, out):
