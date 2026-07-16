@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import tempfile
@@ -20,7 +21,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -35,6 +36,23 @@ JOBS_DIR = Path(
 
 # 타일 bbox span(m) 상한 — 미인증 /api/generate_tile 자원증폭 방지(정상 타일 ≤ tile_size + margin).
 _MAX_TILE_SPAN_M = 3000.0
+
+
+def _json_streaming(payload: dict) -> StreamingResponse:
+    """dict를 청크 스트리밍 JSON으로 응답 — Cloud Run의 32MiB **비스트리밍** 응답 상한 우회.
+
+    도로를 켜면 통합표면(지형+도로+보도+차선) geometry가 반경 500만 돼도 32MB를 넘겨,
+    앱이 200을 내도 Cloud Run이 "Response size too large"로 잘라 클라이언트엔 500이 갔다.
+    스트리밍(chunked transfer)은 이 상한이 적용되지 않으므로 대반경 단일 응답을 그대로 보낸다.
+    (전체 body를 메모리에 만들지만 4Gi로 충분 — 목적은 오직 chunked 전송.)
+    """
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+    def _gen():
+        for i in range(0, len(body), 1 << 20):  # 1MB 청크
+            yield body[i:i + (1 << 20)]
+
+    return StreamingResponse(_gen(), media_type="application/json")
 
 
 def _sweep_old_jobs(ttl_seconds: float = 7200.0) -> None:
@@ -145,7 +163,9 @@ def generate_endpoint(req: GenerateRequest) -> dict:
     if ortho_ready:
         files["ortho_png"] = f"/api/files/{job_id}/ortho"
 
-    return {
+    # 스트리밍으로 응답 — 도로 켠 대반경 geometry가 Cloud Run 32MiB 비스트리밍 상한을 넘겨
+    # 500 나던 문제 우회(_json_streaming 참조). 소반경 응답도 동일 경로(무해).
+    return _json_streaming({
         "ok": True,
         "job_id": job_id,
         "files": files,
@@ -157,7 +177,7 @@ def generate_endpoint(req: GenerateRequest) -> dict:
         "qa": result.get("qa"),   # 자동 QA findings (layers.qa=True 시)
         "trust_report": result.get("trust_report"),  # 데이터 신뢰도 리포트 (A-1)
         "zoning": result.get("zoning"),  # 용도지역 (arch-law-graph 연동, layers.zoning=True 시)
-    }
+    })
 
 
 @app.post("/api/tile_plan")
