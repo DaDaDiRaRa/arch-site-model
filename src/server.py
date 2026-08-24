@@ -16,7 +16,12 @@ from src.preview import preview_site as _preview_site
 from src.site_check import check_site_data as _check_site_data
 from src.tiles import generate_tiles as _generate_tiles
 
-mcp = FastMCP("arch-site-model")
+# stateless_http=True — Cloud Run 은 인스턴스가 수시로 바뀌어서 서버에 세션을 들고 있으면
+#   다음 요청이 다른 인스턴스에 붙어 세션이 깨진다(stdio 경로에는 영향 없음).
+# streamable_http_path="/" — src/api.py 가 이 앱 전체를 "/mcp" 밑에 다시 mount 하므로,
+#   기본값("/mcp")을 그대로 두면 실제 경로가 "/mcp/mcp" 가 된다. 여기서 "/" 로 낮춰
+#   바깥 mount 의 "/mcp" 하나로 끝나게 한다.
+mcp = FastMCP("arch-site-model", stateless_http=True, streamable_http_path="/")
 
 
 @mcp.tool()

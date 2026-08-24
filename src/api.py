@@ -20,13 +20,17 @@ import tempfile
 from pathlib import Path
 from uuid import uuid4
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from src import config
 from src.pipeline import generate as _generate
+from src.server import mcp as _mcp
 
 # 생성물 저장 루트(잡별 하위 폴더). 기본은 OS 임시 폴더 — Cloud Run 컨테이너 파일시스템은
 # 읽기전용일 수 있으나 /tmp는 항상 쓰기 가능. JOBS_DIR 환경변수로 재정의 가능.
@@ -71,11 +75,58 @@ def _sweep_old_jobs(ttl_seconds: float = 7200.0) -> None:
     except OSError:
         pass
 
+# --- MCP (/mcp) --------------------------------------------------------------
+# src/server.py 의 FastMCP 인스턴스를 이 앱에 얹는다. arch-law-graph 와 달리 이 앱은
+# mcp 가 requirements.txt 에 이미 fastapi 와 같은 venv 로 있어(핀 충돌 없음) 별도 서비스가
+# 아니라 여기 mount 로 끝난다.
+#
+# streamable_http_app() 이 만드는 하위 Starlette 앱은 자기 lifespan(session_manager.run())을
+# 들고 있는데, Starlette 의 lifespan 이벤트는 mount 된 하위 앱까지 전파되지 않는다
+# (mcp 소스 mcp/server/fastmcp/server.py 의 session_manager 프로퍼티 docstring 이 이 결합을
+#  "advanced use case" 로 명시). 그래서 이 앱의 lifespan 에서 명시적으로 돌려준다.
+_mcp_asgi_app = _mcp.streamable_http_app()  # session_manager 를 여기서 지연 생성한다
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    async with _mcp.session_manager.run():
+        yield
+
+
+# 나머지 REST API(/api/*, /health)는 지금처럼 공개로 둔다 — 여기서 막는 건 /mcp 뿐이다.
+# 법령처럼 공개 정보가 아니라 지형·건물 3D **생성 연산**이라 값싼 공개는 안 된다
+# (판단 근거: kunwon-ops 저장소 docs/plan-mcp-gateway.md §7).
+# 키가 아예 안 설정돼 있으면(로컬 개발 등) fail-closed — 조용히 공개로 새지 않는다.
+_MCP_SHARED_KEY = os.environ.get("ARCH_SITE_MODEL_MCP_KEY")
+
+
+class _McpAuthMiddleware:
+    """`/mcp` 전용 인증. Bearer 토큰이 ARCH_SITE_MODEL_MCP_KEY 와 일치해야 통과."""
+
+    def __init__(self, app):
+        self._app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers") or [])
+        token = headers.get(b"authorization", b"").decode("latin-1")
+        expected = f"Bearer {_MCP_SHARED_KEY}" if _MCP_SHARED_KEY else None
+        if not expected or token != expected:
+            resp = PlainTextResponse("Unauthorized", status_code=401)
+            await resp(scope, receive, send)
+            return
+        await self._app(scope, receive, send)
+
+
 app = FastAPI(
     title="arch-site-model API",
     version="1.0",
     description="주소 → 지형·건물 3D 대지모델 + 정사영상 텍스처 (.3dm / SketchUp 확장용 데이터).",
+    lifespan=_lifespan,
 )
+
 
 
 class GenerateRequest(BaseModel):
@@ -261,3 +312,34 @@ def get_file(job_id: str, kind: str) -> FileResponse:
 _FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 if _FRONTEND_DIST.is_dir():
     app.mount("/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend")
+
+# --- MCP 마운트 (라우팅 이후, 최종 wrap) -----------------------------------------
+# Starlette Mount 는 "/mcp/{나머지}" 정규식이라 트레일링 슬래시 없는 "/mcp" 자체는
+# 못 잡는다(실측: 404). 그런데 위 "/" 프론트엔드 캐치올은 "/{나머지}" 라서 "/mcp" 를
+# 정확히 잡아버리고 존재하지 않는 파일로 처리해 역시 404 를 낸다 — Mount 조합만으로는
+# "/mcp"(슬래시 없음) 가 항상 캐치올에 새 버린다.
+# 그래서 라우팅 전 단계(순수 ASGI 래퍼)에서 프리픽스를 직접 잘라 우회한다.
+class _McpMount:
+    """"/mcp" 와 "/mcp/*" 를 FastMCP 로 보낸다. 나머지 전부(REST API·정적 파일)는
+    그대로 FastAPI 앱에 넘긴다."""
+
+    def __init__(self, inner_app, mcp_app, prefix="/mcp"):
+        self._app = inner_app
+        self._mcp_app = mcp_app
+        self._prefix = prefix
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            path = scope["path"]
+            if path == self._prefix or path.startswith(self._prefix + "/"):
+                sub_scope = dict(scope)
+                sub_scope["path"] = path[len(self._prefix):] or "/"
+                await self._mcp_app(sub_scope, receive, send)
+                return
+        await self._app(scope, receive, send)
+
+
+# uvicorn 은 이 모듈의 "app" 심볼을 그대로 가져간다(Dockerfile CMD 참조) — FastAPI
+# lifespan(= _mcp.session_manager.run())은 그대로 트리거된다: 이 래퍼는 http 요청만
+# 가로채고 lifespan/websocket 스코프는 손대지 않고 그대로 넘긴다.
+app = _McpMount(app, _McpAuthMiddleware(_mcp_asgi_app))
