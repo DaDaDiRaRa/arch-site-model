@@ -16,5 +16,7 @@ rhino3dm>=8.0         # .3dm 출력 + 정사영상 텍스처 (Tier 1)
 # --- 서버 ---
 fastapi>=0.110        # 배포용 HTTP API (src/api.py)
 uvicorn>=0.27         # ASGI 서버 (Cloud Run 진입점)
-mcp>=1.2              # MCP 서버 (src/server.py, Claude 연동)
+mcp>=1.2,<2.0.0       # MCP 서버 — 2.0.0 은 mcp.server.fastmcp 를 없앴다(신 MCPServer API 로 교체).
+                       # src/server.py 는 1.x FastMCP 를 쓰므로 상한 없인 다음 재빌드에서 깨진다
+                       # (실측: 2026-08-24 배포 실패, ModuleNotFoundError: mcp.server.fastmcp)
 python-dotenv>=1.0    # .env 로드 (로컬 개발)
