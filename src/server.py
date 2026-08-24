@@ -10,6 +10,8 @@
 
 from mcp.server.fastmcp import FastMCP
 
+from mcp.server.transport_security import TransportSecuritySettings
+
 from src.config import DEFAULT_FLOOR_H_M
 from src.pipeline import generate as _generate
 from src.preview import preview_site as _preview_site
@@ -21,7 +23,18 @@ from src.tiles import generate_tiles as _generate_tiles
 # streamable_http_path="/" — src/api.py 가 이 앱 전체를 "/mcp" 밑에 다시 mount 하므로,
 #   기본값("/mcp")을 그대로 두면 실제 경로가 "/mcp/mcp" 가 된다. 여기서 "/" 로 낮춰
 #   바깥 mount 의 "/mcp" 하나로 끝나게 한다.
-mcp = FastMCP("arch-site-model", stateless_http=True, streamable_http_path="/")
+# FastMCP 는 host 인자를 안 주면(기본값 "127.0.0.1") DNS 리바인딩 방지를 **자동으로
+# 켜고 Host 헤더를 127.0.0.1/localhost 로만 제한한다**(로컬 개발 안전장치). Cloud Run 의
+# 실제 공개 도메인은 이 목록에 없어 전부 421 로 막힌다(실측: 2026-08-24, "Invalid Host header").
+# 이 서버의 실제 접근 통제는 아래 API 쪽 Bearer 토큰 미들웨어(_McpAuthMiddleware)이고,
+# DNS 리바인딩은 "127.0.0.1 로컬 서버를 브라우저가 몰래 두드리는" 위협 모델이라 공개 HTTPS +
+# 토큰 인증 조합에는 해당하지 않는다. 그래서 명시적으로 끈다.
+mcp = FastMCP(
+    "arch-site-model",
+    stateless_http=True,
+    streamable_http_path="/",
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+)
 
 
 @mcp.tool()
