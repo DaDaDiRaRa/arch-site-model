@@ -9,17 +9,21 @@
 
 > 완료하면 해당 줄을 삭제한다(항상 "남은 일"만 남게 유지). 완료 기능 상세는 아래 "구현 단계 현황"·모듈 구조 참조.
 
-- [ ] **mergeDXF 도입 검토**(kunwon-ops 4단계 계획, 2026-08-25): 이 앱엔 DXF 입력 경로가
-      아직 없다. `mergedxf.com` — 수치지형도 DXF(최대 4개·100MB·1:5,000 이하) → 좌표계
-      통일·도엽 자동 병합 → 지적·경사도·단면도·3D 지형(DXF·PDF·3DM·DAE). 과거 작업정리에서
-      나온 "DXF 트레이싱 고생"이 이 도구의 존재 이유. **1차 산출물은 구현이 아니라 조사** —
-      API·요금제·출력 품질을 보고 사서 쓸지, 지금 필요한 만큼만 가볍게 자체 구현할지 결정.
-      근거: `kunwon-ops`(private) 저장소 `docs/benchmark-2026.md` §6-2, `docs/plan-app-consolidation.md`(4단계).
 - [ ] **전국 5m DEM 확장**: 6개 광역단체(대전·서울·부산·대구·울산·세종 120타일) GCS 라이브. 건물·지적은
       VWorld 실시간이라 이미 전국이고 남은 건 지형(DEM)뿐. 지역 추가 = 1:5,000 수치지형도 SHP 폴더
       확보(사람 손) → `bake_tiled`→`dem_to_cog`→`gcloud storage cp`→`manifest.json` 커밋(반복). 경기권
-      등 대기(사용자가 SHP 폴더 채워 알림). 경기 화성(`2MAP5000_SHP`)은 로직 호환 확인됨. 인천·광주는
-      자치구 개편 확정 후. 상세 [[nationwide-dem-ngii-source]].
+      등 대기(사용자가 SHP 폴더 채워 알림 — ⚠️ 2026-08-25 확인: 기존 바탕화면 `Desktop\shp` 재고 폴더
+      사라짐, 재확보 필요). 경기 화성(`2MAP5000_SHP`)은 로직 호환 확인됨. 인천·광주는 자치구 개편 확정 후.
+      **2026-08-25 결정: 30m 전역 폴백(terrarium 등) 도입 안 함** — 미커버 지역도 SHP 베이크로만 채움
+      (기술 검증은 끝나 재론 가능). VWorld 3D 표고 스크래핑은 제한 공간정보 단속 대상이라 금지 경로 확정.
+      **실행 절차서 `docs/shp_bake_plan.md`**(1~6단계 명령어·현황·착수 체크리스트). 상세 [[nationwide-dem-ngii-source]].
+- [ ] **NGII 공개제한 DEM 기관 신청 검토(병행)**: 공간정보 안심구역(datafreezone.or.kr, 02-844-4206)이
+      **도심지 1m·전국 5m DEM** 보유. 절차 확정(2026-08-25): 온라인 신청(**연구과제 계획서**+보안서약서+
+      반입자료, 최대 25일) → 심의 → **센터 현장방문 분석** → 반출신청·재심의 → 승인 파일만 30일 내 다운로드.
+      **라이브 피드 아님(1회성 반출)** — SHP 루트 대체가 아니라 **도심 1m 품질 보강**용(라이다 기반,
+      공개 등고선으론 불가). 다음 행동(사람 일): 전화 02-844-4206으로 ⓐ 파생물 반출 범위 ⓑ 사내 지속활용
+      ⓒ 민간 신청 요건·비용 **선질의** → 긍정이면 계획서 작성(Claude 초안 가능) 후 신청.
+      **문의 문안·분기 판단·계획서 재료 = `docs/ngii_data_inquiry_plan.md`**. 상세 [[nationwide-dem-ngii-source]].
 - [ ] **도로 Phase R 후속(선택)**: 도로·보도·차선 + **통합 표면**(지형·도로·보도를 한 삼각화로 → 정점
       공유, 이음매·구멍·뜸 구조적 제거) **완료**. **대반경 타일경로(`generate_tile`)에 도로 추가 완료**
       (타일마다 도로/보도/중심선 클립→버닝→통합표면, `test_generate_tile_roads`) + **SketchUp 확장
@@ -208,6 +212,8 @@ docs/
   kbs_topomap_reference.md  KBS TopoMap(원본 수동 워크플로우) 기능 대조표 + 무인화 로드맵 (도로/수계/자동QA)
   road_surface_plan.md   도로 노면 자동화 (Phase R) 설계·진행 — R1~R3 + 통합 표면, KBS 대조, 한계
   dem_dsm_strategy.md    DEM+DSM 이원화 전략 (지면=DEM, 공중 구조물=DSM) — DSM 취득 블로커 확정
+  shp_bake_plan.md       SHP 베이크 실행 절차서 — 지역 추가 1~6단계(SHP확보→DEM/도로/수계 굽기→COG→GCS→manifest 커밋) + 비축 현황 + 대안 경로 판정표
+  ngii_data_inquiry_plan.md  NGII 안심구역 문의·신청 계획 — 절차·평가(1회성 반출), 선질의 문안, 분기 판단, 계획서 재료
 
 Dockerfile               프론트 빌드 + 파이썬 런타임 단일 이미지 (Cloud Run 배포)
 .github/workflows/deploy.yml  main push 시 pytest → Cloud Run 자동 배포
