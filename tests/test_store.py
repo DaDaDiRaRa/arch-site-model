@@ -61,3 +61,17 @@ def test_load_manifest_missing_returns_empty(tmp_path):
 def test_load_manifest_reads_file():
     tiles = load_manifest(FIXTURES / "manifest_sample.json")
     assert len(tiles) == 2
+
+
+def test_offline_bake_toolchain_present():
+    """오프라인 굽기 3종이 리포에 살아있는지 확인 — 유실 감시용.
+
+    커밋 30a6fc7(2026-08-04)에서 이 세 모듈이 전용 테스트와 **함께** 삭제돼
+    CI가 초록인 채로 3주간 유실이 묻혔다(2026-08-25 발견·복구). 감시를 전용
+    테스트에 두면 같은 사고에 같이 쓸려나가므로, 굽기와 무관한 이 파일에 둔다.
+    비축 확장(전국 DEM·도로·수계)이 전부 이 툴체인에 걸려 있다.
+    """
+    import importlib
+
+    for mod in ("contour_bake", "road_bake", "water_bake"):
+        importlib.import_module(f"src.terrain.{mod}")
