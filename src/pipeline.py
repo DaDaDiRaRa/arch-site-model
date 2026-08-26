@@ -14,7 +14,7 @@ from pathlib import Path
 
 from src import config
 from src.geo.bbox import bbox_from_point
-from src.geo.crs import origin_offset, to_5186
+from src.geo.crs import origin_offset, to_4326, to_5186
 from src.geo.geocode import GeocodeError, clean_address, geocode
 from src.geo.vworld import DATASET_BUILDING, DATASET_CADASTRAL, VWorldClient, VWorldError
 from src.geometry.building import (
@@ -43,6 +43,45 @@ def _bbox_4326_to_5186(
     xs = [c[0] for c in corners]
     ys = [c[1] for c in corners]
     return (min(xs), min(ys), max(xs), max(ys))
+
+
+# 지형을 사이트 반경 밖으로 넓힐 수 있는 상한(반경 배수). _terrain_bbox_4326 참조.
+TERRAIN_PAD_CAP = 2.0
+
+
+def _terrain_bbox_4326(
+    bbox: tuple[float, float, float, float],
+    coords_5186: list[tuple[float, float]],
+    radius_m: float,
+) -> tuple[float, float, float, float]:
+    """지형 클립용 bbox = 사이트 bbox ∪ 건물 실제 범위 (EPSG:4326).
+
+    VWorld는 bbox에 **걸치기만 한** 건물도 폴리곤 전체를 돌려준다(대형 단지 외곽선 등).
+    그래서 지형만 사이트 bbox로 자르면 경계를 넘는 건물이 지형 없는 허공에 앉는다 —
+    실측(반포동 반경 250m): 지형은 500m인데 건물은 1,227m까지 뻗어 85동 중 18동(21%)이
+    지형 밖이었고 QA가 building_no_terrain 으로 잡아냈다.
+
+    병리적으로 큰 피처 하나가 지형을 폭주시키지 않도록 반경 × TERRAIN_PAD_CAP 까지만
+    넓힌다. 상한에 걸려 여전히 지형 밖인 건물은 QA 경고로 남는다(조용히 넘어가지 않음).
+    """
+    if not coords_5186:
+        return bbox
+    xs = [c[0] for c in coords_5186]
+    ys = [c[1] for c in coords_5186]
+    corners = [to_4326(x, y) for x in (min(xs), max(xs)) for y in (min(ys), max(ys))]
+    blons = [c[0] for c in corners]
+    blats = [c[1] for c in corners]
+
+    minlon, minlat, maxlon, maxlat = bbox
+    cap = bbox_from_point(
+        (minlon + maxlon) / 2.0, (minlat + maxlat) / 2.0, radius_m * (1.0 + TERRAIN_PAD_CAP)
+    )
+    return (
+        max(min(minlon, *blons), cap[0]),
+        max(min(minlat, *blats), cap[1]),
+        min(max(maxlon, *blons), cap[2]),
+        min(max(maxlat, *blats), cap[3]),
+    )
 
 
 def _safe_filename(address: str) -> str:
@@ -246,12 +285,16 @@ def generate(
     terrain_tile_file: str | None = None
     dem = None  # 지적 드레이프(_build_geometry)에서도 재사용 — 함수 스코프로 유지
 
+    # 지형(및 그 위에 드레이프되는 정사영상)은 건물 실제 범위까지 덮는다 —
+    # 경계에 걸친 건물이 지형 없는 허공에 앉지 않도록. 건물이 bbox를 안 넘으면 bbox와 동일.
+    terrain_bbox = _terrain_bbox_4326(bbox, coords_5186, radius_m)
+
     if layers.get("terrain"):
         from src.geometry.seating import seat_building
         from src.terrain.dem import clip_dem_mosaic
         from src.terrain.store import find_tiles
 
-        dem_tiles = find_tiles(bbox)
+        dem_tiles = find_tiles(terrain_bbox)
         if not dem_tiles:
             warnings.append(
                 "DEM 타일 없음: 반경이 비축 DEM 밖입니다. "
@@ -261,7 +304,7 @@ def generate(
             tile_files = [t["file"] for t in dem_tiles]
             terrain_tile_file = ", ".join(tile_files)  # 경계 걸치면 여러 타일 병합
             tile_paths = [config.dem_tile_path(f) for f in tile_files]
-            bbox_5186 = _bbox_4326_to_5186(bbox)
+            bbox_5186 = _bbox_4326_to_5186(terrain_bbox)
 
             try:
                 dem = clip_dem_mosaic(tile_paths, bbox_5186, offset)
@@ -465,8 +508,10 @@ def generate(
 
                     odir.mkdir(parents=True, exist_ok=True)
                     png_path = odir / (_safe_filename(cleaned) + "_ortho.png")
+                    # 지형과 같은 범위로 — 평면투영 UV가 extent 기준이라 어긋나면
+                    # 지형 가장자리에 텍스처가 반복/왜곡된다(_apply_ortho_texture).
                     mosaic = build_mosaic(
-                        bbox, config.ORTHO_ZOOM, source, okey, png_path,
+                        terrain_bbox, config.ORTHO_ZOOM, source, okey, png_path,
                         fetch=ortho_fetch,
                     )
                     bx0, by0, bx1, by1 = mosaic.bounds

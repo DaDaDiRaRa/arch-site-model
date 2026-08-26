@@ -600,3 +600,39 @@ def test_generate_geometry_omitted_by_default(monkeypatch):
     )
     out = generate("대전광역시 서구 괴정동 358", client=FakeClient(_daejeon_features()))
     assert out["geometry"] is None
+
+
+# --- 지형 클립 범위: 사이트 bbox ∪ 건물 범위 (경계 걸친 건물이 허공에 앉는 문제) ---
+
+def test_terrain_bbox_equals_site_bbox_when_buildings_inside():
+    """건물이 bbox를 안 넘으면 지형 범위는 사이트 bbox 그대로(불필요한 확장 없음)."""
+    bbox = (127.0, 37.0, 127.01, 37.01)
+    inside = [pl.to_5186(127.004, 37.004), pl.to_5186(127.006, 37.006)]
+    assert pl._terrain_bbox_4326(bbox, inside, 250) == bbox
+
+
+def test_terrain_bbox_expands_to_cover_straddling_building():
+    """bbox에 걸친 건물(VWorld가 폴리곤 전체를 돌려줌) 쪽으로 지형이 넓어진다."""
+    bbox = (127.0, 37.0, 127.01, 37.01)
+    # 동쪽·북쪽으로 bbox를 벗어난 정점(반경 1km → 상한에 걸리지 않는 거리)
+    coords = [pl.to_5186(127.005, 37.005), pl.to_5186(127.02, 37.02)]
+    out = pl._terrain_bbox_4326(bbox, coords, 1000)
+    assert out[0] <= bbox[0] and out[1] <= bbox[1]      # 원래 bbox를 포함
+    assert out[2] > bbox[2] and out[3] > bbox[3]        # 건물 쪽으로 확장
+    assert out[2] >= 127.019 and out[3] >= 37.019       # 건물 정점까지 덮음
+
+
+def test_terrain_bbox_capped_against_runaway_feature():
+    """병리적으로 먼 정점이 있어도 반경 × TERRAIN_PAD_CAP 이상은 안 넓어진다."""
+    bbox = (127.0, 37.0, 127.01, 37.01)
+    far = [pl.to_5186(127.005, 37.005), pl.to_5186(128.5, 38.5)]  # ~100km 밖
+    out = pl._terrain_bbox_4326(bbox, far, 250)
+    span_deg = out[3] - out[1]
+    cap_deg = 2 * 250 * (1 + pl.TERRAIN_PAD_CAP) / 111_320.0
+    assert span_deg <= cap_deg * 1.01
+    assert out[2] < 128.0 and out[3] < 38.0
+
+
+def test_terrain_bbox_no_buildings_returns_site_bbox():
+    bbox = (127.0, 37.0, 127.01, 37.01)
+    assert pl._terrain_bbox_4326(bbox, [], 250) == bbox
