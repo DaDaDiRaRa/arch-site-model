@@ -86,6 +86,47 @@ def test_terrain_spike_flagged():
     assert "terrain_spike" in _kinds(qa)
 
 
+def _grid_mesh(n=4, step_m=50.0, z_of=lambda i, j: 50.0):
+    """n×n 격자 TIN (정점=인치 계약). z_of(i,j)는 미터."""
+    verts = [
+        (i * step_m * M2I, j * step_m * M2I, z_of(i, j) * M2I)
+        for j in range(n) for i in range(n)
+    ]
+    tris = []
+    for j in range(n - 1):
+        for i in range(n - 1):
+            a = j * n + i
+            tris.append((a, a + 1, a + n + 1))
+            tris.append((a, a + n + 1, a + n))
+    return TerrainMesh(vertices=verts, triangles=tris)
+
+
+def test_terrain_skirt_not_flagged_as_spike():
+    """둘레 스커트(벽)를 지형 이웃으로 세지 않는다.
+
+    벽 바닥은 지형면 정점과 같은 (x,y)에 수십 m 아래로 붙는다. 이를 이웃으로 세면
+    기준면이 아래로 끌려가 **평탄한 지형의 둘레 전체**가 가짜 스파이크가 됐다
+    (실측 반포동 250m: 가짜 40건, 원본 DEM은 그 자리에서 편차 0.00m).
+    """
+    from src.geometry.terrain_mesh import add_skirt
+
+    # 벽 낙차는 (정점표고 − 지형최저) + depth 라 실지형에선 수십 m가 흔하다.
+    # 낙차가 SPIKE_M을 넘을 만큼은 돼야 이 버그가 재현된다(얕은 벽은 그냥 안 걸림).
+    mesh = add_skirt(_grid_mesh(), depth_m=40.0)          # 완전 평탄 + 깊은 벽
+    assert len(mesh.vertices) > 16                        # 벽이 실제로 붙었는지
+    assert "terrain_spike" not in _kinds(run_qa([], terrain_mesh=mesh))
+
+
+def test_terrain_uniform_slope_not_flagged_as_spike():
+    """균일 경사면은 스파이크가 아니다 — 이웃 '평균'이 아니라 '평면' 대비로 잰다.
+
+    적응형 TIN은 평탄부를 큰 삼각형으로 덮어 변이 수백 m까지 길어진다(실측 최대 310m).
+    이웃 평균 기준이면 가장자리 정점이 경사만으로도 수십 m 편차가 나 가짜 경보가 된다.
+    """
+    mesh = _grid_mesh(step_m=200.0, z_of=lambda i, j: i * 200.0 * 0.2)  # 20% 경사
+    assert "terrain_spike" not in _kinds(run_qa([], terrain_mesh=mesh))
+
+
 def test_summary_counts():
     """summary에 총계·경고수·종류별 개수."""
     fp = [(0, 0), (40, 0), (40, 40), (0, 40)]

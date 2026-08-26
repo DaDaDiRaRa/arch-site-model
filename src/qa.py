@@ -176,32 +176,113 @@ def _check_footprints(solids, out):
             tiny += 1
 
 
+def _plane_dev(px, py, pz, x, y, z):
+    """이웃 (px,py,pz)에 최소제곱 평면을 맞추고 (x,y,z)의 평면 대비 편차를 돌려준다.
+
+    이웃 **평균**과 비교하면 경사면에서 가짜 편차가 생긴다 — 적응형 TIN은 평탄한 곳을
+    큰 삼각형으로 덮어 변이 수백 m까지 길어지므로(실측 최대 310m), 균일한 비탈에서도
+    "이웃보다 몇 m 높다"가 나온다. 평면을 빼면 경사 성분이 제거돼 **국소 돌출만** 남는다.
+    이웃이 3개 미만이거나 일직선이면 None(판정 보류).
+    """
+    n = len(px)
+    if n < 3:
+        return None
+    sx = sy = sxx = syy = sxy = sz = sxz = syz = 0.0
+    for i in range(n):
+        a, b, c = px[i], py[i], pz[i]
+        sx += a; sy += b; sz += c
+        sxx += a * a; syy += b * b; sxy += a * b
+        sxz += a * c; syz += b * c
+    # 정규방정식 [[sxx,sxy,sx],[sxy,syy,sy],[sx,sy,n]] · [A,B,C]^T = [sxz,syz,sz]^T
+    m = [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, float(n)]]
+    det = (
+        m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+    )
+    scale = max(abs(sxx), abs(syy), float(n), 1.0)
+    if abs(det) < 1e-9 * scale ** 3:      # 일직선/축퇴 → 판정 보류
+        return None
+    r = [sxz, syz, sz]
+    inv0 = (m[1][1] * m[2][2] - m[1][2] * m[2][1]) / det
+    inv1 = -(m[0][1] * m[2][2] - m[0][2] * m[2][1]) / det
+    inv2 = (m[0][1] * m[1][2] - m[0][2] * m[1][1]) / det
+    A = inv0 * r[0] + inv1 * r[1] + inv2 * r[2]
+    inv3 = -(m[1][0] * m[2][2] - m[1][2] * m[2][0]) / det
+    inv4 = (m[0][0] * m[2][2] - m[0][2] * m[2][0]) / det
+    inv5 = -(m[0][0] * m[1][2] - m[0][2] * m[1][0]) / det
+    B = inv3 * r[0] + inv4 * r[1] + inv5 * r[2]
+    inv6 = (m[1][0] * m[2][1] - m[1][1] * m[2][0]) / det
+    inv7 = -(m[0][0] * m[2][1] - m[0][1] * m[2][0]) / det
+    inv8 = (m[0][0] * m[1][1] - m[0][1] * m[1][0]) / det
+    C = inv6 * r[0] + inv7 * r[1] + inv8 * r[2]
+    return z - (A * x + B * y + C)
+
+
 def _check_terrain_spikes(terrain_mesh, m2i, out):
-    """지형 TIN 정점이 이웃 평균과 SPIKE_M 이상 차이 = 스파이크/웅덩이(등고선 오류·보간 오버슈트)."""
+    """지형 TIN 정점이 이웃 평면 대비 SPIKE_M 이상 튀면 스파이크/웅덩이.
+
+    등고선 오류·보간 오버슈트를 잡는 검사다. 경사면·희소 삼각화를 스파이크로 오인하지
+    않도록 이웃 **평면 맞춤** 대비 편차를 쓴다(_plane_dev). 메시 **경계 정점은 제외** —
+    이웃이 한쪽에만 있어 어떤 기준을 써도 편향된다(실측: 가짜 경보 40건이 전부 경계였다).
+    """
     if terrain_mesh is None or not terrain_mesh.vertices or not terrain_mesh.triangles:
         return
     verts = terrain_mesh.vertices
     nv = len(verts)
     zs = [v[2] / m2i for v in verts]  # 인치 → 미터
-    nbr_sum = [0.0] * nv
-    nbr_cnt = [0] * nv
+
+    # 스커트(둘레 벽, terrain_mesh.add_skirt) 정점 제외. 벽 바닥은 지형면 정점과 **같은
+    # (x,y)** 에 수십 m 아래로 붙는데, 이걸 지형 이웃으로 세면 기준면이 통째로 아래로
+    # 끌려가 둘레 전체가 가짜 스파이크가 된다(실측 반포동: 가짜 40건이 전부 이 경우,
+    # 원본 DEM은 그 자리에서 편차 0.00m로 완전 평탄했다).
+    same_xy: dict = {}
+    for i, v in enumerate(verts):
+        same_xy.setdefault((round(v[0], 3), round(v[1], 3)), []).append(i)
+    skirt = set()
+    for idxs in same_xy.values():
+        if len(idxs) > 1:                       # 같은 자리에 상하 두 정점 → 아래쪽이 벽
+            top = max(idxs, key=lambda j: zs[j])
+            skirt.update(j for j in idxs if j != top)
+
+    nbrs: list[set] = [set() for _ in range(nv)]
+    edge_tris: dict = {}
     for a, b, c in terrain_mesh.triangles:
+        if a in skirt or b in skirt or c in skirt:
+            continue                            # 벽 삼각형은 지형면이 아니다
         for u, w in ((a, b), (b, c), (c, a)):
             if 0 <= u < nv and 0 <= w < nv:
-                nbr_sum[u] += zs[w]; nbr_cnt[u] += 1
-                nbr_sum[w] += zs[u]; nbr_cnt[w] += 1
-    n = 0
+                nbrs[u].add(w)
+                nbrs[w].add(u)
+                edge_tris[(u, w) if u < w else (w, u)] = edge_tris.get(
+                    (u, w) if u < w else (w, u), 0
+                ) + 1
+    # 벽을 걷어낸 **지형면**에서 삼각형 하나에만 속한 변 = 진짜 가장자리 → 끝점 판정 제외
+    # (이웃이 한쪽에만 있어 어떤 기준을 써도 편향된다)
+    boundary = set(skirt)
+    for (u, w), cnt in edge_tris.items():
+        if cnt == 1:
+            boundary.add(u)
+            boundary.add(w)
+
     worst = []
     for i in range(nv):
-        if nbr_cnt[i] == 0:
+        if i in boundary or len(nbrs[i]) < 3:
             continue
-        dev = zs[i] - nbr_sum[i] / nbr_cnt[i]
-        if abs(dev) > SPIKE_M:
+        idx = list(nbrs[i])
+        dev = _plane_dev(
+            [verts[j][0] / m2i for j in idx],
+            [verts[j][1] / m2i for j in idx],
+            [zs[j] for j in idx],
+            verts[i][0] / m2i, verts[i][1] / m2i, zs[i],
+        )
+        if dev is not None and abs(dev) > SPIKE_M:
             worst.append((abs(dev), i, dev))
     worst.sort(reverse=True)
+    n = 0
     for adev, i, dev in worst[:MAX_FINDINGS_PER_KIND]:
         out.append(_f("warn", "terrain_spike",
-                     f"지형 정점이 이웃보다 {dev:+.1f}m ({'스파이크' if dev > 0 else '웅덩이'})",
+                     f"지형 정점이 주변 지형면보다 {dev:+.1f}m ({'스파이크' if dev > 0 else '웅덩이'})",
                      [round(verts[i][0] / m2i, 2), round(verts[i][1] / m2i, 2)], None))
         n += 1
 
