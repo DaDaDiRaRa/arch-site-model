@@ -5,6 +5,24 @@ require "json"
 
 module ArchSiteModel
   module ApiClient
+    # Sketchup::Http::Request 는 참조를 유지하지 않으면 비동기 콜백이 도착하기 전에
+    # GC 로 수거돼 요청이 조용히 실패한다. 특히 **앞서 만든 모델을 삭제**하면 대량 해제로
+    # GC 가 강하게 발동해, 붙잡히지 않은 요청 객체가 전송 도중 수거된다 — "한 번은 되고
+    # 삭제 후 다시 하면 에러, SketchUp 재시작하면 복구"의 정확한 원인. 콜백이 끝날 때까지
+    # 모듈 수준 배열에 붙잡아 두고(=GC 대상에서 제외), 끝나면 놓아준다.
+    @pending = []
+
+    def self.retain(request)
+      @pending << request
+      request
+    end
+
+    def self.release(request)
+      @pending.delete(request)
+    rescue StandardError
+      nil
+    end
+
     # base_url: 예 "http://localhost:8000"
     # params: {"address"=>..., "radius_m"=>..., "terrain"=>true/false}
     # yield: 결과 해시 { geometry:, warnings:, error: }
@@ -30,8 +48,13 @@ module ArchSiteModel
       request.headers = { "Content-Type" => "application/json" }
       request.body = JSON.generate(body)
 
+      retain(request)
       request.start do |_req, response|
-        callback.call(parse_response(response))
+        begin
+          callback.call(parse_response(response))
+        ensure
+          release(request)
+        end
       end
     rescue StandardError => e
       callback.call({ error: "요청 생성 실패: #{e.message}" })
@@ -61,8 +84,13 @@ module ArchSiteModel
     # 바이너리(정사영상 PNG 등) 다운로드. yield: 바이트 문자열 또는 nil(실패).
     def self.download_binary(url, &callback)
       request = Sketchup::Http::Request.new(url, Sketchup::Http::GET)
+      retain(request)
       request.start do |_req, response|
-        callback.call(response.status_code == 200 ? response.body : nil)
+        begin
+          callback.call(response.status_code == 200 ? response.body : nil)
+        ensure
+          release(request)
+        end
       end
     rescue StandardError
       callback.call(nil)
@@ -81,8 +109,13 @@ module ArchSiteModel
       request = Sketchup::Http::Request.new(url, Sketchup::Http::POST)
       request.headers = { "Content-Type" => "application/json" }
       request.body = JSON.generate(body)
+      retain(request)
       request.start do |_req, response|
-        callback.call(parse_plan(response))
+        begin
+          callback.call(parse_plan(response))
+        ensure
+          release(request)
+        end
       end
     rescue StandardError => e
       callback.call({ error: "계획 요청 실패: #{e.message}" })
@@ -108,8 +141,13 @@ module ArchSiteModel
       request = Sketchup::Http::Request.new(url, Sketchup::Http::POST)
       request.headers = { "Content-Type" => "application/json" }
       request.body = JSON.generate(tile)
+      retain(request)
       request.start do |_req, response|
-        callback.call(parse_tile(response))
+        begin
+          callback.call(parse_tile(response))
+        ensure
+          release(request)
+        end
       end
     rescue StandardError => e
       callback.call({ error: "타일 요청 실패: #{e.message}" })
