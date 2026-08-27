@@ -41,6 +41,8 @@ _ELEV_FIELDS = [
     "ELEV", "elev", "H", "h", "HEIGHT", "height", "Z_VAL", "z_val", "ALTITUDE",
     "등고수치",  # 수치지형도Ver2.0 F0010000 등고선
     "수치",      # 수치지형도Ver2.0 F0020000 표고점
+    "CONT",     # 연속수치지형도 F0010000 등고선 (영문 필드)
+    "NUME",     # 연속수치지형도 F0020000 표고점 (영문 필드)
     "표고",      # 기타 포맷
 ]
 
@@ -106,6 +108,21 @@ def _find_shp(shp_dir: Path, pattern: re.Pattern) -> list[Path]:
     return out
 
 
+def _geom_coords(geom) -> list:
+    """단일/다중 파트 지오메트리에서 정점 좌표열을 뽑는다.
+
+    shapely 다중 파트(MultiLineString/MultiPoint)는 `.coords` 접근이 NotImplementedError를
+    던지는데, 예외가 AttributeError가 아니라 hasattr로도 걸러지지 않는다. 도엽별 수치지도는
+    전부 단일 파트라 안 걸렸지만 연속수치지형도 등고선에는 다중 파트가 섞여 있다.
+    """
+    if hasattr(geom, "geoms"):          # 다중 파트 먼저 — .coords 건드리기 전에
+        out: list = []
+        for part in geom.geoms:
+            out.extend(_geom_coords(part))
+        return out
+    return list(geom.coords) if hasattr(geom, "coords") else []
+
+
 def _densify_coords(coords, step: float):
     """폴리라인 정점열을 step 간격 이하로 조밀화. 솔버가 등고선을 셀마다 제약하도록(beading 방지).
 
@@ -145,8 +162,11 @@ def _to_target_crs(gdf, target_crs: str):
 
 
 def read_contours(
-    shp_dir: str | Path, target_crs: str = "EPSG:5186", densify_m: float | None = None
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    shp_dir: str | Path,
+    target_crs: str = "EPSG:5186",
+    densify_m: float | None = None,
+    bbox: tuple[float, float, float, float] | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """수치지형도 SHP에서 (등고선 + 표고점) 좌표+표고를 추출한다.
 
     Returns:
@@ -155,6 +175,12 @@ def read_contours(
         반환값: (all_x, all_y, all_z) 로 단순화 — 단 표고점 포함 여부 경고.
     """
     shp_dir = Path(shp_dir)
+    # bbox(target_crs 기준)를 주면 그 영역에 걸치는 피처만 읽는다(도/전국 단위 소스 스트리밍).
+    # GeoSeries로 넘기면 geopandas가 파일 좌표계로 알아서 변환한다(5179/5187 소스 대응).
+    bbox_filter = None
+    if bbox is not None:
+        from shapely.geometry import box as _box
+        bbox_filter = gpd.GeoSeries([_box(*bbox)], crs=target_crs)
     contour_files = _find_shp(shp_dir, _CONTOUR_PAT)
     spot_files = _find_shp(shp_dir, _SPOT_PAT)
 
@@ -167,17 +193,14 @@ def read_contours(
 
     # 등고선 — LineString 정점마다 표고 복사
     for p in contour_files:
-        gdf = _to_target_crs(gpd.read_file(p), target_crs)
+        gdf = _to_target_crs(gpd.read_file(p, bbox=bbox_filter), target_crs)
         elev_field = _find_elev_field(gdf)
         for _, row in gdf.iterrows():
             geom = row.geometry
             if geom is None or geom.is_empty:
                 continue
             z = float(row[elev_field])
-            coords = list(geom.coords) if hasattr(geom, "coords") else []
-            if not coords and hasattr(geom, "geoms"):
-                for part in geom.geoms:
-                    coords.extend(part.coords)
+            coords = _geom_coords(geom)
             if densify_m:  # 솔버용: 등고선을 반 셀 이하로 조밀화(beading 방지, 선형/clough엔 공선점 무해)
                 coords = _densify_coords(coords, densify_m)
             for x, y, *_ in coords:
@@ -188,7 +211,7 @@ def read_contours(
 
     # 표고점 — Point 1개당 표고 1개
     for p in spot_files:
-        gdf = _to_target_crs(gpd.read_file(p), target_crs)
+        gdf = _to_target_crs(gpd.read_file(p, bbox=bbox_filter), target_crs)
         elev_field = _find_elev_field(gdf)
         cnt_before = len(xs)
         for _, row in gdf.iterrows():
@@ -196,9 +219,10 @@ def read_contours(
             if geom is None or geom.is_empty:
                 continue
             z = float(row[elev_field])
-            xs.append(geom.x)
-            ys.append(geom.y)
-            zs.append(z)
+            for x, y, *_ in _geom_coords(geom):   # MultiPoint 대응
+                xs.append(x)
+                ys.append(y)
+                zs.append(z)
         log.info("표고점 %s: %d 점 로드", p.name, len(xs) - cnt_before)
 
     if not xs:
@@ -470,6 +494,46 @@ def bake(
     log.info("=== contour_bake 완료 === %s", out_path)
 
 
+def _source_bounds(
+    shp_dir: str | Path, target_crs: str = "EPSG:5186"
+) -> tuple[float, float, float, float]:
+    """등고선/표고점 파일 **헤더만** 읽어 전역 범위를 구한다(좌표는 안 올림).
+
+    스트리밍 베이크에서 타일 격자를 잡으려면 전역 extent가 필요한데, 그걸 얻자고 정점을
+    다 적재하면 스트리밍의 의미가 없다. pyogrio.read_info는 shapefile 헤더의 bbox만 읽는다.
+    """
+    import pyogrio
+    from pyproj import Transformer
+
+    shp_dir = Path(shp_dir)
+    files = _find_shp(shp_dir, _CONTOUR_PAT) + _find_shp(shp_dir, _SPOT_PAT)
+    if not files:
+        raise FileNotFoundError(f"등고선/표고점 SHP를 찾을 수 없습니다: {shp_dir}")
+    out: list[tuple[float, float, float, float]] = []
+    for p in files:
+        try:
+            info = pyogrio.read_info(p)
+        except Exception as e:  # noqa: BLE001
+            log.warning("헤더 읽기 실패(건너뜀) %s: %s", p.name, e)
+            continue
+        b = info.get("total_bounds")
+        if b is None or not np.isfinite(b).all():
+            continue
+        crs = info.get("crs")
+        if crs and str(crs) != str(target_crs):
+            tr = Transformer.from_crs(crs, target_crs, always_xy=True)
+            try:
+                b = tr.transform_bounds(*b)
+            except AttributeError:  # pyproj<3.1 폴백 — 모서리 변환
+                xs_, ys_ = tr.transform([b[0], b[2], b[0], b[2]], [b[1], b[3], b[3], b[1]])
+                b = (min(xs_), min(ys_), max(xs_), max(ys_))
+        out.append(tuple(float(v) for v in b))
+    if not out:
+        raise ValueError(f"유효한 범위를 가진 SHP가 없습니다: {shp_dir}")
+    return (min(o[0] for o in out), min(o[1] for o in out),
+            max(o[2] for o in out), max(o[3] for o in out))
+
+
 def bake_tiled(
     shp_dir: str | Path,
     out_path: str | Path,
@@ -481,6 +545,7 @@ def bake_tiled(
     method: str = "clough",
     guard_m: float = 3.0,
     solver_iters: int = 400,
+    stream: bool = False,
 ) -> list[Path]:
     """대용량 지역용: 등고선/표고점을 1회 읽고 tile_km 격자로 나눠 타일별 DEM을 굽는다.
 
@@ -489,6 +554,10 @@ def bake_tiled(
     보간하므로 각 Delaunay/격자 비용이 유한하다. margin은 타일 경계 밖 등고선까지 포함해
     가장자리 평탄화·이음새 불일치를 줄인다(서빙은 find_tiles + clip_dem_mosaic가 병합).
 
+    stream=True면 등고선을 **타일마다 그 영역만 골라 읽는다**(도/전국 단위 한 파일 소스용).
+    타일이 쓰는 점 집합은 전량 적재 경로와 동일하므로 **산출 DEM도 동일**하고, 피크 메모리만
+    타일 하나 분량으로 고정된다(경기도 도 영역 = 정점 1억 개 ≈ 12GB → 수백 MB).
+
     타일 원점은 전역 minx/maxy 격자에 정렬(tile_m가 cell_m의 정수배일 때)되어 인접
     타일이 픽셀 정합한다. out_path는 파일명 접두사로 쓰여 `{stem}_r{r}c{c}{suffix}` 생성.
     반환: 생성된 .tif 경로 목록.
@@ -496,10 +565,14 @@ def bake_tiled(
     shp_dir = Path(shp_dir)
     out_path = Path(out_path)
     # 솔버는 등고선을 반 셀 이하로 조밀화해 읽는다(연속 제약 → beading 방지).
-    xs, ys, zs = read_contours(shp_dir, densify_m=(cell_m * 0.5 if method == "solver" else None))
-
-    minx, miny = float(xs.min()), float(ys.min())
-    maxx, maxy = float(xs.max()), float(ys.max())
+    densify = cell_m * 0.5 if method == "solver" else None
+    if stream:                       # 헤더로 범위만 잡고, 정점은 타일마다 읽는다
+        xs = ys = zs = None
+        minx, miny, maxx, maxy = _source_bounds(shp_dir)
+    else:
+        xs, ys, zs = read_contours(shp_dir, densify_m=densify)
+        minx, miny = float(xs.min()), float(ys.min())
+        maxx, maxy = float(xs.max()), float(ys.max())
     tile_m = tile_km * 1000.0
     if tile_m % cell_m != 0:
         log.warning("tile_km*1000(%.0f)이 cell_m(%.1f) 배수가 아님 → 타일 픽셀 정합 어긋날 수 있음",
@@ -507,8 +580,9 @@ def bake_tiled(
     ncols = max(1, int(np.ceil((maxx - minx) / tile_m)))
     nrows = max(1, int(np.ceil((maxy - miny) / tile_m)))
     log.info(
-        "=== tiled bake === 전역 %.1f×%.1f km → 최대 %d×%d 타일 (tile_km=%.1f, margin=%.0fm, 점 %d)",
-        (maxx - minx) / 1000, (maxy - miny) / 1000, nrows, ncols, tile_km, margin_m, len(xs),
+        "=== tiled bake === 전역 %.1f×%.1f km → 최대 %d×%d 타일 (tile_km=%.1f, margin=%.0fm, 점 %d(-1=스트리밍))",
+        (maxx - minx) / 1000, (maxy - miny) / 1000, nrows, ncols, tile_km, margin_m,
+        -1 if stream else len(xs),
     )
 
     made: list[Path] = []
@@ -518,9 +592,19 @@ def bake_tiled(
         for c in range(ncols):
             tx0 = minx + c * tile_m
             tx1 = min(tx0 + tile_m, maxx)
+            bx = (tx0 - margin_m, ty0 - margin_m, tx1 + margin_m, ty1 + margin_m)
+            if stream:
+                try:
+                    txs, tys, tzs = read_contours(shp_dir, densify_m=densify, bbox=bx)
+                except (ValueError, FileNotFoundError):
+                    continue  # 이 타일 영역엔 데이터 없음
+            else:
+                txs, tys, tzs = xs, ys, zs
+            # bbox 필터는 "걸치는 피처 전부"를 주므로, 전량 적재 경로와 같은 마스크를 다시 건다
+            # (같은 점 집합 → 같은 결과 보장).
             sel = (
-                (xs >= tx0 - margin_m) & (xs <= tx1 + margin_m)
-                & (ys >= ty0 - margin_m) & (ys <= ty1 + margin_m)
+                (txs >= bx[0]) & (txs <= bx[2])
+                & (tys >= bx[1]) & (tys <= bx[3])
             )
             n = int(sel.sum())
             if n < 10:
@@ -528,7 +612,7 @@ def bake_tiled(
             tb = (tx0, ty0, tx1, ty1)
             try:
                 grid, transform = bake_dem(
-                    xs[sel], ys[sel], zs[sel],
+                    txs[sel], tys[sel], tzs[sel],
                     cell_m=cell_m, bounds=tb, method=method, guard_m=guard_m,
                     solver_iters=solver_iters,
                 )
@@ -580,8 +664,13 @@ def _cli() -> None:
              "--out은 파일명 접두사로 사용(→ {stem}_r{r}c{c}.tif).",
     )
     parser.add_argument(
+        "--stream", action="store_true",
+        help="타일마다 해당 영역만 골라 읽기 - 도/전국 단위 한 파일 소스용(메모리 고정). "
+             "결과 DEM은 전량 적재와 동일. --tile-km>0일 때만 의미 있음",
+    )
+    parser.add_argument(
         "--margin-m", type=float, default=300.0,
-        help="타일 경계 밖 여유(m) — 이음새 연속성. --tile-km>0일 때만 적용. 기본 300",
+        help="타일 경계 밖 여유(m) - 이음새 연속성. --tile-km>0일 때만 적용. 기본 300",
     )
     args = parser.parse_args()
 
@@ -592,6 +681,7 @@ def _cli() -> None:
             out_path=args.out,
             cell_m=args.cell,
             tile_km=args.tile_km,
+            stream=args.stream,
             margin_m=args.margin_m,
             region=args.region,
             update_manifest_flag=not args.no_manifest,

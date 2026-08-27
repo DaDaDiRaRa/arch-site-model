@@ -11,7 +11,7 @@ import geopandas as gpd
 import numpy as np
 import pytest
 import rasterio
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString, MultiLineString, MultiPoint, Point
 
 from src.terrain.contour_bake import (
     _CONTOUR_PAT,
@@ -19,6 +19,7 @@ from src.terrain.contour_bake import (
     _find_elev_field,
     _find_shp,
     bake_dem,
+    _source_bounds,
     bake_tiled,
     read_contours,
     write_dem_tif,
@@ -356,3 +357,70 @@ def test_read_contours_reprojects_5187_to_5186(tmp_path):
     xs, ys, zs = read_contours(tmp_path)
     assert abs(xs.min() - x86) < 5.0    # 5186으로 재투영됨(5187 원본 아님)
     assert abs(ys.min() - y86) < 5.0
+
+
+def test_read_contours_handles_multipart_geometry(tmp_path):
+    """연속수치지형도처럼 다중 파트(MultiLineString/MultiPoint)로 와도 정점을 다 읽는다.
+
+    도엽별 수치지도는 전부 단일 파트라 안 걸렸지만, 연속수치지형도 등고선에는
+    MultiLineString이 섞여 있어 `.coords` 접근이 NotImplementedError로 터졌다.
+    """
+    line = MultiLineString([[(0.0, 0.0), (10.0, 0.0)], [(20.0, 0.0), (30.0, 0.0)]])
+    gpd.GeoDataFrame({"ELEV": [50.0], "geometry": [line]}, crs="EPSG:5186").to_file(
+        tmp_path / "F0010000_multi.shp"
+    )
+    pts = MultiPoint([(5.0, 5.0), (6.0, 6.0), (7.0, 7.0)])
+    gpd.GeoDataFrame({"ELEV": [99.0], "geometry": [pts]}, crs="EPSG:5186").to_file(
+        tmp_path / "F0020000_multi.shp"
+    )
+
+    xs, ys, zs = read_contours(tmp_path)
+
+    assert len(xs) == len(ys) == len(zs)          # 표고가 정점마다 하나씩 붙어야 한다
+    assert len(xs) == 4 + 3                       # 등고선 정점 4 + 표고점 3
+    assert (zs == 50.0).sum() == 4
+    assert (zs == 99.0).sum() == 3
+
+
+def test_source_bounds_matches_full_read(tmp_path):
+    """헤더만 읽은 전역 범위가 정점을 다 읽어 구한 범위와 일치한다."""
+    _make_synthetic_shp(tmp_path)
+    xs, ys, _ = read_contours(tmp_path)
+    b = _source_bounds(tmp_path)
+
+    assert b[0] == pytest.approx(xs.min(), abs=1e-6)
+    assert b[1] == pytest.approx(ys.min(), abs=1e-6)
+    assert b[2] == pytest.approx(xs.max(), abs=1e-6)
+    assert b[3] == pytest.approx(ys.max(), abs=1e-6)
+
+
+def test_read_contours_bbox_filters_to_region(tmp_path):
+    """bbox를 주면 그 영역에 걸치는 피처만 읽는다(전량 적재보다 점이 적다)."""
+    _make_synthetic_shp(tmp_path)
+    xs_all, ys_all, _ = read_contours(tmp_path)
+    cx, cy = float(xs_all.mean()), float(ys_all.mean())
+    xs, ys, _ = read_contours(tmp_path, bbox=(cx - 40, cy - 40, cx + 40, cy + 40))
+
+    assert 0 < len(xs) < len(xs_all)
+
+
+def test_bake_tiled_stream_matches_full_load(tmp_path):
+    """stream=True(타일마다 읽기)와 전량 적재가 **같은 DEM**을 낸다.
+
+    타일이 쓰는 점 집합이 같도록 bbox 필터 뒤에 동일 마스크를 다시 걸기 때문 —
+    도/전국 단위 소스를 메모리 안 터뜨리고 굽되 산출물은 바뀌지 않아야 한다.
+    """
+    _make_synthetic_shp(tmp_path)
+    kw = dict(cell_m=5.0, tile_km=0.1, margin_m=20.0, update_manifest_flag=False)
+    full = bake_tiled(tmp_path, tmp_path / "full.tif", **kw)
+    strm = bake_tiled(tmp_path, tmp_path / "strm.tif", stream=True, **kw)
+
+    assert [p.stem.split("_", 1)[1] for p in full] == [p.stem.split("_", 1)[1] for p in strm]
+    for a, b in zip(full, strm):
+        with rasterio.open(a) as da, rasterio.open(b) as db:
+            assert da.transform == db.transform
+            assert da.shape == db.shape
+            ga, gb = da.read(1), db.read(1)
+        assert np.array_equal(np.isnan(ga), np.isnan(gb))
+        m = ~np.isnan(ga)
+        assert np.allclose(ga[m], gb[m], atol=1e-6)
