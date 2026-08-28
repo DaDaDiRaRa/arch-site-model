@@ -47,14 +47,16 @@ class WaterMesh:
 
 
 def clip_water(geojson_path, bbox_5186, offset) -> list[WaterFeature]:
-    """지역 GeoJSON 수계 폴리곤을 bbox 클립 → 로컬 미터 WaterFeature. 로컬/HTTP 경로 모두."""
+    """지역 GeoJSON 수계 폴리곤을 bbox 클립 → 로컬 미터 WaterFeature.
+
+    geojson_path는 단일 경로 또는 **겹치는 타일 경로 리스트**(넓은 지역은 도로처럼 타일로 쪼갠다).
+    로컬/HTTP 경로 모두 지원한다.
+    """
     from shapely.geometry import box, shape
 
-    text = _read_geojson_text(geojson_path)
-    if text is None:
-        return []
-    data = json.loads(text)
-    feats = data.get("features", []) if isinstance(data, dict) else []
+    from src.geometry.road import _load_features
+
+    feats = _load_features(geojson_path)
     clip = box(*bbox_5186)
     out: list[WaterFeature] = []
     for f in feats:

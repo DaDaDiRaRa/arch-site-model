@@ -154,6 +154,27 @@ def load_water_manifest(path: Path | None = None) -> list[dict]:
     return []
 
 
+def find_water_files(bbox, manifest: list[dict] | None = None) -> list[dict]:
+    """질의 bbox(EPSG:4326)와 겹치는 수계 파일 전부(겹침 큰 순).
+
+    넓은 지역은 수계도 타일로 쪼개므로(경기도 단일 파일 200MB → 요청마다 전량 파싱) 도로와 같이
+    겹치는 타일을 모두 읽는다. 타일은 하드클립이라 서로 겹치지 않는다.
+    """
+    entries = manifest if manifest is not None else load_water_manifest()
+    query = box(*bbox)
+    hits: list[tuple[dict, float]] = []
+    for e in entries:
+        bounds = e.get("bounds_4326")
+        if not bounds or len(bounds) != 4:
+            continue
+        overlap = box(*bounds).intersection(query).area
+        if overlap <= 0.0:
+            continue
+        hits.append((e, overlap))
+    hits.sort(key=lambda h: -h[1])
+    return [h[0] for h in hits]
+
+
 def find_water_file(bbox, manifest: list[dict] | None = None) -> dict | None:
     """질의 bbox(EPSG:4326)와 겹치는 대표 수계 파일 1개(겹침 큰 것). 없으면 None."""
     entries = manifest if manifest is not None else load_water_manifest()

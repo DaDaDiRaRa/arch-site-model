@@ -424,3 +424,19 @@ def test_bake_tiled_stream_matches_full_load(tmp_path):
         assert np.array_equal(np.isnan(ga), np.isnan(gb))
         m = ~np.isnan(ga)
         assert np.allclose(ga[m], gb[m], atol=1e-6)
+
+
+def test_bake_tiled_skips_all_nodata_tile(tmp_path):
+    """유효 셀이 하나도 없는 경계 타일은 파일로 남기지 않는다.
+
+    margin에만 점이 걸리고 fill_dist 밖이라 전부 nodata인 타일이 생길 수 있는데,
+    그대로 두면 manifest에 등록돼 런타임이 그 타일을 골라 지형이 조용히 사라진다.
+    """
+    _make_synthetic_shp(tmp_path)
+    made = bake_tiled(tmp_path, tmp_path / "dem_syn.tif", cell_m=5.0, tile_km=0.1,
+                      margin_m=20.0, update_manifest_flag=False)
+
+    assert made, "타일이 하나도 안 만들어졌다"
+    for t in made:
+        with rasterio.open(t) as src:
+            assert np.isfinite(src.read(1)).any(), f"{t.name}이 전부 nodata인데 파일로 남았다"

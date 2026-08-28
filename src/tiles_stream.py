@@ -280,11 +280,12 @@ def generate_tile(
             clip_water,
             surface_zs,
         )
-        from src.terrain.store import find_water_file
+        from src.terrain.store import find_water_files
 
-        wf = find_water_file(_bbox_5186_to_4326(clip_5186))
-        if wf is not None:
-            water_features = clip_water(config.water_file_path(wf["file"]), clip_5186, offset)
+        wfs = find_water_files(_bbox_5186_to_4326(clip_5186))
+        if wfs:
+            water_features = clip_water(
+                [config.water_file_path(w["file"]) for w in wfs], clip_5186, offset)
             if water_features:
                 water_zs = surface_zs(water_features, dem)
                 dem = burn_water(dem, water_features, water_zs)

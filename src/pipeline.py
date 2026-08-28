@@ -416,17 +416,17 @@ def generate(
             clip_water,
             surface_zs,
         )
-        from src.terrain.store import find_water_file
+        from src.terrain.store import find_water_files
 
-        wf = find_water_file(bbox)
-        if wf is None:
+        wfs = find_water_files(bbox)          # 넓은 지역은 수계도 타일 → 겹치는 것 전부
+        if not wfs:
             warnings.append(
                 "수계 비축 없음: 반경이 수계 GeoJSON 밖입니다 "
                 "(water_manifest.json 확인 또는 water_bake 실행 필요)."
             )
         else:
-            water_path = config.water_file_path(wf["file"])
-            water_features = clip_water(water_path, _bbox_4326_to_5186(bbox), offset)
+            water_paths = [config.water_file_path(w["file"]) for w in wfs]
+            water_features = clip_water(water_paths, _bbox_4326_to_5186(bbox), offset)
             if not water_features:
                 warnings.append("반경 내 수계 폴리곤 없음 (E계열).")
             else:

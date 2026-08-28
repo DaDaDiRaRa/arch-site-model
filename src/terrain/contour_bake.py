@@ -566,13 +566,12 @@ def bake_tiled(
     out_path = Path(out_path)
     # 솔버는 등고선을 반 셀 이하로 조밀화해 읽는다(연속 제약 → beading 방지).
     densify = cell_m * 0.5 if method == "solver" else None
-    if stream:                       # 헤더로 범위만 잡고, 정점은 타일마다 읽는다
+    # 타일 격자는 **항상 파일 헤더 범위**로 잡는다(모드가 달라도 같은 격자 → 같은 산출물).
+    minx, miny, maxx, maxy = _source_bounds(shp_dir)
+    if stream:                       # 정점은 타일마다 읽는다
         xs = ys = zs = None
-        minx, miny, maxx, maxy = _source_bounds(shp_dir)
     else:
         xs, ys, zs = read_contours(shp_dir, densify_m=densify)
-        minx, miny = float(xs.min()), float(ys.min())
-        maxx, maxy = float(xs.max()), float(ys.max())
     tile_m = tile_km * 1000.0
     if tile_m % cell_m != 0:
         log.warning("tile_km*1000(%.0f)이 cell_m(%.1f) 배수가 아님 → 타일 픽셀 정합 어긋날 수 있음",
@@ -618,6 +617,12 @@ def bake_tiled(
                 )
             except Exception as e:  # 슬리버/특이 삼각화 등 → 타일만 스킵(전체 중단 방지)
                 log.warning("타일 r%dc%d 스킵: %s", r, c, e)
+                continue
+
+            if not np.isfinite(grid).any():
+                # 전부 nodata인 타일(margin에만 점이 있고 fill_dist 안에 드는 셀은 없는 경계 타일).
+                # 파일로 남기면 manifest에 등록돼 런타임이 이 타일을 골라 지형이 조용히 사라진다.
+                log.info("타일 r%dc%d 건너뜀: 유효 셀 없음", r, c)
                 continue
 
             tile_out = out_path.with_name(f"{out_path.stem}_r{r}c{c}{out_path.suffix}")

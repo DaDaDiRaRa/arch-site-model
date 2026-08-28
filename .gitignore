@@ -49,3 +49,4 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+cog_out/

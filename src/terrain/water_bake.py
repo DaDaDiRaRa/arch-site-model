@@ -53,7 +53,11 @@ def read_water_polygons(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> l
         raise FileNotFoundError(f"수계 SHP(E계열 N3A 폴리곤)를 찾을 수 없습니다: {shp_dir}")
     polys = []
     for f in files:
-        gdf = _to_target_crs(gpd.read_file(f, encoding="euc-kr"), target_crs)
+        try:                       # 도엽별(.cpg=EUC-KR)은 자동 판별, 연속본(.cpg 없음)은 UTF-8
+            gdf = gpd.read_file(f)
+        except UnicodeDecodeError:
+            gdf = gpd.read_file(f, encoding="euc-kr")
+        gdf = _to_target_crs(gdf, target_crs)
         for geom in gdf.geometry:
             if geom is None or geom.is_empty:
                 continue
@@ -97,6 +101,91 @@ def bake_water(
     return {"file": out_path.name, "polygons": len(polys), "bounds_4326": b4326}
 
 
+def _replace_region_tiles_manifest(region: str, base_stem: str, entries: list[dict]) -> None:
+    """같은 region+파일접두사의 기존 타일 항목을 싹 지우고 새 목록으로 교체(road_bake와 동형)."""
+    path = _water_manifest_path()
+    old: list = []
+    if path.exists():
+        data = json.loads(path.read_text(encoding="utf-8"))
+        old = data.get("water", []) if isinstance(data, dict) else data
+    keep = [e for e in old
+            if not (e.get("region") == region and str(e.get("file", "")).startswith(base_stem))]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(keep + entries, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def bake_water_tiled(
+    shp_dir: str | Path,
+    out_path: str | Path,
+    region: str,
+    target_crs: str = "EPSG:5186",
+    tile_km: float = 2.0,
+    min_area_m2: float = 4.0,
+) -> dict:
+    """넓은 지역용: 수계를 tile_km 격자로 **하드 클립**해 타일별 GeoJSON을 굽는다.
+
+    단일 지역 파일은 넓은 도(道)에서 수백 MB가 된다(경기도 실측 200MB, 서울 5.8MB의 35배).
+    런타임이 요청마다 그걸 통째로 파싱하면 도로가 겪었던 문제(요청당 수십 초)가 그대로 재현되므로
+    도로(bake_roads_tiled)와 같은 방식으로 공간 분할한다. 타일은 정확히 타일 박스로 잘라
+    겹침도 틈도 없다. 런타임은 find_water_files가 겹치는 타일만 읽는다.
+    """
+    import math
+
+    from shapely.geometry import box as _box, mapping
+    from shapely.strtree import STRtree
+
+    out_path = Path(out_path)
+    polys = [p for p in read_water_polygons(shp_dir, target_crs) if p.area >= min_area_m2]
+    if not polys:
+        raise ValueError("유효 수계 폴리곤이 없습니다(슬리버 제거 후 0).")
+    tree = STRtree(polys)
+    bs = [g.bounds for g in polys]
+    minx = min(b[0] for b in bs); miny = min(b[1] for b in bs)
+    maxx = max(b[2] for b in bs); maxy = max(b[3] for b in bs)
+
+    tile_m = tile_km * 1000.0
+    ncols = max(1, int(math.ceil((maxx - minx) / tile_m)))
+    nrows = max(1, int(math.ceil((maxy - miny) / tile_m)))
+    log.info("=== water tiled bake === 전역 %.1f×%.1f km → 최대 %d×%d 타일 (수계 %d개)",
+             (maxx - minx) / 1000, (maxy - miny) / 1000, nrows, ncols, len(polys))
+
+    epsg = int(str(target_crs).split(":")[-1])
+    entries: list[dict] = []; made: list[str] = []; tot = 0
+    for r in range(nrows):
+        ty1 = maxy - r * tile_m
+        ty0 = max(ty1 - tile_m, miny)
+        for c in range(ncols):
+            tx0 = minx + c * tile_m
+            tx1 = min(tx0 + tile_m, maxx)
+            tbox = _box(tx0, ty0, tx1, ty1)
+            clipped = []
+            for i in sorted(int(i) for i in tree.query(tbox)):   # 원본 순서 고정(결정적 산출)
+                g = polys[i]
+                if not g.intersects(tbox):
+                    continue
+                inter = g.intersection(tbox)
+                for part in (inter.geoms if hasattr(inter, "geoms") else [inter]):
+                    if part.geom_type == "Polygon" and not part.is_empty and part.area >= min_area_m2:
+                        clipped.append(part)
+            if not clipped:
+                continue
+            fc = {"type": "FeatureCollection", "crs_epsg": epsg,
+                  "features": [{"type": "Feature", "properties": {}, "geometry": mapping(p)}
+                               for p in clipped]}
+            tile_out = out_path.with_name(f"{out_path.stem}_r{r}c{c}{out_path.suffix}")
+            tile_out.parent.mkdir(parents=True, exist_ok=True)
+            tile_out.write_text(json.dumps(fc), encoding="utf-8")
+            b4326 = [float(v) for v in gpd.GeoSeries([tbox], crs=target_crs)
+                     .to_crs("EPSG:4326").total_bounds]
+            entries.append({"region": region, "file": tile_out.name,
+                            "bounds_4326": b4326, "polygons": len(clipped)})
+            made.append(tile_out.name); tot += len(clipped)
+    _replace_region_tiles_manifest(region, out_path.stem, entries)
+    log.info("=== water tiled bake 완료: %d개 타일 (수계 %d) → %s_r*c*.geojson (region=%s) ===",
+             len(made), tot, out_path.stem, region)
+    return {"tiles": len(made), "polygons": tot, "files": made}
+
+
 def _water_manifest_path() -> Path:
     return config.GEO_STORE / "water_manifest.json"
 
@@ -122,8 +211,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--region", required=True, help="지역명(manifest 메타)")
     ap.add_argument("--target-crs", default="EPSG:5186")
     ap.add_argument("--min-area", type=float, default=4.0, help="슬리버 제거 최소 면적(m²)")
+    ap.add_argument(
+        "--tile-km", type=float, default=0.0,
+        help="0=단일 지역 파일(기본). >0이면 그 km 격자로 하드클립 타일링 "
+             "(넓은 도는 필수 - 경기도 단일파일 200MB)",
+    )
     args = ap.parse_args(argv)
-    res = bake_water(args.shp_dir, args.out, args.region, args.target_crs, args.min_area)
+    if args.tile_km and args.tile_km > 0:
+        res = bake_water_tiled(args.shp_dir, args.out, args.region, args.target_crs,
+                               tile_km=args.tile_km, min_area_m2=args.min_area)
+    else:
+        res = bake_water(args.shp_dir, args.out, args.region, args.target_crs, args.min_area)
     print(json.dumps(res, ensure_ascii=False))
     return 0
 

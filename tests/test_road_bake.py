@@ -3,7 +3,18 @@
 from shapely.geometry import LineString, Polygon
 from shapely.ops import unary_union
 
-from src.terrain.road_bake import _resolve_width, synthesize_gap_roads
+import json
+
+import geopandas as gpd
+import pytest
+
+from src.terrain.road_bake import (
+    read_sidewalks,
+    _resolve_width,
+    bake_roads_tiled,
+    read_road_centerlines,
+    synthesize_gap_roads,
+)
 
 
 def test_resolve_width_prefers_surveyed():
@@ -47,3 +58,97 @@ def test_synthesize_skips_fully_covered_centerline():
 def test_synthesize_empty_centerlines():
     poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
     assert synthesize_gap_roads([poly], [], min_area_m2=1.0) == []
+
+
+# ---------------------------------------------------------------------------
+# 연속수치지형도 호환 (영문 필드) + 스트리밍 타일 베이크
+# ---------------------------------------------------------------------------
+
+def _write_road_shp(tmp_dir, *, english: bool):
+    """도로경계(면)·중심선(선)·보도(면) 합성 SHP. english=True면 연속수치지형도식 영문 필드."""
+    road = Polygon([(0, 0), (200, 0), (200, 12), (0, 12)])          # 본선 노면
+    gpd.GeoDataFrame({"geometry": [road]}, crs="EPSG:5186").to_file(
+        tmp_dir / "N3A_A0010000.shp")
+    sw = Polygon([(0, 12), (200, 12), (200, 15), (0, 15)])           # 보도
+    gpd.GeoDataFrame({"geometry": [sw]}, crs="EPSG:5186").to_file(
+        tmp_dir / "N3A_A0033320.shp")
+    cl = LineString([(0, 6), (200, 6)])                              # 중심선
+    gap = LineString([(100, 20), (100, 120)])                        # 경계 없는 골목
+    # 한글 '도로구분'(12바이트)은 DBF 필드명 10바이트 제한에 잘려 저장이 안 된다 → 한글본에선 생략.
+    cols = ({"RVWD": [12.0, 6.0], "RDLN": [4, 2], "RDDV": ["RDD002", "RDD009"]} if english
+            else {"도로폭": [12.0, 6.0], "차로수": [4, 2]})
+    gpd.GeoDataFrame({**cols, "geometry": [cl, gap]}, crs="EPSG:5186").to_file(
+        tmp_dir / "N3L_A0020000.shp")
+
+
+def test_read_centerlines_accepts_english_fields(tmp_path):
+    """연속수치지형도는 도로폭/차로수/도로구분이 RVWD/RDLN/RDDV 영문 코드로 온다."""
+    _write_road_shp(tmp_path, english=True)
+    out = read_road_centerlines(tmp_path)
+
+    assert len(out) == 2
+    widths = sorted(w for _g, w, _c, _n in out)
+    lanes = sorted(n for _g, _w, _c, n in out)
+    assert widths == [6.0, 12.0]      # RVWD가 실측폭으로 잡혀야 갭채움이 산다
+    assert lanes == [2, 4]            # RDLN이 잡혀야 다차선 마킹이 산다
+
+
+def test_read_centerlines_korean_and_english_agree(tmp_path):
+    """한글 필드본과 영문 필드본이 같은 값을 낸다(도엽별 ↔ 연속 호환)."""
+    ko, en = tmp_path / "ko", tmp_path / "en"
+    ko.mkdir(); en.mkdir()
+    _write_road_shp(ko, english=False)
+    _write_road_shp(en, english=True)
+
+    a = [(w, n) for _g, w, _c, n in read_road_centerlines(ko)]
+    b = [(w, n) for _g, w, _c, n in read_road_centerlines(en)]
+    assert sorted(a) == sorted(b)
+
+
+def test_bake_roads_tiled_stream_matches_full_load(tmp_path, monkeypatch):
+    """stream=True(타일마다 읽기)와 전량 적재가 **같은 타일 GeoJSON**을 낸다."""
+    from src import config
+    monkeypatch.setattr(config, "GEO_STORE", tmp_path / "store")  # 실 manifest 오염 방지
+    (tmp_path / "store").mkdir()
+    src = tmp_path / "src"; src.mkdir()
+    _write_road_shp(src, english=True)
+    full_dir = tmp_path / "full"; full_dir.mkdir()
+    strm_dir = tmp_path / "strm"; strm_dir.mkdir()
+
+    a = bake_roads_tiled(src, full_dir / "roads_t.geojson", region="t-full", tile_km=0.1)
+    b = bake_roads_tiled(src, strm_dir / "roads_t.geojson", region="t-strm", tile_km=0.1,
+                         stream=True)
+
+    assert a["tiles"] == b["tiles"] > 1
+    assert a["polygons"] == b["polygons"]
+    assert a["synthetic"] == b["synthetic"]
+    assert a["files"] == b["files"]
+    for name in a["files"]:
+        fa = json.loads((full_dir / name).read_text(encoding="utf-8"))
+        fb = json.loads((strm_dir / name).read_text(encoding="utf-8"))
+        assert fa == fb
+
+
+def test_sidewalk_lines_are_buffered_by_surveyed_width(tmp_path):
+    """연속수치지형도는 보도가 선(N3L)+실측폭(WIDT) → 실측 폭으로 버퍼링해 면을 만든다."""
+    line = LineString([(0.0, 0.0), (100.0, 0.0)])
+    gpd.GeoDataFrame({"WIDT": [3.0], "geometry": [line]}, crs="EPSG:5186").to_file(
+        tmp_path / "N3L_A0033320.shp")
+
+    polys = read_sidewalks(tmp_path)
+
+    assert len(polys) == 1
+    assert polys[0].area == pytest.approx(100.0 * 3.0, rel=0.02)   # 길이 x 실측폭
+
+
+def test_sidewalk_polygons_win_over_lines(tmp_path):
+    """면(N3A)이 있으면 그대로 쓰고 선은 무시한다(도엽별 소스 동작 유지)."""
+    gpd.GeoDataFrame({"geometry": [Polygon([(0, 0), (10, 0), (10, 4), (0, 4)])]},
+                     crs="EPSG:5186").to_file(tmp_path / "N3A_A0033320.shp")
+    gpd.GeoDataFrame({"WIDT": [3.0], "geometry": [LineString([(0, 0), (100, 0)])]},
+                     crs="EPSG:5186").to_file(tmp_path / "N3L_A0033320.shp")
+
+    polys = read_sidewalks(tmp_path)
+
+    assert len(polys) == 1
+    assert polys[0].area == pytest.approx(40.0)                    # 선(300m²)이 아니라 면(40m²)

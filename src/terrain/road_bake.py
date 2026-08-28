@@ -38,6 +38,37 @@ _SIDEWALK_PAT = re.compile(r"A0033320", re.IGNORECASE)
 _DEFAULT_ROAD_WIDTH_M = {"대로": 25.0, "중로": 12.0, "소로": 6.0, "미분류": 8.0}
 _FALLBACK_WIDTH_M = 4.0
 
+# 중심선 속성 필드명 — 도엽별 수치지도는 한글, 연속수치지형도는 영문 코드를 쓴다.
+_F_WIDTH = ("도로폭", "RVWD")     # 노면 실측폭(m)
+_F_LANES = ("차로수", "RDLN")     # 차로 수
+_F_CLASS = ("도로구분", "RDDV")   # 도로 등급(폭 폴백용)
+
+
+def _col(gdf, names: tuple[str, ...]):
+    """별칭 중 실제로 있는 컬럼명 반환(없으면 None)."""
+    for n in names:
+        if n in gdf.columns:
+            return n
+    return None
+
+
+def _read_layer(f: Path, target_crs: str, bbox=None):
+    """SHP 한 장을 target_crs로 읽는다. bbox(target_crs 기준)를 주면 그 영역만 읽는다.
+
+    인코딩: 도엽별 수치지도는 `.cpg`(EUC-KR)를 달고 오므로 그대로 맡기고, `.cpg`가 없는
+    연속수치지형도(UTF-8)는 자동 판별에 맡기되 실패하면 euc-kr로 재시도한다.
+    (예전처럼 euc-kr을 강제하면 연속본 한글 속성이 깨진다.)
+    """
+    kw = {}
+    if bbox is not None:
+        from shapely.geometry import box as _box
+        kw["bbox"] = gpd.GeoSeries([_box(*bbox)], crs=target_crs)
+    try:
+        gdf = gpd.read_file(f, **kw)
+    except UnicodeDecodeError:
+        gdf = gpd.read_file(f, encoding="euc-kr", **kw)
+    return _to_target_crs(gdf, target_crs)
+
 
 def _resolve_width(width, road_class) -> float:
     """노면 버퍼 폭(m): 실측 도로폭 우선 → 도로구분 기본폭 → 고정 폴백."""
@@ -89,7 +120,7 @@ def _find_road_shp(shp_dir: Path) -> list[Path]:
     return _find_shp_dedup(shp_dir, _ROAD_POLY_PAT, ("N3L", "N3P"))
 
 
-def read_road_polygons(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> list:
+def read_road_polygons(shp_dir: str | Path, target_crs: str = "EPSG:5186", bbox=None) -> list:
     """도로경계 폴리곤을 target_crs로 통일한 shapely Polygon 목록으로 반환."""
     shp_dir = Path(shp_dir)
     files = _find_road_shp(shp_dir)
@@ -97,8 +128,7 @@ def read_road_polygons(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> li
         raise FileNotFoundError(f"도로경계 SHP(A0010000 폴리곤)를 찾을 수 없습니다: {shp_dir}")
     polys = []
     for f in files:
-        gdf = gpd.read_file(f, encoding="euc-kr")
-        gdf = _to_target_crs(gdf, target_crs)
+        gdf = _read_layer(f, target_crs, bbox)
         for geom in gdf.geometry:
             if geom is None or geom.is_empty:
                 continue
@@ -109,25 +139,58 @@ def read_road_polygons(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> li
     return polys
 
 
-def read_sidewalks(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> list:
-    """보도(A0033320) 폴리곤을 target_crs로 통일한 shapely Polygon 목록. 없으면 빈 목록."""
+# 보도 선(N3L)에 실측폭이 없을 때 쓰는 기본 폭(m).
+_SIDEWALK_DEFAULT_W_M = 2.0
+_F_SW_WIDTH = ("보도폭", "WIDT")   # 연속수치지형도 보도 선의 실측 폭
+
+
+def read_sidewalks(shp_dir: str | Path, target_crs: str = "EPSG:5186", bbox=None) -> list:
+    """보도(A0033320)를 shapely Polygon 목록으로 반환. 없으면 빈 목록.
+
+    도엽별 수치지도는 보도가 **면(N3A)**이지만, 연속수치지형도는 **선(N3L) + 실측폭(WIDT)**으로
+    온다. 면이 있으면 그대로 쓰고, 없으면 선을 실측폭으로 버퍼링해 노면을 만든다(도로 갭채움과
+    같은 원리 — 추정이 아니라 실측 폭 사용). 어느 쪽 파일이 있느냐로 결정하므로 스트리밍/전량
+    적재에서 같은 결과가 나온다.
+    """
     shp_dir = Path(shp_dir)
     files = _find_shp_dedup(shp_dir, _SIDEWALK_PAT, ("N3L", "N3P"))
+    if files:
+        polys = []
+        for f in files:
+            gdf = _read_layer(f, target_crs, bbox)
+            for geom in gdf.geometry:
+                if geom is None or geom.is_empty:
+                    continue
+                if geom.geom_type == "Polygon":
+                    polys.append(geom)
+                elif geom.geom_type == "MultiPolygon":
+                    polys.extend(g for g in geom.geoms if not g.is_empty)
+        return polys
+
+    line_files = _find_shp_dedup(shp_dir, _SIDEWALK_PAT, ("N3A", "N3P"))
     polys = []
-    for f in files:
-        gdf = gpd.read_file(f, encoding="euc-kr")
-        gdf = _to_target_crs(gdf, target_crs)
-        for geom in gdf.geometry:
+    for f in line_files:
+        gdf = _read_layer(f, target_crs, bbox)
+        c_w = _col(gdf, _F_SW_WIDTH)
+        for _, r in gdf.iterrows():
+            geom = r.geometry
             if geom is None or geom.is_empty:
                 continue
-            if geom.geom_type == "Polygon":
-                polys.append(geom)
-            elif geom.geom_type == "MultiPolygon":
-                polys.extend(g for g in geom.geoms if not g.is_empty)
+            w = _SIDEWALK_DEFAULT_W_M
+            if c_w:
+                try:
+                    wv = float(r[c_w])
+                    if wv > 0:
+                        w = wv
+                except (TypeError, ValueError):
+                    pass
+            for ls in _iter_line_geoms(geom):
+                buf = ls.buffer(w / 2.0, cap_style=2, join_style=2)  # 끝은 평평하게(교차부 삐짐 방지)
+                polys.extend(g for g in _iter_poly_geoms(buf) if not g.is_empty)
     return polys
 
 
-def read_road_centerlines(shp_dir: str | Path, target_crs: str = "EPSG:5186") -> list:
+def read_road_centerlines(shp_dir: str | Path, target_crs: str = "EPSG:5186", bbox=None) -> list:
     """도로중심선(A0020000) → (LineString, 도로폭[m]|None, 도로구분|None, 차로수[int]|None) 튜플 목록.
 
     도로폭·도로구분은 경계 없는 도로 합성(synthesize_gap_roads)에, 도로폭·차로수는 다차선 마킹
@@ -137,26 +200,25 @@ def read_road_centerlines(shp_dir: str | Path, target_crs: str = "EPSG:5186") ->
     files = _find_shp_dedup(shp_dir, _ROAD_CL_PAT, ("N3A", "N3P"))
     out: list = []
     for f in files:
-        gdf = gpd.read_file(f, encoding="euc-kr")
-        gdf = _to_target_crs(gdf, target_crs)
-        has_w = "도로폭" in gdf.columns
-        has_c = "도로구분" in gdf.columns
-        has_n = "차로수" in gdf.columns
+        gdf = _read_layer(f, target_crs, bbox)
+        c_w = _col(gdf, _F_WIDTH)
+        c_c = _col(gdf, _F_CLASS)
+        c_n = _col(gdf, _F_LANES)
         for _, r in gdf.iterrows():
             geom = r.geometry
             if geom is None or geom.is_empty:
                 continue
             w = None
-            if has_w:
-                wv = r["도로폭"]
+            if c_w:
+                wv = r[c_w]
                 try:
                     w = float(wv) if wv is not None and str(wv) != "" else None
                 except (TypeError, ValueError):
                     w = None
-            cls = r["도로구분"] if has_c else None
+            cls = r[c_c] if c_c else None
             n = None
-            if has_n:
-                nv = r["차로수"]
+            if c_n:
+                nv = r[c_n]
                 try:
                     n = int(float(nv)) if nv is not None and str(nv) != "" else None
                 except (TypeError, ValueError):
@@ -281,8 +343,8 @@ def _clip_polys_to(tree, geoms, tbox, min_area_m2: float) -> list:
     if tree is None:
         return []
     out = []
-    for i in tree.query(tbox):
-        g = geoms[int(i)]
+    for i in sorted(int(i) for i in tree.query(tbox)):   # 원본 순서 고정(결정적 산출)
+        g = geoms[i]
         if not g.intersects(tbox):
             continue
         for p in _iter_poly_geoms(g.intersection(tbox)):
@@ -296,14 +358,46 @@ def _clip_cls_to(tree, centerlines, tbox) -> list:
     if tree is None:
         return []
     out = []
-    for i in tree.query(tbox):
-        g, w, cls, n = centerlines[int(i)]
+    for i in sorted(int(i) for i in tree.query(tbox)):   # 원본 순서 고정(결정적 산출)
+        g, w, cls, n = centerlines[i]
         if not g.intersects(tbox):
             continue
         for ls in _iter_line_geoms(g.intersection(tbox)):
             if not ls.is_empty and ls.length > 0:
                 out.append((ls, w, cls, n))
     return out
+
+
+def _layer_bounds(shp_dir: Path, target_crs: str) -> tuple[float, float, float, float]:
+    """도로/보도/중심선 SHP **헤더만** 읽어 전역 범위(target_crs)를 구한다(정점 미적재).
+
+    스트리밍 타일링에서 타일 격자를 잡으려고 전량 적재하면 스트리밍의 의미가 없다.
+    """
+    import pyogrio
+    from pyproj import Transformer
+
+    files = (_find_road_shp(shp_dir)
+             + _find_shp_dedup(shp_dir, _ROAD_CL_PAT, ("N3A", "N3P"))
+             + _find_shp_dedup(shp_dir, _SIDEWALK_PAT, ("N3L", "N3P")))
+    out = []
+    for f in files:
+        try:
+            info = pyogrio.read_info(f)
+        except Exception as e:  # noqa: BLE001
+            log.warning("헤더 읽기 실패(건너뜀) %s: %s", f.name, e)
+            continue
+        b = info.get("total_bounds")
+        if b is None or not all(v == v for v in b):   # NaN 제외
+            continue
+        crs = info.get("crs")
+        if crs and str(crs) != str(target_crs):
+            tr = Transformer.from_crs(crs, target_crs, always_xy=True)
+            b = tr.transform_bounds(*b)
+        out.append(tuple(float(v) for v in b))
+    if not out:
+        raise ValueError(f"유효한 범위를 가진 도로 SHP가 없습니다: {shp_dir}")
+    return (min(o[0] for o in out), min(o[1] for o in out),
+            max(o[2] for o in out), max(o[3] for o in out))
 
 
 def bake_roads_tiled(
@@ -314,6 +408,7 @@ def bake_roads_tiled(
     tile_km: float = 2.0,
     min_area_m2: float = 1.0,
     fill_gaps: bool = True,
+    stream: bool = False,
 ) -> dict:
     """대용량 지역(메트로)용: 도로/보도/중심선을 1회 읽고 tile_km 격자로 **하드 클립**해 타일별
     GeoJSON을 굽는다.
@@ -331,29 +426,36 @@ def bake_roads_tiled(
     from shapely.strtree import STRtree
 
     out_path = Path(out_path)
-    polys = [p for p in read_road_polygons(shp_dir, target_crs) if p.area >= min_area_m2]
-    if not polys:
-        raise ValueError("유효 도로 폴리곤이 없습니다(슬리버 제거 후 0).")
-    centerlines = read_road_centerlines(shp_dir, target_crs)
-    sidewalks = [p for p in read_sidewalks(shp_dir, target_crs) if p.area >= min_area_m2]
-    cl_geoms = [c[0] for c in centerlines]
+    shp_dir = Path(shp_dir)
+    # 타일 격자는 **항상 파일 헤더 범위**로 잡는다. 적재된 지오메트리 bbox로 잡으면
+    # min_area 슬리버 제거 결과에 따라 원점이 흔들려 stream/전량 적재의 타일 경계가 어긋난다.
+    minx, miny, maxx, maxy = _layer_bounds(shp_dir, target_crs)
+    if stream:
+        polys = centerlines = sidewalks = None
+        poly_tree = sw_tree = cl_tree = None
+        log.info("스트리밍 모드 - 타일마다 해당 영역만 읽습니다(전량 적재 생략)")
+    else:
+        polys = [p for p in read_road_polygons(shp_dir, target_crs) if p.area >= min_area_m2]
+        if not polys:
+            raise ValueError("유효 도로 폴리곤이 없습니다(슬리버 제거 후 0).")
+        centerlines = read_road_centerlines(shp_dir, target_crs)
+        sidewalks = [p for p in read_sidewalks(shp_dir, target_crs) if p.area >= min_area_m2]
+        cl_geoms = [c[0] for c in centerlines]
 
-    poly_tree = STRtree(polys)
-    sw_tree = STRtree(sidewalks) if sidewalks else None
-    cl_tree = STRtree(cl_geoms) if cl_geoms else None
+        poly_tree = STRtree(polys)
+        sw_tree = STRtree(sidewalks) if sidewalks else None
+        cl_tree = STRtree(cl_geoms) if cl_geoms else None
 
-    # 전역 bbox(5186) — 폴리곤/중심선/보도 전부 포함.
-    xs0 = [g.bounds for g in polys] + [g.bounds for g in cl_geoms] + [g.bounds for g in sidewalks]
-    minx = min(b[0] for b in xs0); miny = min(b[1] for b in xs0)
-    maxx = max(b[2] for b in xs0); maxy = max(b[3] for b in xs0)
 
     tile_m = tile_km * 1000.0
     ncols = max(1, int(math.ceil((maxx - minx) / tile_m)))
     nrows = max(1, int(math.ceil((maxy - miny) / tile_m)))
     log.info(
-        "=== road tiled bake === 전역 %.1f×%.1f km → 최대 %d×%d 타일 (tile_km=%.1f, 도로 %d/중심선 %d/보도 %d)",
+        "=== road tiled bake === 전역 %.1f×%.1f km → 최대 %d×%d 타일 (tile_km=%.1f, 도로 %d/중심선 %d/보도 %d, -1=스트리밍)",
         (maxx - minx) / 1000, (maxy - miny) / 1000, nrows, ncols, tile_km,
-        len(polys), len(centerlines), len(sidewalks),
+        -1 if stream else len(polys),
+        -1 if stream else len(centerlines),
+        -1 if stream else len(sidewalks),
     )
     epsg = int(str(target_crs).split(":")[-1])
     entries: list[dict] = []
@@ -366,9 +468,27 @@ def bake_roads_tiled(
             tx0 = minx + c * tile_m
             tx1 = min(tx0 + tile_m, maxx)
             tbox = _box(tx0, ty0, tx1, ty1)
-            tpolys = _clip_polys_to(poly_tree, polys, tbox, min_area_m2)
-            tcls = _clip_cls_to(cl_tree, centerlines, tbox)
-            tsw = _clip_polys_to(sw_tree, sidewalks, tbox, min_area_m2)
+            if stream:
+                tb = (tx0, ty0, tx1, ty1)
+                try:
+                    t_polys = [p for p in read_road_polygons(shp_dir, target_crs, tb)
+                               if p.area >= min_area_m2]
+                except FileNotFoundError:
+                    t_polys = []
+                t_cls = read_road_centerlines(shp_dir, target_crs, tb)
+                t_sw = [p for p in read_sidewalks(shp_dir, target_crs, tb) if p.area >= min_area_m2]
+                if not (t_polys or t_cls or t_sw):
+                    continue
+                t_cl_geoms = [c[0] for c in t_cls]
+                p_tree = STRtree(t_polys) if t_polys else None
+                s_tree = STRtree(t_sw) if t_sw else None
+                c_tree = STRtree(t_cl_geoms) if t_cl_geoms else None
+            else:
+                t_polys, t_cls, t_sw = polys, centerlines, sidewalks
+                p_tree, c_tree, s_tree = poly_tree, cl_tree, sw_tree
+            tpolys = _clip_polys_to(p_tree, t_polys, tbox, min_area_m2) if t_polys else []
+            tcls = _clip_cls_to(c_tree, t_cls, tbox)
+            tsw = _clip_polys_to(s_tree, t_sw, tbox, min_area_m2) if t_sw else []
             if not (tpolys or tcls or tsw):
                 continue
             # 갭채움은 타일 안에서만(작은 영역 union → 저렴). 버퍼가 타일 밖으로 나가면 tbox로 재클립.
@@ -460,11 +580,17 @@ def main(argv: list[str] | None = None) -> int:
         "--tile-km", type=float, default=0.0,
         help="0=단일 지역 파일(기본). >0이면 그 km 격자로 하드클립 타일링(메트로 서빙 필수, 예: 2)",
     )
+    ap.add_argument(
+        "--stream", action="store_true",
+        help="타일마다 해당 영역만 골라 읽기 - 도 단위 한 파일 소스용(메모리 고정). "
+             "산출 타일은 전량 적재와 동일. --tile-km>0일 때만 의미 있음",
+    )
     args = ap.parse_args(argv)
     if args.tile_km and args.tile_km > 0:
         res = bake_roads_tiled(
             args.shp_dir, args.out, args.region, args.target_crs,
             tile_km=args.tile_km, min_area_m2=args.min_area, fill_gaps=args.fill_gaps,
+            stream=args.stream,
         )
     else:
         res = bake_roads(
