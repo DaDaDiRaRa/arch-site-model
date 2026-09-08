@@ -20,9 +20,11 @@ from pathlib import Path
 
 # 파이프라인이 실제로 읽는 레이어코드
 #   F0010000 등고선 · F0020000 표고점        → contour_bake (DEM)
+#   F0040000 옹벽(상단선+실측 높이)            → wall_bake (지형에 수직 단차)
 #   A0010000 도로경계 · A0020000 중심선 · A0033320 보도 → road_bake
 #   E0______ 하천·호소                        → water_bake
-WANTED = re.compile(r"F0010000|F0020000|A0010000|A0020000|A0033320|_E0\d{6}")
+# (F0030000 절토/성토면은 아직 소비하는 코드가 없어 제외 — 쓰게 되면 여기 추가)
+WANTED = re.compile(r"F0010000|F0020000|F0040000|A0010000|A0020000|A0033320|_E0\d{6}")
 BANDIZIP = Path(r"C:\Program Files\Bandizip\bz.exe")
 
 

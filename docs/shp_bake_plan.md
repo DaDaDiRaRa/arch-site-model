@@ -137,6 +137,26 @@ python -m src.terrain.water_bake "<SHP폴더>" `
 
 ---
 
+## 4b. 옹벽 굽기
+
+```powershell
+python -m src.terrain.wall_bake "<SHP폴더>" `
+    --out geo_store/walls_<지역>.geojson --region "<지역명>" `
+    --tile-km 2
+```
+
+수치지형도 `F0040000`은 **옹벽 상단선 + 실측 높이(m)**를 준다. 등고선만으로 만든 DEM은 옹벽 자리를
+완만한 비탈로 뭉개므로(5m 격자에 2m 옹벽), 런타임(`geometry/wall.py`)이 이 선과 높이로 DEM에
+수직 단차를 심는다. 실측(경기도): 옹벽 373,341개 중 **90.9%가 높이 보유**, 중앙값 2.0m,
+총 연장 19,128km. 성남 태평동 12m 구간 표고차 **1.22m → 2.34m**.
+
+- 높이 0.5m 미만은 5m 격자에서 의미가 없어 버린다(`MIN_WALL_H_M`)
+- 도로·수계와 같은 2km 하드클립 타일. 런타임은 `find_wall_files`가 겹치는 타일만 읽는다
+- 서빙 설정은 `WALL_BASE`(도로 `ROAD_BASE`와 동형, `gs://…` 주면 HTTP로 읽음)
+- `layers={"terrain": true, "walls": true}`로 켠다. 건물 아래 지면은 건드리지 않는다
+
+---
+
 ## 5. COG 변환 + GCS 업로드
 
 ```powershell
@@ -144,9 +164,10 @@ python -m src.terrain.water_bake "<SHP폴더>" `
 python scripts/dem_to_cog.py geo_store --out cog_out --bucket arch-site-model-dem --prefix dem
 gcloud storage cp cog_out/*.tif gs://arch-site-model-dem/dem/
 
-# 도로·수계 GeoJSON (COG 변환 없이 그대로)
+# 도로·수계·옹벽 GeoJSON (COG 변환 없이 그대로)
 gcloud storage cp geo_store/roads_<지역>*.geojson gs://<버킷>/roads/
-gcloud storage cp geo_store/water_<지역>.geojson  gs://<버킷>/water/
+gcloud storage cp geo_store/water_<지역>*.geojson gs://<버킷>/water/
+gcloud storage cp geo_store/walls_<지역>*.geojson gs://<버킷>/walls/
 ```
 
 공개 버킷이라 `/vsicurl` 익명 읽기가 되고 인증·서비스계정이 필요 없다.
@@ -157,7 +178,7 @@ gcloud storage cp geo_store/water_<지역>.geojson  gs://<버킷>/water/
 ## 6. manifest 커밋 → 자동 배포
 
 ```powershell
-git add geo_store/manifest.json geo_store/road_manifest.json geo_store/water_manifest.json
+git add geo_store/manifest.json geo_store/road_manifest.json geo_store/water_manifest.json geo_store/wall_manifest.json
 git commit -m "지형 비축 추가: <지역명>"
 git push
 ```
@@ -186,7 +207,7 @@ main push 시 GitHub Actions가 pytest 통과 후 Cloud Run에 자동 배포한�
 
 - [ ] 대상 시도 결정 (실제 프로젝트가 있는 곳 우선이 합리적)
 - [ ] **연속수치지형도 [도 영역]** 확보 → `D:\APPS\SHP\ctnu_도영역\<시도>\`에 zip 그대로
-- [ ] 대상지형지물 **지형·교통·수계·시설 4개**만 체크했는지
+- [ ] 대상지형지물 **지형·교통·수계·시설 4개**만 체크했는지 (옹벽 F0040000은 지형에 포함)
 - [ ] 분할압축 조각(`.z01~`)이 전부 같은 폴더에 있는지 (`.irx`가 남아 있으면 전송 미완료 → 재다운로드)
 - [ ] `pip install -r requirements-dev.txt` (geopandas·scipy — 베이크 전용, 런타임엔 불필요)
 - [ ] DEM은 `--stream`, 광역시급 도로는 `--tile-km 2` 잊지 말 것

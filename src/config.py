@@ -148,6 +148,8 @@ ROAD_EDGE_CELL_M = _envf("ROAD_EDGE_CELL_M", 1.0)
 
 # 수계(E계열) GeoJSON 서빙 위치 — 도로(ROAD_BASE)와 동형. 미설정 시 로컬 geo_store.
 WATER_BASE = os.environ.get("WATER_BASE", str(GEO_STORE))
+# 옹벽 타일도 도로·수계와 같은 방식으로 서빙(gs:// 주면 HTTP로 읽음).
+WALL_BASE = os.environ.get("WALL_BASE", str(GEO_STORE))
 
 # --- 용도지역(zoning) — 형제 앱 arch-law-graph 연동 ---
 # 사이트 용도지역은 arch-law-graph의 GET /api/zoning?address= 로 조회한다(경계 존중: zoning=법령
@@ -162,6 +164,16 @@ WATER_CELL_M = _envf("WATER_CELL_M", 10.0)
 def water_file_path(filename: str) -> str:
     """water_manifest의 수계 파일명 → 실제 읽기 위치. road_file_path와 동형(로컬↔GCS HTTP)."""
     base = WATER_BASE
+    if base.startswith("gs://"):
+        base = "https://storage.googleapis.com/" + base[len("gs://"):]
+    if base.startswith(("http://", "https://")):
+        return base.rstrip("/") + "/" + filename
+    return str(Path(base) / filename)
+
+
+def wall_file_path(filename: str) -> str:
+    """wall_manifest의 옹벽 파일명 → 실제 읽기 위치. water_file_path와 동형."""
+    base = WALL_BASE
     if base.startswith("gs://"):
         base = "https://storage.googleapis.com/" + base[len("gs://"):]
     if base.startswith(("http://", "https://")):

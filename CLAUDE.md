@@ -38,12 +38,11 @@
       보관: `ctnu_도영역\전라남도\_복구_등고선\` + 같은 폴더 `_읽어보기.txt`.
       **없는 것: 표고점(F0020000)·도로(A00*)·수계(E0*)** → DEM은 굽되 **봉우리가 평면**이 될 수 있고
       도로·수계는 불가. 채우려면 포털에서 **[시군구 영역]으로 전남 22개 시군**을 받으면 된다(도 영역만 결함).
-- [ ] **옹벽·절토/성토면 지형 반영(신규)**: 수치지형도 **지형(F) 카테고리**에 `F0040000`=**옹벽**
-      (상하구분·연장·**높이 1~4m**·재질), `F0030000`=**절토/성토면**(구분·상하구분)이 들어 있는데 지금은
-      **받아만 놓고 안 쓴다**(파이프라인이 F0010000 등고선·F0020000 표고점만 읽음). 등고선만으로는 옹벽
-      자리가 완만한 경사로 뭉개져 레벨차가 실제와 다르다. 상단/하단선 + 높이로 **지형에 수직 단차를 심으면**
-      대지모델 레벨 검토 정확도가 크게 오른다(90m 지형 쓰는 경쟁 도구는 원리상 불가능한 영역).
-      구현 시 `road.burn_roads`의 절토/성토·스커트 로직 재활용 가능. 데이터는 계속 쌓이는 중.
+- [ ] **절토/성토면(F0030000) 지형 반영(옹벽 후속)**: 옹벽(F0040000)은 반영 완료(아래 참조).
+      남은 건 `F0030000` **절토/성토면**(구분 절토/성토 · 상하구분 상단/하단, 경기도 83,362개)인데
+      **높이 속성이 없다** — 상단선·하단선 두 줄 사이의 사면이라 높이는 DEM에서 읽어야 한다.
+      옹벽처럼 "선+실측높이"로 바로 심을 수 없어 상단/하단 짝짓기가 선행돼야 한다.
+      `scripts/extract_layers.py`의 WANTED에 F0030000을 추가하면 소스는 바로 확보된다.
 - [ ] **NGII 공개제한 DEM 기관 신청 검토(병행)**: 공간정보 안심구역(datafreezone.or.kr, 02-844-4206)이
       **도심지 1m·전국 5m DEM** 보유. 절차 확정(2026-08-25): 온라인 신청(**연구과제 계획서**+보안서약서+
       반입자료, 최대 25일) → 심의 → **센터 현장방문 분석** → 반출신청·재심의 → 승인 파일만 30일 내 다운로드.
@@ -202,6 +201,7 @@ src/
     seating.py           BuildingSolid + DEMPatch → base_z 앉힘 (Phase 3B)
     cadastral.py         LP_PA_CBND_BUBUN features → CadastralParcel (Phase 5)
     road.py              도로/보도 런타임 (Phase R). clip_roads/clip_sidewalks/clip_centerlines/clip_lane_markings(GeoJSON→로컬미터, json+shapely — _load_features로 단일 경로 또는 겹치는 타일 리스트 병합 수용, 메트로 타일 서빙) + burn_roads(도로를 DEM에 소각: footprint 절토/성토·스커트·IDW교차블렌딩·자기지면 클램프) + build_unified_surface(★지형·도로·보도를 1번 Delaunay로 삼각화→재질별 3메시, 정점공유로 이음매0. 보도우선(도로겹침 컬링 방지)·경계 edge_cell 샤프닝) + clip_lane_markings(중심선 props 차로수·도로폭→평행 차선 구분선, offset_curve, 구분선은 _dash_line 점선·중앙선 실선)/drape_centerlines(차선 드레이프) + _read_geojson_text(로컬/HTTP fetch+캐시 — 클라우드 도로 서빙) + apply_crown + build_road_mesh/carve_terrain/build_terrain_conformed(폴백·구버전)
+    wall.py              옹벽 런타임. clip_walls(선+높이 → 로컬미터) + burn_walls(★DEM에 **수직 단차** 심기 — 선 양옆 DEM으로 위/아래 판정, 좁은 복도 안에서 윗면은 상단표고로/아랫면은 상단-높이로 클램프. 파라미터는 격자 해상도에 맞춰 스케일. **건물 발자국은 보호**(건물은 버닝 전 지면에 앉으므로 부유 방지)) + walls_to_geometry(뷰어·.3dm용 드레이프 선)
     water.py             수계 런타임 (수계). clip_water(E계열 폴리곤→로컬미터) + water_surface_z(경계 둑 DEM 저백분위=수면표고) + burn_water(지형을 물 아래로 평탄화) + build_water_mesh(★표고고정 평면 수면, road와 달리 드레이프 아님). road.py 헬퍼 재사용
   output/
     skp_mcp.py           BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk) → SketchUp MCP 코드 문자열
@@ -210,6 +210,7 @@ src/
     store.py             manifest.json/road_manifest.json 조회 (find_tiles/find_road_files(겹치는 도로 타일 전부)/find_road_file(대표 1개)/find_water_file)
     contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A) + bake_tiled(대용량 지역 타일 배치) + 좌표대 재투영(5187→5186)·도엽 중복제거·거리제한 채움(fill_dist_m) + method: clough(기본)/linear/solver(라플라스 조화 격자 솔버 _grid_relax — 계단 완전제거, opt-in)
     road_bake.py         수치지도 A0010000 도로경계·A0020000 중심선(+실측 `도로폭`·`차로수`, 연속수치지형도는 영문 `RVWD`/`RDLN`/`RDDV` 별칭)·A0033320 보도 SHP → 지역 GeoJSON(EPSG:5186) 오프라인 굽기 (Phase R) + road_manifest.json 갱신 (contour_bake 헬퍼 재사용) + synthesize_gap_roads(경계 폴리곤 없는 도로를 실측 도로폭으로 버퍼해 노면 합성 {"syn":1}, --no-fill-gaps로 끔) + 중심선 props에 도로폭/차로수 담음(다차선 마킹용) + bake_roads_tiled(--tile-km: 메트로용 2km 하드클립 타일링, STRtree 후보추출+타일박스 교집합, 갭채움 union은 타일 내부로 한정 → 단일파일 311MB/요청당 3분+ 회피, 서울 247타일; `--stream`이면 타일마다 그 영역만 읽어 도 단위 소스도 메모리 고정, 산출 동일)
+    wall_bake.py         수치지형도 옹벽(F0040000, 상단선+실측높이) SHP → 지역 GeoJSON 타일 굽기 + wall_manifest.json (도로/수계와 동형, --tile-km 2)
     water_bake.py        수치지도 E계열 수계 면(N3A_E0* 하천경계·호소) SHP → 지역 GeoJSON(EPSG:5186) 오프라인 굽기 + water_manifest.json 갱신 (road_bake 동형)
     dem.py               DEM 타일 클립 + 표고 보간 (Phase 3B) + clip_dem_mosaic(다중 타일 rasterio.merge 병합)
 
@@ -283,6 +284,7 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 | `{"buildings": true, "terrain": true}` | 지형 TIN + 건물 앉힘 (Phase 3B) |
 | `{"buildings": true, "cadastral": true}` | 건물 + 대지 경계 폴리곤 (Phase 5) |
 | `{"buildings": true, "terrain": true, "roads": true}` | 지형 + 도로 노면(A0010000 DEM 드레이프 메시, Phase R). 도로는 `road_manifest.json`/GeoJSON 비축 필요 — 없으면 조용히 생략+warnings |
+| `{"buildings": true, "terrain": true, "walls": true}` | 지형 + **옹벽 단차**(F0040000 상단선의 실측 높이로 DEM에 수직 단차). 등고선만으로는 옹벽 자리가 완만한 비탈로 뭉개진다 — 실측(성남 태평동) 12m 구간 표고차 1.22m → 2.34m. `wall_manifest.json`/GeoJSON 비축 + 지형 필요. 건물 아래 지면은 건드리지 않음 |
 | `{"buildings": true, "terrain": true, "water": true}` | 지형 + 수계(E계열 하천·호소 → 표고고정 평면 수면 + 지형 물 아래로 버닝). `water_manifest.json`/GeoJSON 비축 필요, 지형(DEM) 필요 — 없으면 조용히 생략+warnings |
 | `{..., "qa": true}` | 자동 QA(검증) 실행 → `result.qa = {findings, summary}` (건물 앉힘·겹침·지형 스파이크). 다른 레이어와 무관하게 켤 수 있음. 웹 UI가 결함 목록 표시 |
 | `{"buildings": true, "terrain": true, "orthophoto": true}` | 지형에 정사영상 텍스처 (.3dm=Rhino 텍스처 / .skp=데스크톱 확장 B2 드레이프) |

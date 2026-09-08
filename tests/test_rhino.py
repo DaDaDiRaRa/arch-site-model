@@ -471,3 +471,17 @@ def test_write_3dm_base_z_applied():
                 # PathStart is the bottom plane origin point
                 z_start = obj.Geometry.PathStart.Z
                 assert z_start == pytest.approx(5.0, abs=0.01)
+
+
+def test_write_3dm_walls_layer(tmp_path):
+    """옹벽 상단선이 walls 레이어에 폴리라인으로 들어가고 실측 높이가 보존된다."""
+    walls = [{"points": [[0.0, 0.0, 10.0], [20.0, 0.0, 10.5]], "h": 2.5}]
+    out = write_3dm([], None, tmp_path / "w.3dm", (0.0, 0.0), walls=walls)
+
+    model = rhino3dm.File3dm.Read(str(out))
+    names = [model.Layers[i].Name for i in range(len(model.Layers))]
+    assert "walls" in names
+    idx = names.index("walls")
+    objs = [o for o in model.Objects if o.Attributes.LayerIndex == idx]
+    assert len(objs) == 1
+    assert objs[0].Attributes.GetUserString("wall_height_m") == "2.5"

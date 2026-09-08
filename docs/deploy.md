@@ -144,6 +144,17 @@ gcloud run services update arch-site-model --region asia-northeast3 \
 #   ROAD_BASE는 gs://…를 https://storage.googleapis.com/…로 변환해 읽는다(공개 버킷 필요).
 ```
 
+**수계·옹벽도 동형이다** — 같은 버킷의 다른 프리픽스에 올리고 env만 하나씩 더 준다:
+
+```bash
+gcloud storage cp geo_store/water_*.geojson gs://arch-site-model-dem/water/
+gcloud storage cp geo_store/walls_*.geojson gs://arch-site-model-dem/walls/
+gcloud run services update arch-site-model --region asia-northeast3   --update-env-vars WATER_BASE=gs://arch-site-model-dem/water,WALL_BASE=gs://arch-site-model-dem/walls
+```
+
+`WALL_BASE`는 옹벽(F0040000 상단선+실측 높이) 타일 — `layers.walls=true`일 때 DEM에 수직 단차를
+심는 데 쓴다(`geometry/wall.py`). 미설정이면 로컬 `geo_store`를 보므로 클라우드에선 조용히 생략된다.
+
 - **⚠️ `--update-env-vars`를 쓸 것 (`--set-env-vars` 아님)**: `--set-env-vars`는 **기존 env를 전부
   교체(삭제)**한다 → `DEM_TILE_BASE`·`ORTHO_SOURCE` 등이 날아가 DEM 서빙이 깨진다. `--update-env-vars`는
   지정한 것만 추가/수정하고 나머지는 보존한다. (secret으로 붙인 `VWORLD_KEY`는 env-vars 변경에 영향 없음.)

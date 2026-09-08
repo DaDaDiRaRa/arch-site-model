@@ -154,6 +154,41 @@ def load_water_manifest(path: Path | None = None) -> list[dict]:
     return []
 
 
+def _wall_manifest_path() -> Path:
+    return config.GEO_STORE / "wall_manifest.json"
+
+
+def load_wall_manifest(path: Path | None = None) -> list[dict]:
+    """wall_manifest.json의 옹벽 타일 목록. 파일 없으면 빈 목록(옹벽 비축 없음)."""
+    path = path or _wall_manifest_path()
+    if not path.exists():
+        return []
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, dict):
+        return data.get("walls", [])
+    if isinstance(data, list):
+        return data
+    return []
+
+
+def find_wall_files(bbox, manifest: list[dict] | None = None) -> list[dict]:
+    """질의 bbox(EPSG:4326)와 겹치는 옹벽 타일 전부(겹침 큰 순)."""
+    entries = manifest if manifest is not None else load_wall_manifest()
+    query = box(*bbox)
+    hits: list[tuple[dict, float]] = []
+    for e in entries:
+        bounds = e.get("bounds_4326")
+        if not bounds or len(bounds) != 4:
+            continue
+        overlap = box(*bounds).intersection(query).area
+        if overlap <= 0.0:
+            continue
+        hits.append((e, overlap))
+    hits.sort(key=lambda h: -h[1])
+    return [h[0] for h in hits]
+
+
 def find_water_files(bbox, manifest: list[dict] | None = None) -> list[dict]:
     """질의 bbox(EPSG:4326)와 겹치는 수계 파일 전부(겹침 큰 순).
 

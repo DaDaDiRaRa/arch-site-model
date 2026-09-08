@@ -107,6 +107,7 @@ def _resolve_ortho_source():
 def _build_geometry(
     solids, terrain_mesh, ortho_info,
     cadastral=None, dem=None, roads=None, sidewalks=None, lanes=None, water=None,
+    walls=None,
 ) -> dict:
     """브라우저 3D 미리보기용 경량 지오메트리 JSON (F2).
 
@@ -175,6 +176,7 @@ def _build_geometry(
         "sidewalks": sidewalks_out,
         "lanes": lanes_out,
         "water": water.to_geometry() if water is not None else None,
+        "walls": walls,          # 옹벽 상단선(드레이프) + 실측 높이 — 뷰어가 단차 위치 표시
         "ortho_extent_m": list(ortho_info["extent_local_m"]) if ortho_info else None,
     }
 
@@ -361,6 +363,7 @@ def generate(
     road_count = 0
     water_mesh = None
     water_count = 0
+    walls_geom = None
     if layers.get("roads"):
         from src.geometry.road import (
             burn_roads,
@@ -405,6 +408,33 @@ def generate(
                     lanes = drape_centerlines(
                         clip_lane_markings(road_path, bbox_5186_road, offset), dem
                     )
+
+    # 7.35 옹벽(F0040000) — 등고선 DEM이 완만한 비탈로 뭉갠 레벨차를 **실측 높이로 수직 단차**
+    #      복원. 도로 버닝 다음, 수계·TIN 앞에 둔다(수계가 이 DEM 위에서 수면 z를 잡도록).
+    if layers.get("walls") and dem is not None:
+        from src.geometry.wall import burn_walls, clip_walls, walls_to_geometry
+        from src.terrain.store import find_wall_files
+
+        wl = find_wall_files(bbox)
+        if not wl:
+            warnings.append(
+                "옹벽 비축 없음: 반경이 옹벽 GeoJSON 밖입니다 "
+                "(wall_manifest.json 확인 또는 wall_bake 실행 필요)."
+            )
+        else:
+            wall_features = clip_walls(
+                [config.wall_file_path(w["file"]) for w in wl],
+                _bbox_4326_to_5186(bbox), offset,
+            )
+            if not wall_features:
+                warnings.append("반경 내 옹벽 없음 (F0040000).")
+            else:
+                # 건물 아래 지면은 건드리지 않는다 — 건물은 버닝 전 지면에 앉아 있다(위 §6).
+                dem = burn_walls(
+                    dem, wall_features,
+                    protect_footprints=[s.footprint_m for s in solids],
+                )
+                walls_geom = walls_to_geometry(wall_features, dem)
 
     # 7.4 수계 (E계열) — 하천/호소 폴리곤을 표고고정 평면 수면으로. 지형을 물 아래로 버닝(§6b가 이
     #     DEM을 씀 → 지형이 수면 위로 안 삐져나옴). 수면 z = 경계(둑) DEM 저백분위. 수계는 실시간
@@ -566,6 +596,7 @@ def generate(
             ortho_image=ortho_info["image_path"] if ortho_info else None,
             ortho_extent_m=ortho_info["extent_local_m"] if ortho_info else None,
             lanes=lanes,
+            walls=walls_geom,
             qa=qa_result,
         )
         out["3dm"] = {
@@ -610,6 +641,7 @@ def generate(
             solids, terrain_mesh, ortho_info,
             cadastral=cadastral_parcels, dem=dem, roads=road_mesh,
             sidewalks=sidewalk_mesh, lanes=lanes, water=water_mesh,
+            walls=walls_geom,
         )
         if include_geometry
         else None
@@ -643,6 +675,7 @@ def generate(
             "cadastral_parcels": cadastral_count,
             "roads": road_count,
             "water": water_count,
+            "walls": len(walls_geom) if walls_geom else 0,
             "origin_offset": list(offset),   # 복원용 — 필수 저장 (사양서 §6.1)
             "elev_range_m": elev_range,
         },

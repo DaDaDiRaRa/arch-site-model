@@ -36,6 +36,7 @@ def write_3dm(
     ortho_image: str | Path | None = None,
     ortho_extent_m: tuple[float, float, float, float] | None = None,
     lanes: list | None = None,
+    walls: list | None = None,
     qa: dict | None = None,
 ) -> str:
     """BuildingSolid(+TerrainMesh+CadastralParcel) → .3dm 파일.
@@ -94,6 +95,11 @@ def write_3dm(
     l_lane.Color = (232, 200, 74, 255)         # 노랑 — 차선 마킹 (F2·확장과 동일)
     idx_lane = model.Layers.Add(l_lane)
 
+    l_wall = rhino3dm.Layer()
+    l_wall.Name = "walls"
+    l_wall.Color = (140, 92, 60, 255)          # 갈색 — 옹벽 상단선(실측 높이 보유)
+    idx_wall = model.Layers.Add(l_wall)
+
     l_qa_w = rhino3dm.Layer()
     l_qa_w.Name = "qa_warn"
     l_qa_w.Color = (220, 38, 38, 255)          # 빨강 — QA 경고 핀
@@ -135,6 +141,9 @@ def write_3dm(
     # 차선 마킹(R3) — 드레이프 폴리라인 (F2·확장과 동일 피처, .3dm 정합)
     if lanes:
         _add_lanes(model, lanes, idx_lane)
+    # 옹벽 상단선(F0040000) — 지형에 심은 수직 단차의 위치. 높이는 객체 속성으로 보존.
+    if walls:
+        _add_walls(model, walls, idx_wall)
     # 자동 QA 결함 핀(수직 마커) — F2·확장과 동일 피처 (.3dm 정합)
     if qa:
         _add_qa_pins(model, qa, terrain, idx_qa_w, idx_qa_i)
@@ -335,6 +344,30 @@ def _add_cadastral(
     attrs.Name = parcel.pnu
 
     model.Objects.AddCurve(curve, attrs)
+
+
+def _add_walls(
+    model: rhino3dm.File3dm,
+    walls: list,
+    layer_idx: int,
+) -> None:
+    """옹벽 상단선 → PolylineCurve. 실측 높이는 UserString("wall_height_m")으로 남긴다.
+
+    walls: [{"points": [[x, y, z], ...], "h": 높이[m]}, ...] (로컬 미터, 지형 드레이프 z).
+    지형 자체에는 이미 단차가 심겨 있고(geometry/wall.burn_walls), 이 선은 그 위치와 실측
+    높이를 도면에서 확인·치수하기 위한 것이다.
+    """
+    for w in walls or []:
+        pts = w.get("points") or []
+        if len(pts) < 2:
+            continue
+        p3 = [rhino3dm.Point3d(float(x), float(y), float(z)) for x, y, z in pts]
+        curve = rhino3dm.PolylineCurve(p3)
+        attrs = rhino3dm.ObjectAttributes()
+        attrs.LayerIndex = layer_idx
+        attrs.Name = f"wall_h{w.get('h', 0)}"
+        attrs.SetUserString("wall_height_m", str(w.get("h", 0)))
+        model.Objects.Add(curve, attrs)
 
 
 def _add_lanes(
