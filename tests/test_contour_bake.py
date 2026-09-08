@@ -440,3 +440,27 @@ def test_bake_tiled_skips_all_nodata_tile(tmp_path):
     for t in made:
         with rasterio.open(t) as src:
             assert np.isfinite(src.read(1)).any(), f"{t.name}이 전부 nodata인데 파일로 남았다"
+
+
+def test_bake_tiled_resume_keeps_existing_and_fills_gaps(tmp_path):
+    """resume=True는 이미 있는 타일을 건드리지 않고 빠진 것만 채운다.
+
+    도 단위 베이크가 중간에 끊겼을 때(세션 종료 등) 처음부터 다시 굽지 않기 위한 것.
+    """
+    _make_synthetic_shp(tmp_path)
+    out = tmp_path / "dem_syn.tif"
+    made = bake_tiled(tmp_path, out, cell_m=5.0, tile_km=0.1, margin_m=20.0,
+                      update_manifest_flag=False)
+    assert len(made) >= 2
+
+    victim = made[-1]
+    keep = made[0]
+    before = keep.read_bytes()
+    victim.unlink()                                   # 끊긴 상황: 마지막 타일이 없음
+
+    again = bake_tiled(tmp_path, out, cell_m=5.0, tile_km=0.1, margin_m=20.0,
+                       update_manifest_flag=False, resume=True)
+
+    assert victim.exists(), "빠진 타일이 안 채워졌다"
+    assert keep.read_bytes() == before, "이미 있던 타일이 다시 써졌다"
+    assert sorted(p.name for p in again) == sorted(p.name for p in made)

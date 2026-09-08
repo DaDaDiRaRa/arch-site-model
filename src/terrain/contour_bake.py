@@ -546,6 +546,7 @@ def bake_tiled(
     guard_m: float = 3.0,
     solver_iters: int = 400,
     stream: bool = False,
+    resume: bool = False,
 ) -> list[Path]:
     """대용량 지역용: 등고선/표고점을 1회 읽고 tile_km 격자로 나눠 타일별 DEM을 굽는다.
 
@@ -553,6 +554,10 @@ def bake_tiled(
     메모리/시간을 폭발시킨다. 타일마다 (타일 bbox + margin_m 여유)에 드는 점만 골라
     보간하므로 각 Delaunay/격자 비용이 유한하다. margin은 타일 경계 밖 등고선까지 포함해
     가장자리 평탄화·이음새 불일치를 줄인다(서빙은 find_tiles + clip_dem_mosaic가 병합).
+
+    resume=True면 **이미 만들어진 타일은 건너뛴다**. 도 단위 베이크는 몇 시간이 걸려 중간에
+    끊기는 일이 있는데(세션 종료·재부팅), 그때 처음부터 다시 굽지 않고 빠진 타일만 채운다.
+    타일은 독립적으로 계산되므로 이어 구워도 결과가 같다.
 
     stream=True면 등고선을 **타일마다 그 영역만 골라 읽는다**(도/전국 단위 한 파일 소스용).
     타일이 쓰는 점 집합은 전량 적재 경로와 동일하므로 **산출 DEM도 동일**하고, 피크 메모리만
@@ -591,6 +596,11 @@ def bake_tiled(
         for c in range(ncols):
             tx0 = minx + c * tile_m
             tx1 = min(tx0 + tile_m, maxx)
+            tile_out = out_path.with_name(f"{out_path.stem}_r{r}c{c}{out_path.suffix}")
+            if resume and tile_out.exists() and tile_out.stat().st_size > 0:
+                made.append(tile_out)
+                continue
+
             bx = (tx0 - margin_m, ty0 - margin_m, tx1 + margin_m, ty1 + margin_m)
             if stream:
                 try:
@@ -625,7 +635,6 @@ def bake_tiled(
                 log.info("타일 r%dc%d 건너뜀: 유효 셀 없음", r, c)
                 continue
 
-            tile_out = out_path.with_name(f"{out_path.stem}_r{r}c{c}{out_path.suffix}")
             write_dem_tif(tile_out, grid, transform)
             if update_manifest_flag:
                 from src import config
@@ -669,6 +678,10 @@ def _cli() -> None:
              "--out은 파일명 접두사로 사용(→ {stem}_r{r}c{c}.tif).",
     )
     parser.add_argument(
+        "--resume", action="store_true",
+        help="이미 있는 타일은 건너뛰고 빠진 것만 굽기(중간에 끊긴 베이크 이어하기)",
+    )
+    parser.add_argument(
         "--stream", action="store_true",
         help="타일마다 해당 영역만 골라 읽기 - 도/전국 단위 한 파일 소스용(메모리 고정). "
              "결과 DEM은 전량 적재와 동일. --tile-km>0일 때만 의미 있음",
@@ -687,6 +700,7 @@ def _cli() -> None:
             cell_m=args.cell,
             tile_km=args.tile_km,
             stream=args.stream,
+            resume=args.resume,
             margin_m=args.margin_m,
             region=args.region,
             update_manifest_flag=not args.no_manifest,
