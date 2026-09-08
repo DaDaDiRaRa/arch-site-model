@@ -464,3 +464,27 @@ def test_bake_tiled_resume_keeps_existing_and_fills_gaps(tmp_path):
     assert victim.exists(), "빠진 타일이 안 채워졌다"
     assert keep.read_bytes() == before, "이미 있던 타일이 다시 써졌다"
     assert sorted(p.name for p in again) == sorted(p.name for p in made)
+
+
+def test_bake_dem_masks_cells_far_from_data(tmp_path):
+    """실데이터에서 fill_dist_m 넘게 떨어진 셀은 볼록껍질 안이라도 nodata.
+
+    Delaunay 껍질이 지역의 오목한 경계를 거대한 삼각형으로 가로질러 메우면, 자기 지역 밖까지
+    값이 채워져 이웃 지역 타일과 겹치며 mosaic을 오염시킨다(실측 최대 214m 불일치).
+    """
+    # 두 덩어리를 멀리 떨어뜨려 놓으면 그 사이는 껍질 안이지만 실데이터가 없다.
+    left = np.array([[0.0, 0.0], [0.0, 100.0], [50.0, 0.0], [50.0, 100.0]])
+    right = left + np.array([1000.0, 0.0])
+    pts = np.vstack([left, right])
+    xs, ys = pts[:, 0], pts[:, 1]
+    zs = np.array([10.0, 10.0, 10.0, 10.0, 90.0, 90.0, 90.0, 90.0])
+
+    grid, tf = bake_dem(xs, ys, zs, cell_m=10.0,
+                        bounds=(0.0, 0.0, 1050.0, 100.0), method="linear",
+                        fill_dist_m=100.0)
+
+    # 가운데(두 덩어리 사이 500m 지점)는 데이터가 멀어 nodata여야 한다
+    mid_col = int((525.0 - 0.0) / 10.0)
+    assert np.isnan(grid[:, mid_col]).all(), "데이터에서 먼 셀이 채워졌다"
+    # 덩어리 위(데이터 바로 옆)는 값이 있어야 한다
+    assert np.isfinite(grid[:, 2]).any() and np.isfinite(grid[:, -3]).any()

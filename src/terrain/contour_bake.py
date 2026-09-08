@@ -367,6 +367,18 @@ def bake_dem(
         fill_vals[near] = grid[valid][idx[near]]
         grid[nan_mask] = fill_vals
 
+    # 실데이터에서 fill_dist_m 넘게 떨어진 셀은 **볼록껍질 안이라도** 신뢰할 수 없다 → nodata.
+    #
+    # Delaunay 껍질은 지역의 오목한 경계(도 경계선)를 거대한 삼각형으로 가로질러 메운다. 그래서
+    # 위 보간이 자기 지역 밖까지 값을 채우고, 이웃 지역 타일의 실데이터와 겹치며 mosaic을 오염시킨다.
+    # 실측(2026-09-08): 시도 경계쌍 58개 중 49개가 5m 초과 불일치, 최대 214m. 한반도 90m DEM을
+    # 심판으로 대조하니 **외삽한 쪽이 틀렸다**(경계 타일 85m vs 이웃 실데이터 22m).
+    # 위 nan 채움의 거리 제한은 껍질 **밖**만 막았을 뿐 이 경우를 못 걸렀다.
+    # 컷 기준은 내륙 타일에 무해하다 — 경기 성남 타일은 이 컷에 걸리는 셀이 0.0%, 문제 타일은 26.0%.
+    from scipy.spatial import cKDTree as _KD
+    _d, _ = _KD(pts).query(np.column_stack([gx.ravel(), gy.ravel()]))
+    grid[(_d > fill_dist_m).reshape(grid.shape)] = np.nan
+
     # 최종 안전 클램프 (입력 표고 범위 밖 값 제거).
     np.clip(grid, float(zs.min()), float(zs.max()), out=grid)
 

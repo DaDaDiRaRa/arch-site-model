@@ -20,22 +20,6 @@
     "guard_m": 3.0
   },
   {
-    "region": "대전 r0c0",
-    "file": "dem_daejeon_r0c0.tif",
-    "crs": "EPSG:5186",
-    "bounds_4326": [
-      127.22539083945658,
-      36.43507884766055,
-      127.33730522553708,
-      36.52545690518217
-    ],
-    "source": "CONTOUR_BAKE",
-    "cell_m": 5.0,
-    "updated": "2026-07-04",
-    "method": "clough",
-    "guard_m": 3.0
-  },
-  {
     "region": "대전 r0c1",
     "file": "dem_daejeon_r0c1.tif",
     "crs": "EPSG:5186",
@@ -404,22 +388,6 @@
     "guard_m": 3.0
   },
   {
-    "region": "부산 r0c2",
-    "file": "dem_busan_r0c2.tif",
-    "crs": "EPSG:5186",
-    "bounds_4326": [
-      128.97646277862086,
-      35.313290363407575,
-      129.08867795165528,
-      35.405216405236274
-    ],
-    "source": "CONTOUR_BAKE",
-    "cell_m": 5.0,
-    "updated": "2026-07-04",
-    "method": "clough",
-    "guard_m": 3.0
-  },
-  {
     "region": "부산 r0c3",
     "file": "dem_busan_r0c3.tif",
     "crs": "EPSG:5186",
@@ -460,22 +428,6 @@
       35.30895768002438,
       129.32643136735237,
       35.39935702256042
-    ],
-    "source": "CONTOUR_BAKE",
-    "cell_m": 5.0,
-    "updated": "2026-07-04",
-    "method": "clough",
-    "guard_m": 3.0
-  },
-  {
-    "region": "부산 r1c0",
-    "file": "dem_busan_r1c0.tif",
-    "crs": "EPSG:5186",
-    "bounds_4326": [
-      128.7546977115818,
-      35.22679799339919,
-      128.86655713334838,
-      35.31853164490977
     ],
     "source": "CONTOUR_BAKE",
     "cell_m": 5.0,
@@ -916,22 +868,6 @@
     "guard_m": 3.0
   },
   {
-    "region": "대구 r1c5",
-    "file": "dem_daegu_r1c5.tif",
-    "crs": "EPSG:5186",
-    "bounds_4326": [
-      128.91311040678525,
-      36.16337665281447,
-      128.92751742977572,
-      36.2536420474845
-    ],
-    "source": "CONTOUR_BAKE",
-    "cell_m": 5.0,
-    "updated": "2026-07-04",
-    "method": "clough",
-    "guard_m": 3.0
-  },
-  {
     "region": "대구 r2c1",
     "file": "dem_daegu_r2c1.tif",
     "crs": "EPSG:5186",
@@ -996,22 +932,6 @@
     "guard_m": 3.0
   },
   {
-    "region": "대구 r2c5",
-    "file": "dem_daegu_r2c5.tif",
-    "crs": "EPSG:5186",
-    "bounds_4326": [
-      128.91092585723186,
-      36.073306021320626,
-      128.92530919146597,
-      36.163572247737015
-    ],
-    "source": "CONTOUR_BAKE",
-    "cell_m": 5.0,
-    "updated": "2026-07-04",
-    "method": "clough",
-    "guard_m": 3.0
-  },
-  {
     "region": "대구 r3c1",
     "file": "dem_daegu_r3c1.tif",
     "crs": "EPSG:5186",
@@ -1052,22 +972,6 @@
       35.98514080901395,
       128.79997052901612,
       36.076834741575695
-    ],
-    "source": "CONTOUR_BAKE",
-    "cell_m": 5.0,
-    "updated": "2026-07-04",
-    "method": "clough",
-    "guard_m": 3.0
-  },
-  {
-    "region": "대구 r3c4",
-    "file": "dem_daegu_r3c4.tif",
-    "crs": "EPSG:5186",
-    "bounds_4326": [
-      128.7979217639657,
-      35.983428232672296,
-      128.91092585723186,
-      36.07521918666024
     ],
     "source": "CONTOUR_BAKE",
     "cell_m": 5.0,
@@ -1316,22 +1220,6 @@
     "guard_m": 3.0
   },
   {
-    "region": "대구 r7c3",
-    "file": "dem_daegu_r7c3.tif",
-    "crs": "EPSG:5186",
-    "bounds_4326": [
-      128.67947778425923,
-      35.62481275789203,
-      128.79182974375422,
-      35.71649137988236
-    ],
-    "source": "CONTOUR_BAKE",
-    "cell_m": 5.0,
-    "updated": "2026-07-04",
-    "method": "clough",
-    "guard_m": 3.0
-  },
-  {
     "region": "대구 r8c0",
     "file": "dem_daegu_r8c0.tif",
     "crs": "EPSG:5186",
@@ -1340,22 +1228,6 @@
       35.59874026492649,
       128.45877475714082,
       35.630563344793565
-    ],
-    "source": "CONTOUR_BAKE",
-    "cell_m": 5.0,
-    "updated": "2026-07-04",
-    "method": "clough",
-    "guard_m": 3.0
-  },
-  {
-    "region": "대구 r8c1",
-    "file": "dem_daegu_r8c1.tif",
-    "crs": "EPSG:5186",
-    "bounds_4326": [
-      128.45822029930463,
-      35.59735467346334,
-      128.56913017811246,
-      35.62927725483204
     ],
     "source": "CONTOUR_BAKE",
     "cell_m": 5.0,
@@ -1652,22 +1524,6 @@
     "guard_m": 3.0
   },
   {
-    "region": "울산 r4c2",
-    "file": "dem_ulsan_r4c2.tif",
-    "crs": "EPSG:5186",
-    "bounds_4326": [
-      129.16395014138124,
-      35.325026402396375,
-      129.27495753281485,
-      35.36659013056114
-    ],
-    "source": "CONTOUR_BAKE",
-    "cell_m": 5.0,
-    "updated": "2026-07-04",
-    "method": "clough",
-    "guard_m": 3.0
-  },
-  {
     "region": "울산 r4c3",
     "file": "dem_ulsan_r4c3.tif",
     "crs": "EPSG:5186",
@@ -1852,22 +1708,6 @@
       37.454543191145156,
       127.20004507168146,
       37.54477882750519
-    ],
-    "source": "CONTOUR_BAKE",
-    "cell_m": 5.0,
-    "updated": "2026-07-04",
-    "method": "clough",
-    "guard_m": 3.0
-  },
-  {
-    "region": "서울 r3c0",
-    "file": "dem_seoul_r3c0.tif",
-    "crs": "EPSG:5186",
-    "bounds_4326": [
-      126.75027974240807,
-      37.424739093408675,
-      126.86335426423679,
-      37.45463303189499
     ],
     "source": "CONTOUR_BAKE",
     "cell_m": 5.0,
@@ -21196,6 +21036,4454 @@
       35.55807844597733,
       129.10574853490942,
       35.62111100537777
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r0c12",
+    "file": "dem_jeonnam_r0c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.35859463074722,
+      35.39891967349746,
+      126.46938396046718,
+      35.4895811772635
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r0c13",
+    "file": "dem_jeonnam_r0c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.46879211092205,
+      35.399453342888414,
+      126.57946130352667,
+      35.49001598557259
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r0c15",
+    "file": "dem_jeonnam_r0c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.68919442482328,
+      35.40021978148492,
+      126.79962167920709,
+      35.49058368532195
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r0c16",
+    "file": "dem_jeonnam_r0c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.79939816609603,
+      35.4004525384741,
+      126.90970362410685,
+      35.490716567699465
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r0c17",
+    "file": "dem_jeonnam_r0c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.90960290185714,
+      35.40058498177747,
+      127.01980808576914,
+      35.49074880171474
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r0c18",
+    "file": "dem_jeonnam_r0c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.01978601517011,
+      35.400548920481214,
+      127.13001317148071,
+      35.49074880171474
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c8",
+    "file": "dem_jeonnam_r1c8.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.91904744103807,
+      35.30566516501331,
+      126.03018423469169,
+      35.39671697181453
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c9",
+    "file": "dem_jeonnam_r1c9.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.02910624037179,
+      35.306596832600626,
+      126.14012566393023,
+      35.39755147705823
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c11",
+    "file": "dem_jeonnam_r1c11.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.24923768275784,
+      35.30816038671095,
+      126.36002068193223,
+      35.39891967349746
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c12",
+    "file": "dem_jeonnam_r1c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.35930923898017,
+      35.308792248355715,
+      126.46997318842641,
+      35.399453342888414
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c13",
+    "file": "dem_jeonnam_r1c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.46938396046718,
+      35.30932415245723,
+      126.57992830489755,
+      35.39988671452006
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c14",
+    "file": "dem_jeonnam_r1c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.57946130352667,
+      35.309756090550835,
+      126.68988548997757,
+      35.40021978148492
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c15",
+    "file": "dem_jeonnam_r1c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.68954072438562,
+      35.31008805576243,
+      126.7998442022348,
+      35.4004525384741
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c16",
+    "file": "dem_jeonnam_r1c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.79962167920709,
+      35.31032004280874,
+      126.90980390019071,
+      35.40058498177747
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c17",
+    "file": "dem_jeonnam_r1c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.90970362410685,
+      35.31045204799753,
+      127.01978601517011,
+      35.40061710928388
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c18",
+    "file": "dem_jeonnam_r1c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.01976404233653,
+      35.310416105990036,
+      127.1298683084684,
+      35.40061710928388
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c19",
+    "file": "dem_jeonnam_r1c19.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.12972408714988,
+      35.31024815936579,
+      127.23994996007626,
+      35.400548920481214
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c20",
+    "file": "dem_jeonnam_r1c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.23968349311126,
+      35.30998023202812,
+      127.35003042608793,
+      35.4003804164564
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c21",
+    "file": "dem_jeonnam_r1c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.3496417187209,
+      35.3096123282412,
+      127.46010916263427,
+      35.400111599895396
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c22",
+    "file": "dem_jeonnam_r1c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.45959822251521,
+      35.30914445386023,
+      127.57018562589937,
+      35.39974247508311
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r1c23",
+    "file": "dem_jeonnam_r1c23.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.56955246308345,
+      35.308576616331074,
+      127.68025927213735,
+      35.39927304790307
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c9",
+    "file": "dem_jeonnam_r2c9.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.03018423469169,
+      35.21647531912637,
+      126.14107725890962,
+      35.30742857757775
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c10",
+    "file": "dem_jeonnam_r2c10.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.14012566393023,
+      35.217304309846334,
+      126.2509012781731,
+      35.30816038671095
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c11",
+    "file": "dem_jeonnam_r2c11.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.25007132670308,
+      35.21803369560603,
+      126.36072897360313,
+      35.308792248355715
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c12",
+    "file": "dem_jeonnam_r2c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.36002068193223,
+      35.21866346481713,
+      126.47055980639526,
+      35.30932415245723
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c13",
+    "file": "dem_jeonnam_r2c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.46997318842641,
+      35.21919360747332,
+      126.58039323764902,
+      35.309756090550835
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c14",
+    "file": "dem_jeonnam_r2c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.57992830489755,
+      35.21962411515078,
+      126.6902287283845,
+      35.31008805576243
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c15",
+    "file": "dem_jeonnam_r2c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.68988548997757,
+      35.21995498100854,
+      126.80006573955876,
+      35.31032004280874
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c16",
+    "file": "dem_jeonnam_r2c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.7998442022348,
+      35.220186199788834,
+      126.90990373208241,
+      35.31045204799753
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c17",
+    "file": "dem_jeonnam_r2c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.90980390019071,
+      35.220317767817235,
+      127.01976404233653,
+      35.310484069227854
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c18",
+    "file": "dem_jeonnam_r2c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.01974216683598,
+      35.2202819448387,
+      127.12972408714988,
+      35.310484069227854
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c19",
+    "file": "dem_jeonnam_r2c19.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.12958050468654,
+      35.22011455440105,
+      127.23968349311126,
+      35.310416105990036
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c20",
+    "file": "dem_jeonnam_r2c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.23941820650407,
+      35.21984751435007,
+      127.3496417187209,
+      35.31024815936579
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c21",
+    "file": "dem_jeonnam_r2c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.34925473317803,
+      35.219480828929385,
+      127.45959822251521,
+      35.30998023202812
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c22",
+    "file": "dem_jeonnam_r2c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.4590895456338,
+      35.21901450396593,
+      127.56955246308345,
+      35.3096123282412
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r2c23",
+    "file": "dem_jeonnam_r2c23.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.56892210484922,
+      35.218448546869695,
+      127.67950389908441,
+      35.30914445386023
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c7",
+    "file": "dem_jeonnam_r3c7.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.81163264437862,
+      35.124402177758,
+      125.92263193524141,
+      35.21554673661606
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c9",
+    "file": "dem_jeonnam_r3c9.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.03125745450478,
+      35.12635243301844,
+      126.14202463900885,
+      35.217304309846334
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c10",
+    "file": "dem_jeonnam_r3c10.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.14107725890962,
+      35.127178675457095,
+      126.2517275534578,
+      35.21803369560603
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c11",
+    "file": "dem_jeonnam_r3c11.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.2509012781731,
+      35.12790564310171,
+      126.361434127896,
+      35.21866346481713
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c12",
+    "file": "dem_jeonnam_r3c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.36072897360313,
+      35.128533324419806,
+      126.47114382588927,
+      35.21919360747332
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c13",
+    "file": "dem_jeonnam_r3c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.47055980639526,
+      35.12906170945332,
+      126.58085611090827,
+      35.21962411515078
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c14",
+    "file": "dem_jeonnam_r3c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.58039323764902,
+      35.129490789819044,
+      126.69057044634486,
+      35.21995498100854
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c15",
+    "file": "dem_jeonnam_r3c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.6902287283845,
+      35.12982055870901,
+      126.80028629552835,
+      35.220186199788834
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c16",
+    "file": "dem_jeonnam_r3c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.80006573955876,
+      35.13005101089076,
+      126.9100031217419,
+      35.220317767817235
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c17",
+    "file": "dem_jeonnam_r3c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.90990373208241,
+      35.13018214270764,
+      127.01974216683598,
+      35.22034968300292
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c18",
+    "file": "dem_jeonnam_r3c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.01972038823897,
+      35.1301464384997,
+      127.12958050468654,
+      35.22034968300292
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c19",
+    "file": "dem_jeonnam_r3c19.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.1294375582595,
+      35.12997960304144,
+      127.23941820650407,
+      35.2202819448387
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c20",
+    "file": "dem_jeonnam_r3c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.23915409504643,
+      35.129713448351374,
+      127.34925473317803,
+      35.22011455440105
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c21",
+    "file": "dem_jeonnam_r3c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.34886946186205,
+      35.129347978652625,
+      127.4590895456338,
+      35.21984751435007
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c22",
+    "file": "dem_jeonnam_r3c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.4585831220042,
+      35.12888319974406,
+      127.56892210484922,
+      35.219480828929385
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c23",
+    "file": "dem_jeonnam_r3c23.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.56829453882278,
+      35.12831911899993,
+      127.67875187187104,
+      35.21901450396593
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r3c24",
+    "file": "dem_jeonnam_r3c24.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.67800317573612,
+      35.127655745369616,
+      127.78857830783146,
+      35.218448546869695
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c7",
+    "file": "dem_jeonnam_r4c7.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.81294321816834,
+      35.03428439343117,
+      125.92381619837695,
+      35.12542692889217
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c8",
+    "file": "dem_jeonnam_r4c8.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.92263193524141,
+      35.03530574351803,
+      126.03338965470812,
+      35.12635243301844
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c9",
+    "file": "dem_jeonnam_r4c9.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.0323259208718,
+      35.0362281759159,
+      126.14296782277493,
+      35.127178675457095
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c10",
+    "file": "dem_jeonnam_r4c10.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.14202463900885,
+      35.03705167601576,
+      126.2525501687347,
+      35.12790564310171
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c11",
+    "file": "dem_jeonnam_r4c11.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.2517275534578,
+      35.037776230774334,
+      126.3621361586179,
+      35.128533324419806
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c12",
+    "file": "dem_jeonnam_r4c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.361434127896,
+      35.038401828714754,
+      126.47172525834436,
+      35.12906170945332
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c13",
+    "file": "dem_jeonnam_r4c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.47114382588927,
+      35.03892845992689,
+      126.58131693373956,
+      35.129490789819044
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c14",
+    "file": "dem_jeonnam_r4c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.58085611090827,
+      35.03935611606798,
+      126.69091065055065,
+      35.12982055870901
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c15",
+    "file": "dem_jeonnam_r4c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.69057044634486,
+      35.03968479036284,
+      126.80050587446286,
+      35.13005101089076
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c16",
+    "file": "dem_jeonnam_r4c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.80028629552835,
+      35.03991447760425,
+      126.91010207111566,
+      35.13018214270764
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c17",
+    "file": "dem_jeonnam_r4c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.9100031217419,
+      35.04004517415315,
+      127.01972038823897,
+      35.13021395207886
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c18",
+    "file": "dem_jeonnam_r4c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.01969870611893,
+      35.040009588458915,
+      127.1294375582595,
+      35.13021395207886
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c19",
+    "file": "dem_jeonnam_r4c19.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.12929524506923,
+      35.03984330677959,
+      127.23915409504643,
+      35.1301464384997
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c20",
+    "file": "dem_jeonnam_r4c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.2388911535661,
+      35.03957803553537,
+      127.34886946186205,
+      35.12997960304144
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c21",
+    "file": "dem_jeonnam_r4c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.3484858972282,
+      35.039213778929046,
+      127.4585831220042,
+      35.129713448351374
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c22",
+    "file": "dem_jeonnam_r4c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.45807894170954,
+      35.0387505427315,
+      127.56829453882278,
+      35.129347978652625
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c23",
+    "file": "dem_jeonnam_r4c23.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.56766975271574,
+      35.03818833428148,
+      127.67800317573612,
+      35.12888319974406
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r4c24",
+    "file": "dem_jeonnam_r4c24.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.67725779602031,
+      35.037527162485226,
+      127.78770849624718,
+      35.12831911899993
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c7",
+    "file": "dem_jeonnam_r5c7.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.8142479874811,
+      34.94416522581552,
+      125.9249952160506,
+      35.03530574351803
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c8",
+    "file": "dem_jeonnam_r5c8.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.92381619837695,
+      34.94518318218234,
+      126.03444867678495,
+      35.0362281759159
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c9",
+    "file": "dem_jeonnam_r5c9.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.03338965470812,
+      34.946102549470275,
+      126.1439068286269,
+      35.03705167601576
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c10",
+    "file": "dem_jeonnam_r5c10.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.14296782277493,
+      34.9469233131407,
+      126.25336914006972,
+      35.037776230774334
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c11",
+    "file": "dem_jeonnam_r5c11.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.2525501687347,
+      34.947645460213145,
+      126.36283507948077,
+      35.038401828714754
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c12",
+    "file": "dem_jeonnam_r5c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.3621361586179,
+      34.948268979266,
+      126.47230411511775,
+      35.03892845992689
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c13",
+    "file": "dem_jeonnam_r5c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.47172525834436,
+      34.94879386043688,
+      126.5817757151446,
+      35.03935611606798
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c14",
+    "file": "dem_jeonnam_r5c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.58131693373956,
+      34.94922009542321,
+      126.69124934764768,
+      35.03968479036284
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c15",
+    "file": "dem_jeonnam_r5c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.69091065055065,
+      34.94954767748243,
+      126.8007244806519,
+      35.03991447760425
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c16",
+    "file": "dem_jeonnam_r5c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.80050587446286,
+      34.949776601432404,
+      126.91020058213674,
+      35.04004517415315
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c17",
+    "file": "dem_jeonnam_r5c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.91010207111566,
+      34.94990686365162,
+      127.01969870611893,
+      35.0400768779388
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c18",
+    "file": "dem_jeonnam_r5c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.01967712005231,
+      34.949871396215606,
+      127.12929524506923,
+      35.0400768779388
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c19",
+    "file": "dem_jeonnam_r5c19.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.12915356233562,
+      34.949705667121464,
+      127.2388911535661,
+      35.040009588458915
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c20",
+    "file": "dem_jeonnam_r5c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.23862937692647,
+      34.949441277418735,
+      127.3484858972282,
+      35.03984330677959
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c21",
+    "file": "dem_jeonnam_r5c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.34810403178372,
+      34.94907823128997,
+      127.45807894170954,
+      35.03957803553537
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c22",
+    "file": "dem_jeonnam_r5c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.45757699490132,
+      34.948616534478255,
+      127.56766975271574,
+      35.039213778929046
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c23",
+    "file": "dem_jeonnam_r5c23.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.56704773432439,
+      34.948056194286984,
+      127.67725779602031,
+      35.0387505427315
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r5c24",
+    "file": "dem_jeonnam_r5c24.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.67651571816536,
+      34.94739721957948,
+      127.78684253748068,
+      35.03818833428148
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c8",
+    "file": "dem_jeonnam_r6c8.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.9249952160506,
+      34.855059246585974,
+      126.03550300773051,
+      34.946102549470275
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c9",
+    "file": "dem_jeonnam_r6c9.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.03444867678495,
+      34.8559755553456,
+      126.14484167485706,
+      34.9469233131407
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c10",
+    "file": "dem_jeonnam_r6c10.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.1439068286269,
+      34.856793588463006,
+      126.2541844834182,
+      34.947645460213145
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c11",
+    "file": "dem_jeonnam_r6c11.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.25336914006972,
+      34.85751333302021,
+      126.36353090410215,
+      34.948268979266
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c12",
+    "file": "dem_jeonnam_r6c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.36283507948077,
+      34.85813477765057,
+      126.47288040748832,
+      34.94879386043688
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c13",
+    "file": "dem_jeonnam_r6c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.47230411511775,
+      34.85865791253922,
+      126.58223246406311,
+      34.94922009542321
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c14",
+    "file": "dem_jeonnam_r6c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.5817757151446,
+      34.85908272942354,
+      126.69158654423603,
+      34.94954767748243
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c15",
+    "file": "dem_jeonnam_r6c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.69124934764768,
+      34.85940922159344,
+      126.80094211835548,
+      34.949776601432404
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c16",
+    "file": "dem_jeonnam_r6c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.8007244806519,
+      34.85963738389172,
+      126.91029865672485,
+      34.94990686365162
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c17",
+    "file": "dem_jeonnam_r6c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.91020058213674,
+      34.85976721271432,
+      127.01967712005231,
+      34.949938462079324
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c18",
+    "file": "dem_jeonnam_r6c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.01965562961848,
+      34.85973186328248,
+      127.12915356233562,
+      34.949938462079324
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c19",
+    "file": "dem_jeonnam_r6c19.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.1290125072976,
+      34.859566685586415,
+      127.23862937692647,
+      34.949871396215606
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c20",
+    "file": "dem_jeonnam_r6c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.23836876002628,
+      34.85930317553143,
+      127.34810403178372,
+      34.949705667121464
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c21",
+    "file": "dem_jeonnam_r6c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.34772385808742,
+      34.858941337279944,
+      127.45757699490132,
+      34.949441277418735
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c22",
+    "file": "dem_jeonnam_r6c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.45707727179884,
+      34.858481176547386,
+      127.56704773432439,
+      34.94907823128997
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c23",
+    "file": "dem_jeonnam_r6c23.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.56642847152904,
+      34.85792270060198,
+      127.67651571816536,
+      34.948616534478255
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r6c24",
+    "file": "dem_jeonnam_r6c24.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.67577692771331,
+      34.8572659182644,
+      127.78598041462001,
+      34.948056194286984
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c3",
+    "file": "dem_jeonnam_r7c3.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.37958759882079,
+      34.75889898698194,
+      125.49053439661012,
+      34.850411567745695
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c6",
+    "file": "dem_jeonnam_r7c6.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.7075171461078,
+      34.76281363892368,
+      125.81812772240136,
+      34.85404467665276
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c7",
+    "file": "dem_jeonnam_r7c7.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.81684021438805,
+      34.763922747696554,
+      125.92733760670649,
+      34.855059246585974
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c8",
+    "file": "dem_jeonnam_r7c8.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.92616901122544,
+      34.76493393844198,
+      126.03655266803109,
+      34.8559755553456
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c9",
+    "file": "dem_jeonnam_r7c9.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.03550300773051,
+      34.765847195218235,
+      126.14577237963184,
+      34.856793588463006
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c10",
+    "file": "dem_jeonnam_r7c10.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.14484167485706,
+      34.7666625036263,
+      126.25499621462568,
+      34.85751333302021
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c11",
+    "file": "dem_jeonnam_r7c11.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.2541844834182,
+      34.76737985081036,
+      126.36422364600583,
+      34.85813477765057
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c12",
+    "file": "dem_jeonnam_r7c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.36353090410215,
+      34.767999225458446,
+      126.47345414665743,
+      34.85865791253922
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c13",
+    "file": "dem_jeonnam_r7c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.47288040748832,
+      34.76852061780295,
+      126.58268718937339,
+      34.85908272942354
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c14",
+    "file": "dem_jeonnam_r7c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.58223246406311,
+      34.76894401962099,
+      126.6919222468703,
+      34.85940922159344
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c15",
+    "file": "dem_jeonnam_r7c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.69158654423603,
+      34.76926942423479,
+      126.80115879180423,
+      34.85963738389172
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c16",
+    "file": "dem_jeonnam_r7c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.80094211835548,
+      34.76949682651198,
+      126.91039629678652,
+      34.85976721271432
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c17",
+    "file": "dem_jeonnam_r7c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.91029865672485,
+      34.769626222865824,
+      127.01965562961848,
+      34.8597987060104
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c18",
+    "file": "dem_jeonnam_r7c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.01963423439965,
+      34.76959099118551,
+      127.1290125072976,
+      34.8597987060104
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c19",
+    "file": "dem_jeonnam_r7c19.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.12887207721316,
+      34.76942636370703,
+      127.23836876002628,
+      34.85973186328248
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c20",
+    "file": "dem_jeonnam_r7c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.23810929779935,
+      34.76916373141661,
+      127.34772385808742,
+      34.859566685586415
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c21",
+    "file": "dem_jeonnam_r7c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.34734536874934,
+      34.76880309845662,
+      127.45707727179884,
+      34.85930317553143
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c22",
+    "file": "dem_jeonnam_r7c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.45657976268869,
+      34.768344470515,
+      127.56642847152904,
+      34.858941337279944
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c23",
+    "file": "dem_jeonnam_r7c23.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.56581195229339,
+      34.76778785482496,
+      127.67577692771331,
+      34.858481176547386
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r7c24",
+    "file": "dem_jeonnam_r7c24.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.67504141030561,
+      34.76713326016475,
+      127.78512211086968,
+      34.85792270060198
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c1",
+    "file": "dem_jeonnam_r8c1.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.16300661003484,
+      34.66570376725258,
+      125.2740476971631,
+      34.7573983963434
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c2",
+    "file": "dem_jeonnam_r8c2.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.27217438042118,
+      34.66729684393945,
+      125.38310556199296,
+      34.75889898698194
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c3",
+    "file": "dem_jeonnam_r8c3.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.38135048447103,
+      34.668792431356735,
+      125.49217120100515,
+      34.76030173877135
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c7",
+    "file": "dem_jeonnam_r8c7.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.81812772240136,
+      34.67379944071252,
+      125.92850102514217,
+      34.76493393844198
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c8",
+    "file": "dem_jeonnam_r8c8.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.92733760670649,
+      34.674807259475664,
+      126.03759767803228,
+      34.765847195218235
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c9",
+    "file": "dem_jeonnam_r8c9.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.03655266803109,
+      34.67571747077705,
+      126.14669896099282,
+      34.7666625036263
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c10",
+    "file": "dem_jeonnam_r8c10.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.14577237963184,
+      34.67653006028691,
+      126.25580434942887,
+      34.76737985081036
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c11",
+    "file": "dem_jeonnam_r8c11.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.25499621462568,
+      34.67724501521125,
+      126.36491331862268,
+      34.767999225458446
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c12",
+    "file": "dem_jeonnam_r8c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.36422364600583,
+      34.67786232429256,
+      126.47402534374939,
+      34.76852061780295
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c13",
+    "file": "dem_jeonnam_r8c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.47345414665743,
+      34.678381977810176,
+      126.58313989989259,
+      34.76894401962099
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c14",
+    "file": "dem_jeonnam_r8c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.58268718937339,
+      34.678803967580784,
+      126.69225646206014,
+      34.76926942423479
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c15",
+    "file": "dem_jeonnam_r8c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.6919222468703,
+      34.67912828695873,
+      126.80137450519986,
+      34.76949682651198
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c16",
+    "file": "dem_jeonnam_r8c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.80115879180423,
+      34.67935493083634,
+      126.91049350421515,
+      34.769626222865824
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c17",
+    "file": "dem_jeonnam_r8c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.91039629678652,
+      34.679483895644125,
+      127.01963423439965,
+      34.76965761125537
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c18",
+    "file": "dem_jeonnam_r8c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.01961293398092,
+      34.67944878146409,
+      127.12887207721316,
+      34.76965761125537
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c19",
+    "file": "dem_jeonnam_r8c19.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.12873226935912,
+      34.6792847030293,
+      127.23810929779935,
+      34.76959099118551
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c20",
+    "file": "dem_jeonnam_r8c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.23785098521446,
+      34.679022946630745,
+      127.34734536874934,
+      34.76942636370703
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c21",
+    "file": "dem_jeonnam_r8c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.34696855643033,
+      34.67866351639086,
+      127.45657976268869,
+      34.76916373141661
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c22",
+    "file": "dem_jeonnam_r8c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.45608445792425,
+      34.67820641797022,
+      127.56581195229339,
+      34.76880309845662
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c23",
+    "file": "dem_jeonnam_r8c23.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.56519816466385,
+      34.67765165856727,
+      127.67504141030561,
+      34.768344470515
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c24",
+    "file": "dem_jeonnam_r8c24.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.67430915168242,
+      34.67699924691802,
+      127.78426760954966,
+      34.76778785482496
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r8c25",
+    "file": "dem_jeonnam_r8c25.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.78341689409464,
+      34.676249193295625,
+      127.89349002294767,
+      34.76713326016475
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c1",
+    "file": "dem_jeonnam_r9c1.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.16499812981202,
+      34.57560611023316,
+      125.27591271638494,
+      34.66729684393945
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c2",
+    "file": "dem_jeonnam_r9c2.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.2740476971631,
+      34.57719386907678,
+      125.38485286529391,
+      34.668792431356735
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c3",
+    "file": "dem_jeonnam_r9c3.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.38310556199296,
+      34.578684463897055,
+      125.49380075471058,
+      34.67019050597496
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c6",
+    "file": "dem_jeonnam_r9c6.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.71032370724419,
+      34.58257303767329,
+      125.82068565229896,
+      34.67379944071252
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c7",
+    "file": "dem_jeonnam_r9c7.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.81940952677874,
+      34.583674757478214,
+      125.92965928902541,
+      34.674807259475664
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c8",
+    "file": "dem_jeonnam_r9c8.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.92850102514217,
+      34.58467921142446,
+      126.03863805794002,
+      34.67571747077705
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c9",
+    "file": "dem_jeonnam_r9c9.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.03759767803228,
+      34.58558638372328,
+      126.14762143685783,
+      34.67653006028691
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c10",
+    "file": "dem_jeonnam_r9c10.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.14669896099282,
+      34.58639626011372,
+      126.25660890345644,
+      34.67724501521125
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c11",
+    "file": "dem_jeonnam_r9c11.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.25580434942887,
+      34.58710882786337,
+      126.36559993529144,
+      34.67786232429256
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c12",
+    "file": "dem_jeonnam_r9c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.36491331862268,
+      34.5877240757688,
+      126.47459400981226,
+      34.678381977810176
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c13",
+    "file": "dem_jeonnam_r9c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.47402534374939,
+      34.58824199415609,
+      126.58359060437746,
+      34.678803967580784
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c14",
+    "file": "dem_jeonnam_r9c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.58313989989259,
+      34.588662574881305,
+      126.69258919627045,
+      34.67912828695873
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c15",
+    "file": "dem_jeonnam_r9c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.69225646206014,
+      34.588985811330716,
+      126.80158926271507,
+      34.67935493083634
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c16",
+    "file": "dem_jeonnam_r9c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.80137450519986,
+      34.589211698421224,
+      126.91059028089121,
+      34.679483895644125
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c17",
+    "file": "dem_jeonnam_r9c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.91049350421515,
+      34.58934023260052,
+      127.01961293398092,
+      34.67951517935094
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c18",
+    "file": "dem_jeonnam_r9c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.01959172795029,
+      34.58930523567095,
+      127.12873226935912,
+      34.67951517935094
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c19",
+    "file": "dem_jeonnam_r9c19.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.12859308103098,
+      34.58914170511246,
+      127.23785098521446,
+      34.67944878146409
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c20",
+    "file": "dem_jeonnam_r9c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.23759381727477,
+      34.58888082274349,
+      127.34696855643033,
+      34.6792847030293
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c21",
+    "file": "dem_jeonnam_r9c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.34659341384152,
+      34.58852259266664,
+      127.45608445792425,
+      34.679022946630745
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c22",
+    "file": "dem_jeonnam_r9c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.45559134792508,
+      34.588067020515275,
+      127.56519816466385,
+      34.67866351639086
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c23",
+    "file": "dem_jeonnam_r9c23.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.56458709676896,
+      34.58751411345322,
+      127.67430915168242,
+      34.67820641797022
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c24",
+    "file": "dem_jeonnam_r9c24.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.67358013768177,
+      34.58686388017447,
+      127.78341689409464,
+      34.67765165856727
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r9c25",
+    "file": "dem_jeonnam_r9c25.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.78256994805294,
+      34.58611633090279,
+      127.89252086711231,
+      34.67699924691802
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c2",
+    "file": "dem_jeonnam_r10c2.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.27591271638494,
+      34.48708947380175,
+      125.38659242804874,
+      34.578684463897055
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c5",
+    "file": "dem_jeonnam_r10c5.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.60275586337015,
+      34.491255702077474,
+      125.71310545622696,
+      34.58257303767329
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c7",
+    "file": "dem_jeonnam_r10c7.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.82068565229896,
+      34.493548699783155,
+      125.93081242069495,
+      34.58467921142446
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c8",
+    "file": "dem_jeonnam_r10c8.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.92965928902541,
+      34.49454979603807,
+      126.03967382782162,
+      34.58558638372328
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c9",
+    "file": "dem_jeonnam_r10c9.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.03863805794002,
+      34.49545393577058,
+      126.14853982502176,
+      34.58639626011372
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c10",
+    "file": "dem_jeonnam_r10c10.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.14762143685783,
+      34.49626110478829,
+      126.25740989222983,
+      34.58710882786337
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c11",
+    "file": "dem_jeonnam_r10c11.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.25660890345644,
+      34.49697129041994,
+      126.3662835092593,
+      34.5877240757688
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c12",
+    "file": "dem_jeonnam_r10c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.36559993529144,
+      34.49758448151597,
+      126.47516015581822,
+      34.58824199415609
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c13",
+    "file": "dem_jeonnam_r10c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.47459400981226,
+      34.49810066844896,
+      126.58403931152458,
+      34.588662574881305
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c14",
+    "file": "dem_jeonnam_r10c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.58359060437746,
+      34.498519843114096,
+      126.69292045592178,
+      34.588985811330716
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c15",
+    "file": "dem_jeonnam_r10c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.69258919627045,
+      34.49884199892948,
+      126.80180306849407,
+      34.589211698421224
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c16",
+    "file": "dem_jeonnam_r10c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.80158926271507,
+      34.4990671308364,
+      126.91068662868216,
+      34.58934023260052
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c17",
+    "file": "dem_jeonnam_r10c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.91059028089121,
+      34.499195235299645,
+      127.01959172795029,
+      34.5893714118472
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c18",
+    "file": "dem_jeonnam_r10c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.01957061589847,
+      34.4991603553721,
+      127.12859308103098,
+      34.5893714118472
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c19",
+    "file": "dem_jeonnam_r10c19.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.12845450954282,
+      34.49899737152904,
+      127.23759381727477,
+      34.58930523567095
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c20",
+    "file": "dem_jeonnam_r10c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.23733778901779,
+      34.49873736133773,
+      127.34659341384152,
+      34.58914170511246
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c21",
+    "file": "dem_jeonnam_r10c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.34621993374417,
+      34.498380328881076,
+      127.45559134792508,
+      34.58888082274349
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c22",
+    "file": "dem_jeonnam_r10c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.45510042317649,
+      34.497926279765345,
+      127.56458709676896,
+      34.58852259266664
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c23",
+    "file": "dem_jeonnam_r10c23.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.56397873681858,
+      34.49737522111994,
+      127.67358013768177,
+      34.588067020515275
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c24",
+    "file": "dem_jeonnam_r10c24.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.67285435423882,
+      34.49672716159705,
+      127.78256994805294,
+      34.58751411345322
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r10c25",
+    "file": "dem_jeonnam_r10c25.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.78172675508578,
+      34.49598211137133,
+      127.89155600536827,
+      34.58686388017447
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c1",
+    "file": "dem_jeonnam_r11c1.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.16895474585003,
+      34.395406503322064,
+      125.27961800577091,
+      34.48708947380175
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c2",
+    "file": "dem_jeonnam_r11c2.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.27776947402381,
+      34.39698366017115,
+      125.38832428370183,
+      34.488575086590195
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c8",
+    "file": "dem_jeonnam_r11c8.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.93081242069495,
+      34.404419015078346,
+      126.04070500760703,
+      34.49545393577058
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c9",
+    "file": "dem_jeonnam_r11c9.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.03967382782162,
+      34.405320128645066,
+      126.14945414315763,
+      34.49626110478829
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c10",
+    "file": "dem_jeonnam_r11c10.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.14853982502176,
+      34.406124596004744,
+      126.2582073311642,
+      34.49697129041994
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c11",
+    "file": "dem_jeonnam_r11c11.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.25740989222983,
+      34.406832404547,
+      126.36696405368268,
+      34.49758448151597
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c12",
+    "file": "dem_jeonnam_r11c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.3662835092593,
+      34.40744354317585,
+      126.47572379266433,
+      34.49810066844896
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c13",
+    "file": "dem_jeonnam_r11c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.47516015581822,
+      34.407958002310124,
+      126.58448602997102,
+      34.498519843114096
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c14",
+    "file": "dem_jeonnam_r11c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.58403931152458,
+      34.40837577388392,
+      126.69325024739071,
+      34.49884199892948
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c15",
+    "file": "dem_jeonnam_r11c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.69292045592178,
+      34.40869685134698,
+      126.8020159266526,
+      34.4990671308364
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c16",
+    "file": "dem_jeonnam_r11c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.80180306849407,
+      34.408921229664934,
+      126.91078254944274,
+      34.499195235299645
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c17",
+    "file": "dem_jeonnam_r11c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.91068662868216,
+      34.40904890531951,
+      127.01957061589847,
+      34.49922631030754
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c18",
+    "file": "dem_jeonnam_r11c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.01954959741911,
+      34.409014142146916,
+      127.12845450954282,
+      34.49922631030754
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c19",
+    "file": "dem_jeonnam_r11c19.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.12831655222713,
+      34.40885170386485,
+      127.23733778901779,
+      34.4991603553721
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c20",
+    "file": "dem_jeonnam_r11c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.237082895515,
+      34.40859256400958,
+      127.34621993374417,
+      34.49899737152904
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c21",
+    "file": "dem_jeonnam_r11c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.34584810894903,
+      34.40823672664441,
+      127.45510042317649,
+      34.49873736133773
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c22",
+    "file": "dem_jeonnam_r11c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.45461167422894,
+      34.40778419734867,
+      127.56397873681858,
+      34.498380328881076
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c24",
+    "file": "dem_jeonnam_r11c24.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.67213178738504,
+      34.40658909286148,
+      127.78172675508578,
+      34.49737522111994
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c25",
+    "file": "dem_jeonnam_r11c25.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.78088729896622,
+      34.405846536406436,
+      127.89059541910365,
+      34.49672716159705
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r11c26",
+    "file": "dem_jeonnam_r11c26.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.889639089834,
+      34.40571657773794,
+      127.90830826955113,
+      34.49598211137133
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c1",
+    "file": "dem_jeonnam_r12c1.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.17091991824432,
+      34.305304557678895,
+      125.28145834707328,
+      34.39698366017115
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c2",
+    "file": "dem_jeonnam_r12c2.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.27961800577091,
+      34.30687643025211,
+      125.39004846546885,
+      34.39846430143425
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c7",
+    "file": "dem_jeonnam_r12c7.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.82322096503496,
+      34.313292468228504,
+      125.93310337598412,
+      34.404419015078346
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c8",
+    "file": "dem_jeonnam_r12c8.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.93196044233655,
+      34.31428687031929,
+      126.04173161708977,
+      34.405320128645066
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c9",
+    "file": "dem_jeonnam_r12c9.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.04070500760703,
+      34.31518496408518,
+      126.15036440881747,
+      34.406124596004744
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c10",
+    "file": "dem_jeonnam_r12c10.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.14945414315763,
+      34.3159867354698,
+      126.25900123556923,
+      34.406832404547
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c11",
+    "file": "dem_jeonnam_r12c11.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.2582073311642,
+      34.31669217192334,
+      126.36764158162805,
+      34.40744354317585
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c12",
+    "file": "dem_jeonnam_r12c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.36696405368268,
+      34.317301262403085,
+      126.47628493117304,
+      34.407958002310124
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c13",
+    "file": "dem_jeonnam_r12c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.47572379266433,
+      34.317813997373875,
+      126.5849307682947,
+      34.40837577388392
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c14",
+    "file": "dem_jeonnam_r12c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.58448602997102,
+      34.31823036880858,
+      126.69357857701016,
+      34.40869685134698
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c15",
+    "file": "dem_jeonnam_r12c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.69325024739071,
+      34.318550370188376,
+      126.80222784127827,
+      34.408921229664934
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c16",
+    "file": "dem_jeonnam_r12c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.8020159266526,
+      34.31877399650309,
+      126.91087804501501,
+      34.40904890531951
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c17",
+    "file": "dem_jeonnam_r12c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.91078254944274,
+      34.31890124425133,
+      127.01954959741911,
+      34.40907987630871
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c18",
+    "file": "dem_jeonnam_r12c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.01952867210854,
+      34.31886659758802,
+      127.12831655222713,
+      34.40907987630871
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c19",
+    "file": "dem_jeonnam_r12c19.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.12817920643462,
+      34.31870470371893,
+      127.237082895515,
+      34.409014142146916
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c20",
+    "file": "dem_jeonnam_r12c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.23682913187166,
+      34.31844643236833,
+      127.34584810894903,
+      34.40885170386485
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c21",
+    "file": "dem_jeonnam_r12c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.34547793231611,
+      34.31809178757999,
+      127.45461167422894,
+      34.40859256400958
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r12c22",
+    "file": "dem_jeonnam_r12c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.45412509169762,
+      34.31764077490643,
+      127.56337307310338,
+      34.40823672664441
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c3",
+    "file": "dem_jeonnam_r13c3.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.39004846546885,
+      34.21823851562109,
+      125.50024708763763,
+      34.309731575155894
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c7",
+    "file": "dem_jeonnam_r13c7.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.82448020096423,
+      34.22316229800764,
+      125.934241243521,
+      34.31428687031929
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c8",
+    "file": "dem_jeonnam_r13c8.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.93310337598412,
+      34.22415336354711,
+      126.04275367592811,
+      34.31518496408518
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c9",
+    "file": "dem_jeonnam_r13c9.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.04173161708977,
+      34.225048443841786,
+      126.15127063943342,
+      34.3159867354698
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c10",
+    "file": "dem_jeonnam_r13c10.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.15036440881747,
+      34.225847524902775,
+      126.25979162064992,
+      34.31669217192334
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c11",
+    "file": "dem_jeonnam_r13c11.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.25900123556923,
+      34.22655059424049,
+      126.36831610607246,
+      34.317301262403085
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c12",
+    "file": "dem_jeonnam_r13c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.36764158162805,
+      34.22715764086522,
+      126.47684358209284,
+      34.317813997373875
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c13",
+    "file": "dem_jeonnam_r13c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.47628493117304,
+      34.22766865528761,
+      126.58537353501494,
+      34.31823036880858
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c14",
+    "file": "dem_jeonnam_r13c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.5849307682947,
+      34.22808362951906,
+      126.69390545106978,
+      34.318550370188376
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c15",
+    "file": "dem_jeonnam_r13c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.69357857701016,
+      34.228402557072066,
+      126.8024388164307,
+      34.31877399650309
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c16",
+    "file": "dem_jeonnam_r13c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.80222784127827,
+      34.22862543296044,
+      126.91097311722835,
+      34.31890124425133
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c17",
+    "file": "dem_jeonnam_r13c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.91087804501501,
+      34.22875225369969,
+      127.01952867210854,
+      34.31893211144075
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c18",
+    "file": "dem_jeonnam_r13c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.0195078395659,
+      34.22871772330132,
+      127.12817920643462,
+      34.31893211144075
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c19",
+    "file": "dem_jeonnam_r13c19.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.12804246953412,
+      34.22855637270359,
+      127.23682913187166,
+      34.31886659758802
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c20",
+    "file": "dem_jeonnam_r13c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.23657649322645,
+      34.22829896803644,
+      127.34547793231611,
+      34.31870470371893
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c21",
+    "file": "dem_jeonnam_r13c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.34510939675427,
+      34.22794551332423,
+      127.45412509169762,
+      34.31844643236833
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c22",
+    "file": "dem_jeonnam_r13c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.45364066626178,
+      34.22749601409283,
+      127.56277009399419,
+      34.31809178757999
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r13c25",
+    "file": "dem_jeonnam_r13c25.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.7792195329167,
+      34.2255713270596,
+      127.88868699920141,
+      34.31644967565613
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c3",
+    "file": "dem_jeonnam_r14c3.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.39176500633849,
+      34.12812351901374,
+      125.50184085478189,
+      34.21961335228642
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c6",
+    "file": "dem_jeonnam_r14c6.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.71723202486862,
+      34.13194737722123,
+      125.82698195248285,
+      34.22316229800764
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c7",
+    "file": "dem_jeonnam_r14c7.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.82573385546598,
+      34.13303076060346,
+      125.93537406668112,
+      34.22415336354711
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c8",
+    "file": "dem_jeonnam_r14c8.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.934241243521,
+      34.134018496560216,
+      126.04377120364603,
+      34.225048443841786
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c9",
+    "file": "dem_jeonnam_r14c9.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.04275367592811,
+      34.13491056967819,
+      126.15217285231851,
+      34.225847524902775
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c10",
+    "file": "dem_jeonnam_r14c10.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.15127063943342,
+      34.13570696603558,
+      126.2605785015074,
+      34.22655059424049
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c12",
+    "file": "dem_jeonnam_r14c12.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.36831610607246,
+      34.13701268024275,
+      126.47739975609875,
+      34.22766865528761
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c13",
+    "file": "dem_jeonnam_r14c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.47684358209284,
+      34.13752197771176,
+      126.58581433859277,
+      34.22808362951906
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c14",
+    "file": "dem_jeonnam_r14c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.58537353501494,
+      34.13793555765949,
+      126.69423087581626,
+      34.228402557072066
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c15",
+    "file": "dem_jeonnam_r14c15.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.69390545106978,
+      34.1382534136296,
+      126.80264885614183,
+      34.22862543296044
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c16",
+    "file": "dem_jeonnam_r14c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.8024388164307,
+      34.138475540659854,
+      126.91106776789975,
+      34.22875225369969
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c17",
+    "file": "dem_jeonnam_r14c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.91097311722835,
+      34.13860193528244,
+      127.0195078395659,
+      34.228783017306974
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c18",
+    "file": "dem_jeonnam_r14c18.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.01948709939305,
+      34.13856752090605,
+      127.12804246953412,
+      34.228783017306974
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c19",
+    "file": "dem_jeonnam_r14c19.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.12790633891242,
+      34.13840671244438,
+      127.23657649322645,
+      34.22871772330132
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c20",
+    "file": "dem_jeonnam_r14c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.23632497475128,
+      34.13815017264956,
+      127.34510939675427,
+      34.22855637270359
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c21",
+    "file": "dem_jeonnam_r14c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.3447424952207,
+      34.137797905526675,
+      127.45364066626178,
+      34.22829896803644
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c22",
+    "file": "dem_jeonnam_r14c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.45315838866445,
+      34.137349916575054,
+      127.56216978794131,
+      34.22794551332423
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r14c23",
+    "file": "dem_jeonnam_r14c23.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.561572143474,
+      34.13680621278813,
+      127.67069624804839,
+      34.22749601409283
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r15c0",
+    "file": "dem_jeonnam_r15c0.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      125.06842068486586,
+      34.03333888921229,
+      125.17869391312786,
+      34.12509639271363
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r15c13",
+    "file": "dem_jeonnam_r15c13.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.47739975609875,
+      34.04737396631965,
+      126.5862531874316,
+      34.13793555765949
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r15c14",
+    "file": "dem_jeonnam_r15c14.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.58581433859277,
+      34.047786154887035,
+      126.6945548574536,
+      34.1382534136296
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r15c20",
+    "file": "dem_jeonnam_r15c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.23607457165099,
+      34.04800004785647,
+      127.3447424952207,
+      34.13840671244438
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r15c21",
+    "file": "dem_jeonnam_r15c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.34437722072074,
+      34.047648965849895,
+      127.45315838866445,
+      34.13815017264956
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r15c22",
+    "file": "dem_jeonnam_r15c22.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.45267824971175,
+      34.047202484033214,
+      127.561572143474,
+      34.137797905526675
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r15c23",
+    "file": "dem_jeonnam_r15c23.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.56097714919967,
+      34.046660609366334,
+      127.66998324810345,
+      34.137349916575054
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r16c16",
+    "file": "dem_jeonnam_r16c16.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.802857964416,
+      33.961799273523184,
+      126.91125204511307,
+      34.04845029063064
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r16c17",
+    "file": "dem_jeonnam_r16c17.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      126.9111619988337,
+      33.9619248356272,
+      127.01946645119457,
+      34.04848084772187
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r16c20",
+    "file": "dem_jeonnam_r16c20.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.23583528857004,
+      33.96147604859061,
+      127.34437722072074,
+      34.04825572457999
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r16c21",
+    "file": "dem_jeonnam_r16c21.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.34402816748971,
+      33.96112610170175,
+      127.45267824971175,
+      34.04800004785647
+    ],
+    "source": "CONTOUR_BAKE",
+    "cell_m": 5.0,
+    "updated": "2026-09-08",
+    "method": "clough",
+    "guard_m": 3.0
+  },
+  {
+    "region": "전남광주통합특별시(옛 전남) r16c23",
+    "file": "dem_jeonnam_r16c23.tif",
+    "crs": "EPSG:5186",
+    "bounds_4326": [
+      127.56040857761948,
+      33.96014094072117,
+      127.66927340982225,
+      34.047202484033214
     ],
     "source": "CONTOUR_BAKE",
     "cell_m": 5.0,
