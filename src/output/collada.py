@@ -257,10 +257,13 @@ def write_dae(
     if bl:
         groups.append(("n_buildings", "건물", bl))
 
-    # 면 레이어(도로·보도·수계)
+    # 면 레이어(도로·보도·수계). 도로·보도는 띄우지 않는다(lift 0) — 통합 표면이라 도로 밑 지형이 이미
+    # 잘려 겹치는 면이 없고(깜빡임 없음), 가장자리 정점을 지형과 공유한다. 뷰어용 3cm 리프트를 그대로
+    # 두면 가장자리에 3cm 단차(틈)가 생겼다(2026-09-21 실측: 도로 가장자리 8,433점 전부 공유, 높이차 0.03m).
+    road_lift = 0.0 if terrain is not None else ROAD_LIFT_M
     for key, label, mesh, mat, lift in (
-        ("road", "도로", roads, "mat_road", ROAD_LIFT_M),
-        ("sidewalk", "보도", sidewalks, "mat_sidewalk", ROAD_LIFT_M),
+        ("road", "도로", roads, "mat_road", road_lift),
+        ("sidewalk", "보도", sidewalks, "mat_sidewalk", road_lift),
         ("water", "수계", water, "mat_water", 0.0),
     ):
         if mesh is not None and mesh.vertices and mesh.triangles:
