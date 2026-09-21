@@ -176,6 +176,15 @@
 
   <section id="ext">
     <h2>5. SketchUp 확장으로 바로 만들기</h2>
+    <h3>설치 전 확인</h3>
+    <div class="tbl"><table>
+      <tr><th>항목</th><th>내용</th></tr>
+      <tr><td>SketchUp 버전</td><td>SketchUp <b>2021 이상</b>(SketchUp 2026에서 검증). 무료 웹 버전(SketchUp for Web)에서는 확장을 쓸 수 없습니다.</td></tr>
+      <tr><td>따로 설치할 것</td><td><b>없습니다.</b> Ruby는 SketchUp 안에 들어 있어 별도로 깔 필요가 없고, 관리자 권한도 필요 없습니다.</td></tr>
+      <tr><td>인터넷</td><td>생성할 때 대지모델 서버(<code>*.run.app</code>)에 접속합니다. 사내망에서 이 사이트가 열리면 됩니다.</td></tr>
+      <tr><td><b>확장 로딩 정책</b></td><td>이 확장은 Trimble 서명이 없는 사내용 확장입니다. SketchUp이 "확인된 확장만" 불러오도록 설정돼 있으면 설치해도 메뉴가 생기지 않습니다.
+        <b>확장 관리자 → 오른쪽 위 설정(톱니바퀴) → 로딩 정책(Loading Policy) → 제한 없음(Unrestricted)</b>으로 바꾼 뒤 SketchUp을 다시 켜세요.</td></tr>
+    </table></div>
     <h3>설치 (한 번만)</h3>
     <ol>
       <li><a class="btn su" href="/api/extension.rbz">확장 받기 (arch_site_model.rbz)</a> <span class="muted">항상 서버와 같은 최신 버전입니다.</span></li>
@@ -232,7 +241,7 @@
       <tr><td>지형이 안 나오고 건물만 나옴</td><td>결과 화면 <b>경고</b>를 확인하세요. 5m 지형이 없는 곳이면 건물만 만들어집니다.</td></tr>
       <tr><td>화면이 예전 모습</td><td>새 버전 배포 뒤 브라우저 캐시 때문입니다. <kbd>Ctrl</kbd>+<kbd>F5</kbd>.</td></tr>
       <tr><td>오래 걸림</td><td>영역을 줄이거나 도로를 끄면 빨라집니다. 최대 약 2분.</td></tr>
-      <tr><td>확장 메뉴가 없음</td><td>확장 관리자에서 arch-site-model이 켜져 있는지 확인하고 SketchUp을 다시 켜세요.</td></tr>
+      <tr><td>확장 메뉴가 없음</td><td>① 확장 관리자에서 arch-site-model이 켜져 있는지 확인 ② 확장 관리자 설정(톱니바퀴)의 로딩 정책을 <b>제한 없음</b>으로 ③ SketchUp 다시 켜기.</td></tr>
       <tr><td>확장 조립 중 오류</td><td><b>확장 프로그램 &gt; 개발자 &gt; Ruby 콘솔</b>에 원인이 찍힙니다. 그 내용을 담당자에게 보내 주세요.</td></tr>
     </table></div>
     <p class="muted">문의: 앱 담당 김정현</p>
