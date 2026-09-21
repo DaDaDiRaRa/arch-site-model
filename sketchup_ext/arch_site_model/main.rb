@@ -35,8 +35,15 @@ module ArchSiteModel
       dlg.set_file(DIALOG_HTML)
       dlg.add_action_callback("generate") { |_ctx, payload| handle_generate(dlg, payload) }
       dlg.add_action_callback("cancel") { |_ctx, _p| @cancel = true }
+      dlg.add_action_callback("ready") do |_ctx, _p|
+        fh = Sketchup.read_default(PREF_KEY, "floor_height_m")
+        dlg.execute_script("window.setFloorHeight(#{JSON.generate(fh)});") if fh
+      end
       dlg
     end
+
+    # 층고는 사용자가 마지막으로 쓴 값을 기억한다(Sketchup 기본설정, 다음 실행에도 유지).
+    PREF_KEY = "ArchSiteModel".freeze
 
     # 이 반경(m) 초과면 타일 순차조립(대반경). 이하는 단일 조립.
     #
@@ -54,6 +61,7 @@ module ArchSiteModel
         return
       end
       @cancel = false
+      Sketchup.write_default(PREF_KEY, "floor_height_m", params["floor_height_m"].to_f) if params["floor_height_m"]
       radius = (params["radius_m"] || 250).to_i
       if radius > TILE_THRESHOLD_M
         start_tiled(dlg, params)
@@ -132,7 +140,8 @@ module ArchSiteModel
           "water"      => params["water"] == true,        # 타일별 수계 (수면)
         }
         root_holder = { group: nil } # root는 첫 타일과 함께 생성(빈 그룹 purge 방지)
-        state = { total: tiles.length, built: 0, errors: 0 }
+        state = { total: tiles.length, built: 0, errors: 0,
+                  floor_h: (params["floor_height_m"] || 3.5).to_f }
         build_next_tile(dlg, model, root_holder, plan, tiles, layers, 0, state)
       end
     end
@@ -162,6 +171,7 @@ module ArchSiteModel
         "bbox_5186"     => tile["bbox_5186"],
         "origin_offset" => plan["origin_offset"],
         "layers"        => layers,
+        "floor_height_m" => state[:floor_h],
       }
       ApiClient.generate_tile(Settings.backend_url, req) do |result|
         if result[:error]

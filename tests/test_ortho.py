@@ -224,3 +224,14 @@ class TestBuildMosaic:
                 (127.0, 36.0, 128.0, 37.0), 18, _SMALL, "KEY",
                 tmp_path / "x.png", fetch=lambda u: _solid_png(8, (0, 0, 0)),
             )
+
+
+def test_fit_zoom_lowers_until_under_cap():
+    from src.geo.ortho import _MAX_TILES, fit_zoom, tiles_for_bbox
+
+    big = (126.96688, 36.73413, 126.99371, 36.75270)   # 2.4×2.1km — zoom 18이면 360장
+    z = fit_zoom(big, 18)
+    x0, y0, x1, y1 = tiles_for_bbox(big, z)
+    assert z == 17 and (x1 - x0 + 1) * (y1 - y0 + 1) <= _MAX_TILES
+    small = (127.370, 36.339, 127.372, 36.341)
+    assert fit_zoom(small, 18) == 18

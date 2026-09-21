@@ -158,6 +158,23 @@ NGII_AERIAL = TileSource(
 
 # 폭주 방지: 한 번에 붙일 타일 수 상한(256타일 = 4096²px 규모).
 _MAX_TILES = 256
+# 자동 맞춤 하한 — 이보다 거칠면(약 2.4m/px) 대지모델 텍스처로 쓸 의미가 적다.
+_MIN_AUTO_ZOOM = 15
+
+
+def fit_zoom(bbox: tuple[float, float, float, float], zoom: int) -> int:
+    """요청 zoom에서 타일 수가 상한을 넘으면, 넘지 않을 때까지 한 단계씩 낮춘 zoom.
+
+    넓은 영역(예: 2.4km 사각형 = zoom 18에서 360장)이 정사영상을 통째로 잃지 않게 한다.
+    _MIN_AUTO_ZOOM까지 낮춰도 넘으면 그 값을 돌려주고 build_mosaic가 상한 오류를 낸다.
+    """
+    z = zoom
+    while z > _MIN_AUTO_ZOOM:
+        x0, y0, x1, y1 = tiles_for_bbox(bbox, z)
+        if (x1 - x0 + 1) * (y1 - y0 + 1) <= _MAX_TILES:
+            break
+        z -= 1
+    return z
 
 
 @dataclass(frozen=True)

@@ -636,3 +636,43 @@ def test_terrain_bbox_capped_against_runaway_feature():
 def test_terrain_bbox_no_buildings_returns_site_bbox():
     bbox = (127.0, 37.0, 127.01, 37.01)
     assert pl._terrain_bbox_4326(bbox, [], 250) == bbox
+
+
+# ---------------------------------------------------------------------------
+# 지도 영역 지정(bbox_4326) · SketchUp 패키지(.dae zip)
+# ---------------------------------------------------------------------------
+
+def test_generate_with_area_skips_geocode(monkeypatch, tmp_path):
+    def boom(a):
+        raise AssertionError("영역 지정 시 지오코딩하면 안 됨")
+
+    monkeypatch.setattr(pl, "geocode", boom)
+    bbox = (127.368, 36.338, 127.374, 36.342)
+    out = generate(
+        "", bbox_4326=bbox, client=FakeClient(_daejeon_features()),
+        outputs=["dae"], output_dir=tmp_path,
+    )
+    assert out["ok"] is True
+    assert out["bbox"] == list(bbox)
+    assert out["provenance"]["site_bbox_4326"] == list(bbox)
+    assert out["address"].startswith("영역_")
+    # 반경 = 긴 변 절반 (약 537m 폭 → 약 268m)
+    assert 200 < out["provenance"]["radius_m"] < 350
+
+
+def test_generate_dae_package_zip(monkeypatch, tmp_path):
+    import zipfile
+
+    monkeypatch.setattr(
+        pl, "geocode", lambda a: {"lon": 127.37098, "lat": 36.33998, "crs": "EPSG:4326"}
+    )
+    out = generate(
+        "대전광역시 서구 괴정동 358", client=FakeClient(_daejeon_features()),
+        outputs=["3dm", "dae"], output_dir=tmp_path,
+    )
+    z = zipfile.ZipFile(out["outputs"]["dae"]["zip"])
+    names = z.namelist()
+    assert any(n.endswith(".dae") for n in names)
+    assert any(n.endswith(".3dm") for n in names)
+    readme = z.read("readme_coords.txt").decode("utf-8-sig")
+    assert "EPSG:5186" in readme and "층수×3.5m" in readme

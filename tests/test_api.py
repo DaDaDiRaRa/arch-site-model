@@ -184,3 +184,37 @@ def test_generate_tile_rejects_degenerate_bbox():
         "origin_offset": [200000.0, 400000.0],
     })
     assert r.status_code == 400
+
+
+def test_generate_area_validation():
+    # 주소도 영역도 없으면 422
+    assert _client().post("/api/generate", json={"address": ""}).status_code == 422
+    # 한국 밖 / 순서 뒤집힘 / 너무 큼(>4km) → 422
+    assert _client().post("/api/generate", json={"bbox_4326": [0, 0, 1, 1]}).status_code == 422
+    assert _client().post("/api/generate", json={"bbox_4326": [127.1, 36.1, 127.0, 36.0]}).status_code == 422
+    assert _client().post("/api/generate", json={"bbox_4326": [127.0, 36.0, 127.1, 36.1]}).status_code == 422
+
+
+def test_generate_area_passes_bbox_and_serves_package(monkeypatch, tmp_path):
+    seen = {}
+
+    def fake(address, **kw):
+        seen.update(kw)
+        odir = Path(kw["output_dir"])
+        odir.mkdir(parents=True, exist_ok=True)
+        (odir / "s_package.zip").write_bytes(b"zip-bytes")
+        return {"ok": True, "outputs": {"dae": {"zip": str(odir / "s_package.zip")}}, "stats": {}, "warnings": []}
+
+    monkeypatch.setattr(api, "_generate", fake)
+    monkeypatch.setattr(api, "JOBS_DIR", tmp_path.resolve())
+    body = _client().post(
+        "/api/generate", json={"bbox_4326": [127.368, 36.338, 127.374, 36.342], "outputs": ["dae"]}
+    ).json()
+    assert seen["bbox_4326"] == (127.368, 36.338, 127.374, 36.342)
+    assert _client().get(body["files"]["package"]).content == b"zip-bytes"
+
+
+def test_basemap_rejects_bad_tiles():
+    assert _client().get("/api/basemap/evil/10/1/1").status_code == 400
+    assert _client().get("/api/basemap/base/3/1/1").status_code == 400      # 줌 범위 밖
+    assert _client().get("/api/basemap/base/10/5000/1").status_code == 400  # 타일 범위 밖

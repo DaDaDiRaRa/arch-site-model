@@ -107,7 +107,7 @@ def _resolve_ortho_source():
 def _build_geometry(
     solids, terrain_mesh, ortho_info,
     cadastral=None, dem=None, roads=None, sidewalks=None, lanes=None, water=None,
-    walls=None,
+    walls=None, planning=None,
 ) -> dict:
     """브라우저 3D 미리보기용 경량 지오메트리 JSON (F2).
 
@@ -177,6 +177,7 @@ def _build_geometry(
         "lanes": lanes_out,
         "water": water.to_geometry() if water is not None else None,
         "walls": walls,          # 옹벽 상단선(드레이프) + 실측 높이 — 뷰어가 단차 위치 표시
+        "planning": planning,    # 도시계획 경계선 [{cat,label,name,line:[[x,y,z]]}] (드레이프)
         "ortho_extent_m": list(ortho_info["extent_local_m"]) if ortho_info else None,
     }
 
@@ -193,6 +194,7 @@ def generate(
     client: VWorldClient | None = None,
     ortho_fetch=None,
     include_geometry: bool = False,
+    bbox_4326: tuple[float, float, float, float] | None = None,
 ) -> dict:
     """건물 매싱(+ 선택적 지형/지적) 생성 결과를 반환.
 
@@ -218,6 +220,10 @@ def generate(
       "skip"    : 층수 누락 건물 제외
       "flag"    : 기본 1층 높이 적용, flagged=True → 별도 레이어/접미사
 
+    bbox_4326(minlon, minlat, maxlon, maxlat) 지정 시 주소 대신 그 사각형 영역을 쓴다(지도에서
+      드래그로 고른 영역). address는 파일명·표시용 라벨로만 쓰이고 비어 있어도 된다.
+      radius_m은 영역의 긴 변 절반으로 다시 계산된다(지형 여유 상한·provenance용).
+
     setback=True 시 provenance에 stub 표기 (arch-law-diagnose 연동은 [목표]).
 
     client 미지정 시 config 키로 VWorldClient 생성(테스트 주입용).
@@ -225,16 +231,25 @@ def generate(
     """
     outputs = outputs or ["skp"]
     layers = layers or {"buildings": True}
-    cleaned = clean_address(address)
+    if bbox_4326 is not None:
+        # 1-2'. 지도에서 고른 영역 — 지오코딩 없이 사각형 그대로. 좌표는 영역 중심.
+        bbox = tuple(float(v) for v in bbox_4326)
+        clon, clat = (bbox[0] + bbox[2]) / 2.0, (bbox[1] + bbox[3]) / 2.0
+        coord = {"lon": clon, "lat": clat}
+        cleaned = clean_address(address) if (address or "").strip() else f"영역_{clat:.5f}_{clon:.5f}"
+        bx0, by0, bx1, by1 = _bbox_4326_to_5186(bbox)
+        radius_m = int(round(max(bx1 - bx0, by1 - by0) / 2.0))
+    else:
+        cleaned = clean_address(address)
 
-    # 1. 주소 → 좌표
-    try:
-        coord = geocode(cleaned)
-    except GeocodeError as e:
-        return {"ok": False, "address": cleaned, "error": str(e)}
+        # 1. 주소 → 좌표
+        try:
+            coord = geocode(cleaned)
+        except GeocodeError as e:
+            return {"ok": False, "address": cleaned, "error": str(e)}
 
-    # 2. 좌표 + 반경 → bbox
-    bbox = bbox_from_point(coord["lon"], coord["lat"], radius_m)
+        # 2. 좌표 + 반경 → bbox
+        bbox = bbox_from_point(coord["lon"], coord["lat"], radius_m)
 
     # 3. 건물 취득 (geometry=true)
     if client is None:
@@ -507,6 +522,21 @@ def generate(
 
         sidewalk_mesh = build_road_mesh(sidewalk_features, dem, config.ROAD_CELL_M)
 
+    # 7.6 도시계획 경계선(지구단위계획구역·도시계획시설) — 판정 없이 선형·이름만. 최종 지형(버닝 후)
+    #     DEM에 드레이프해 지형 위에 얹는다. 경계 사각형은 사이트 bbox(지형 여유분 아님).
+    planning = None
+    if layers.get("planning"):
+        from src.geo.planning import fetch_planning
+
+        sx0, sy0, sx1, sy1 = _bbox_4326_to_5186(bbox)
+        ox, oy = offset
+        planning = fetch_planning(
+            client, bbox, (sx0 - ox, sy0 - oy, sx1 - ox, sy1 - oy), offset,
+            dem=dem, warnings=warnings,
+        )
+        if not planning:
+            warnings.append("영역 내 도시계획(지구단위계획·도시계획시설) 결정선 없음")
+
     # setback stub (arch-law-diagnose 연동은 [목표])
     if setback:
         warnings.append(
@@ -534,14 +564,21 @@ def generate(
                 )
             else:
                 try:
-                    from src.geo.ortho import build_mosaic
+                    from src.geo.ortho import build_mosaic, fit_zoom
 
                     odir.mkdir(parents=True, exist_ok=True)
                     png_path = odir / (_safe_filename(cleaned) + "_ortho.png")
+                    # 넓은 영역은 타일 상한 안에 들도록 zoom 자동 하향(통째 생략 대신 해상도 조정).
+                    zoom = fit_zoom(terrain_bbox, config.ORTHO_ZOOM)
+                    if zoom < config.ORTHO_ZOOM:
+                        warnings.append(
+                            f"정사영상: 영역이 넓어 zoom {config.ORTHO_ZOOM}→{zoom}로 자동 조정 "
+                            "(타일 상한 256장)"
+                        )
                     # 지형과 같은 범위로 — 평면투영 UV가 extent 기준이라 어긋나면
                     # 지형 가장자리에 텍스처가 반복/왜곡된다(_apply_ortho_texture).
                     mosaic = build_mosaic(
-                        terrain_bbox, config.ORTHO_ZOOM, source, okey, png_path,
+                        terrain_bbox, zoom, source, okey, png_path,
                         fetch=ortho_fetch,
                     )
                     bx0, by0, bx1, by1 = mosaic.bounds
@@ -598,6 +635,8 @@ def generate(
             lanes=lanes,
             walls=walls_geom,
             qa=qa_result,
+            planning=planning,
+            drape=dem.elev_at if dem is not None else None,   # 지적선을 지형에 얹음
         )
         out["3dm"] = {
             "path": saved,
@@ -624,8 +663,12 @@ def generate(
         "radius_m": radius_m,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
+    if bbox_4326 is not None:
+        prov["site_bbox_4326"] = list(bbox)   # 지도 영역 지정 — radius_m은 긴 변 절반
     if layers.get("cadastral"):
         prov["cadastral_src"] = "VWorld LP_PA_CBND_BUBUN"
+    if layers.get("planning"):
+        prov["planning_src"] = "VWorld 도시계획정보(UPIS) LT_C_UPISUQ151~161"
     if terrain_tile_file:
         prov["terrain_tile"] = terrain_tile_file
     if ortho_info:
@@ -641,7 +684,7 @@ def generate(
             solids, terrain_mesh, ortho_info,
             cadastral=cadastral_parcels, dem=dem, roads=road_mesh,
             sidewalks=sidewalk_mesh, lanes=lanes, water=water_mesh,
-            walls=walls_geom,
+            walls=walls_geom, planning=planning,
         )
         if include_geometry
         else None
@@ -651,7 +694,9 @@ def generate(
 
     # 용도지역 조회 (arch-law-graph 연동) — 옵션. 미설정/미도달 시 조용히 생략.
     zoning = None
-    if layers.get("zoning"):
+    if layers.get("zoning") and bbox_4326 is not None and not (address or "").strip():
+        warnings.append("용도지역 조회 생략 — 주소 없이 영역만 지정됨(조회는 주소 기준)")
+    elif layers.get("zoning"):
         from src.geo.zoning import lookup_zoning
 
         zoning = lookup_zoning(cleaned)
@@ -676,6 +721,7 @@ def generate(
             "roads": road_count,
             "water": water_count,
             "walls": len(walls_geom) if walls_geom else 0,
+            "planning_lines": len(planning) if planning else 0,
             "origin_offset": list(offset),   # 복원용 — 필수 저장 (사양서 §6.1)
             "elev_range_m": elev_range,
         },
@@ -688,4 +734,33 @@ def generate(
     from src.trust_report import build_trust_report
 
     res["trust_report"] = build_trust_report(res)
+
+    # SketchUp·Rhino 패키지(.zip) — .dae + (.3dm) + 정사영상 PNG + 좌표·출처 안내문.
+    # 안내문이 provenance·신뢰도 리포트를 쓰므로 맨 끝에서 만든다. out은 res["outputs"]와 같은 dict.
+    if "dae" in outputs:
+        import zipfile
+
+        from src.output.collada import write_dae, write_readme
+
+        odir.mkdir(parents=True, exist_ok=True)
+        stem = _safe_filename(cleaned)
+        ortho_name = Path(ortho_info["image_path"]).name if ortho_info else None
+        dae_path = write_dae(
+            odir / f"{stem}.dae", solids, terrain_mesh, offset,
+            roads=road_mesh, sidewalks=sidewalk_mesh, water=water_mesh, lanes=lanes,
+            cadastral=cadastral_parcels, drape=dem.elev_at if dem is not None else None,
+            walls=walls_geom, planning=planning,
+            ortho_image=ortho_name,
+            ortho_extent_m=ortho_info["extent_local_m"] if ortho_info else None,
+        )
+        readme = write_readme(odir / "readme_coords.txt", res)
+        zip_path = odir / f"{stem}_package.zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+            z.write(dae_path, Path(dae_path).name)
+            z.write(readme, "readme_coords.txt")
+            if ortho_info:
+                z.write(ortho_info["image_path"], ortho_name)
+            if "3dm" in out:
+                z.write(out["3dm"]["path"], Path(out["3dm"]["path"]).name)
+        out["dae"] = {"path": str(dae_path), "zip": str(zip_path.resolve())}
     return res

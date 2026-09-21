@@ -31,6 +31,7 @@ module ArchSiteModel
       body = {
         "address"    => params["address"].to_s,
         "radius_m"   => (params["radius_m"] || 250).to_i,
+        "floor_height_m" => (params["floor_height_m"] || 3.5).to_f,
         # orthophoto=true면 백엔드가 정사영상 PNG 생성 → 확장이 다운로드해 지형에 드레이프(B2).
         # roads=true면 지형·도로·보도를 통합 삼각화해 geometry.roads/sidewalks/lanes 반환(Phase R).
         "layers"     => {
@@ -40,6 +41,7 @@ module ArchSiteModel
           "roads"      => params["roads"] == true,
           "water"      => params["water"] == true,
           "qa"         => params["qa"] == true,
+          "planning"   => params["planning"] == true,  # 지구단위계획·도시계획시설 결정선
         },
         "outputs"    => ["skp"],  # .3dm 불필요 — geometry + 정사영상 URL만 받음
       }

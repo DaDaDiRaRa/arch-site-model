@@ -71,7 +71,49 @@ module ArchSiteModel
       build_surface_mesh(model, parent_ents, geometry["water"], "water", C_WATER, 0.0)
       build_buildings(model, parent_ents, geometry["buildings"] || [])
       build_cadastral(model, parent_ents, geometry["cadastral"])
+      build_planning(model, parent_ents, geometry["planning"])
       build_qa(model, parent_ents, qa, geometry) if qa
+    end
+
+    # 도시계획 분류색 — src/geo/planning.py PLANNING_LAYERS 와 동일(.3dm·.dae·F2와 통일)
+    C_PLANNING = {
+      "district_plan" => [230, 50, 180], "plan_road" => [220, 60, 40], "transport" => [40, 90, 200],
+      "open_space" => [34, 160, 60], "supply" => [150, 110, 60], "public" => [20, 180, 200],
+      "disaster" => [90, 90, 160], "health" => [200, 120, 160], "env" => [120, 150, 60],
+      "other_infra" => [130, 130, 130],
+    }.freeze
+
+    # 도시계획 경계선 → 분류별 그룹·태그("도시계획_<이름>")의 드레이프 엣지. 결정선 표시만(판정 아님).
+    # items = [{"cat","label","name","line"=>[[x,y,z],...]}, ...] (로컬 미터, 백엔드가 DEM 드레이프).
+    def self.build_planning(model, parent_ents, items)
+      return unless items && !items.empty?
+      root = parent_ents.add_group
+      root.name = "도시계획"
+      groups = {}
+      items.each do |it|
+        line = it["line"] || []
+        next if line.length < 2
+        cat = it["cat"] || "other"
+        g = groups[cat] ||= begin
+          sub = root.entities.add_group
+          sub.name = "도시계획_#{it['label'] || cat}"
+          t = tag(model, sub.name)
+          begin
+            t.color = Sketchup::Color.new(*(C_PLANNING[cat] || [130, 130, 130]))
+          rescue StandardError
+            nil
+          end
+          sub.layer = t
+          sub
+        end
+        begin
+          g.entities.add_edges(line.map { |p| Geom::Point3d.new(p[0] * M2I, p[1] * M2I, p[2] * M2I) })
+        rescue StandardError
+          next
+        end
+      end
+    rescue StandardError => e
+      puts "[planning] 조립 오류: #{e.message}"
     end
 
     # 자동 QA findings → 결함 위치(at)에 수직 핀(교차 쿼드 2장, 색=심각도). F2와 동일 개념.

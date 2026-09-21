@@ -34,6 +34,8 @@ export interface SiteGeometry {
     triangles: [number, number, number][];
     outlines: [number, number, number][][];
   } | null;
+  // 도시계획 경계선(지구단위계획·도시계획시설) — 지형 드레이프, 분류(cat)별 색
+  planning?: { cat: string; label: string; name: string; line: [number, number, number][] }[] | null;
   ortho_extent_m: [number, number, number, number] | null;
 }
 
@@ -69,6 +71,12 @@ const C_ROAD_EDGE = 0x3a3f45; // 짙은 그레이 — 도로 외곽선
 const C_SIDEWALK = 0xb0aca0; // 콘크리트 베이지그레이 — 보도 (R3)
 const C_LANE = 0xe8c84a; // 노랑 — 차선/중심선 마킹 (R3)
 const C_WATER = 0x3a6ea5; // 강물 블루 — 수계 (평면 수면)
+// 도시계획 분류색 — src/geo/planning.py PLANNING_LAYERS 와 동일(.3dm·.dae와 통일)
+const C_PLANNING: Record<string, number> = {
+  district_plan: 0xe632b4, plan_road: 0xdc3c28, transport: 0x285ac8, open_space: 0x22a03c,
+  supply: 0x966e3c, public: 0x14b4c8, disaster: 0x5a5aa0, health: 0xc878a0, env: 0x78963c, other_infra: 0x828282,
+};
+const PLANNING_LIFT = 0.4;
 // 지형이 제약 삼각화로 도로 경계에 정확히 맞물리므로(도로 밑 지형은 컬링) 리프트는 경계선
 // z-fighting 방지용 아주 작은 값만. 크면 도로가 떠 보인다.
 const ROAD_LIFT = 0.03; // 도로 노면 — 지면에 거의 flush
@@ -89,6 +97,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
     sidewalks?: THREE.Object3D | null;
     lanes?: THREE.Object3D | null;
     water?: THREE.Object3D | null;
+    planning?: THREE.Object3D | null;
     qa?: THREE.Object3D | null;
     buildingMeshes: THREE.Mesh[];
     edges: THREE.LineSegments[];
@@ -102,6 +111,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
   const [showLanes, setShowLanes] = useState(true);
   const [showWater, setShowWater] = useState(true);
   const [showQa, setShowQa] = useState(true);
+  const [showPlanning, setShowPlanning] = useState(true);
   const [colorMode, setColorMode] = useState<ColorMode>("height");
   const [viewMode, setViewMode] = useState<ViewMode>("solid");
   const [showEdges, setShowEdges] = useState(true);
@@ -183,6 +193,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
       const lanes = buildLanes(geometry.lanes);
       const water = buildSurfaceMesh(geometry.water, C_WATER, 0);
       const qaMarkers = buildQaMarkers(qa, geometry);
+      const planning = buildPlanning(geometry.planning);
       if (buildings) root.add(buildings);
       if (terrain) root.add(terrain);
       if (cadastral) root.add(cadastral);
@@ -191,6 +202,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
       if (lanes) root.add(lanes);
       if (water) root.add(water);
       if (qaMarkers) root.add(qaMarkers);
+      if (planning) root.add(planning);
 
       root.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(root);
@@ -198,7 +210,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
       // 지형이 없으면 그림자를 받을 바닥면을 깔아 건물 그림자가 보이게 한다.
       if (!terrain && !box.isEmpty()) root.add(shadowGround(box));
 
-      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, water, qa: qaMarkers, buildingMeshes: meshes, edges, sun };
+      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, water, planning, qa: qaMarkers, buildingMeshes: meshes, edges, sun };
       if (!box.isEmpty()) {
         fitCamera(camera, controls, box);
         frameSunShadow(sun, box);
@@ -272,7 +284,8 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
     if (sceneRefs.current.lanes) sceneRefs.current.lanes.visible = showLanes;
     if (sceneRefs.current.water) sceneRefs.current.water.visible = showWater;
     if (sceneRefs.current.qa) sceneRefs.current.qa.visible = showQa;
-  }, [showBuildings, showTerrain, showCadastral, showRoads, showSidewalks, showLanes, showWater, showQa]);
+    if (sceneRefs.current.planning) sceneRefs.current.planning.visible = showPlanning;
+  }, [showBuildings, showTerrain, showCadastral, showRoads, showSidewalks, showLanes, showWater, showQa, showPlanning]);
 
   // 색상 모드: 높이별 그라디언트 ↔ 단색 (미확인 건물은 항상 주황)
   useEffect(() => {
@@ -330,6 +343,12 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
   const nL = geometry.lanes?.length ?? 0;
   const nWater = geometry.water?.outlines?.length ?? 0;
   const nQa = qa?.findings.length ?? 0;
+  const nPlan = geometry.planning?.length ?? 0;
+  const planCats = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of geometry.planning ?? []) m.set(p.cat, p.label);
+    return [...m.entries()];
+  }, [geometry]);
 
   return (
     <div>
@@ -362,6 +381,10 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
         <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={showWater} onChange={(e) => setShowWater(e.target.checked)} className="h-4 w-4" disabled={!nWater} />
           수계 <span className="text-xs text-slate-400">({nWater})</span>
+        </label>
+        <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={showPlanning} onChange={(e) => setShowPlanning(e.target.checked)} className="h-4 w-4" disabled={!nPlan} />
+          도시계획 <span className="text-xs text-slate-400">({nPlan})</span>
         </label>
         <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={showQa} onChange={(e) => setShowQa(e.target.checked)} className="h-4 w-4" disabled={!nQa} />
@@ -411,6 +434,17 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
         )}
         {error && <div className="absolute inset-0 flex items-center justify-center text-sm text-red-600">{error}</div>}
       </div>
+      {showPlanning && planCats.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+          {planCats.map(([cat, label]) => (
+            <span key={cat} className="flex items-center gap-1.5">
+              <span className="inline-block h-0.5 w-4" style={{ background: `#${(C_PLANNING[cat] ?? 0x828282).toString(16).padStart(6, "0")}` }} />
+              {label}
+            </span>
+          ))}
+          <span className="text-slate-400">· 결정선 표시만 — 법적 판단은 아님</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -652,6 +686,31 @@ function buildLanes(lanes: Props["geometry"]["lanes"]): THREE.Group | null {
       pos[3 * i] = line[i][0];
       pos[3 * i + 1] = line[i][1];
       pos[3 * i + 2] = line[i][2] + LANE_LIFT;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.add(new THREE.Line(geo, mat));
+  }
+  return g;
+}
+
+// 도시계획 경계선: 분류색 라인. 드레이프 z에 살짝 더 띄워 지형 위로.
+function buildPlanning(items: SiteGeometry["planning"]): THREE.Group | null {
+  if (!items || !items.length) return null;
+  const g = new THREE.Group();
+  const mats = new Map<string, THREE.LineBasicMaterial>();
+  for (const it of items) {
+    if (!it.line || it.line.length < 2) continue;
+    let mat = mats.get(it.cat);
+    if (!mat) {
+      mat = new THREE.LineBasicMaterial({ color: C_PLANNING[it.cat] ?? 0x828282 });
+      mats.set(it.cat, mat);
+    }
+    const pos = new Float32Array(it.line.length * 3);
+    for (let i = 0; i < it.line.length; i++) {
+      pos[3 * i] = it.line[i][0];
+      pos[3 * i + 1] = it.line[i][1];
+      pos[3 * i + 2] = it.line[i][2] + PLANNING_LIFT;
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));

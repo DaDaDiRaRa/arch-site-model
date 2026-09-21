@@ -485,3 +485,27 @@ def test_write_3dm_walls_layer(tmp_path):
     objs = [o for o in model.Objects if o.Attributes.LayerIndex == idx]
     assert len(objs) == 1
     assert objs[0].Attributes.GetUserString("wall_height_m") == "2.5"
+
+
+def test_3dm_units_are_meters(tmp_path):
+    # rhino3dm 기본값은 mm — 좌표가 미터인데 mm로 저장되면 Rhino가 1000배 작게 연다.
+    p = write_3dm([_make_solid()], None, tmp_path / "u.3dm", (0.0, 0.0))
+    assert rhino3dm.File3dm.Read(p).Settings.ModelUnitSystem == rhino3dm.UnitSystem.Meters
+
+
+def test_cadastral_draped_and_planning_layers(tmp_path):
+    from src.geometry.cadastral import CadastralParcel
+
+    parcel = CadastralParcel(pnu="P1", footprint_m=[(0, 0), (5, 0), (5, 5)])
+    planning = [{"cat": "plan_road", "label": "도시계획도로", "name": "소로3류", "line": [[0, 0, 7], [9, 0, 7]]}]
+    p = write_3dm(
+        [], None, tmp_path / "c.3dm", (0.0, 0.0), cadastral=[parcel],
+        planning=planning, drape=lambda x, y: 12.5,
+    )
+    m = rhino3dm.File3dm.Read(p)
+    layers = [l.Name for l in m.Layers]
+    assert "도시계획_도시계획도로" in layers
+    cad = [o for o in m.Objects if o.Attributes.Name == "P1"][0]
+    assert cad.Geometry.PointAt(0).Z == 12.5
+    road = [o for o in m.Objects if o.Attributes.Name == "소로3류"]
+    assert len(road) == 1

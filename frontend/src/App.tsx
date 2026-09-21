@@ -1,5 +1,17 @@
 import { useState } from "react";
 import Viewer3D, { type SiteGeometry } from "./Viewer3D";
+import AreaMap, { AREA_MAX_M, AREA_MIN_M, type BBox, bboxSizeM, squareAround } from "./AreaMap";
+
+// 층고는 사용자가 마지막으로 쓴 값을 이 브라우저에 기억한다(사내 표준 기본 3.5m).
+const FLOOR_KEY = "asm.floorHeightM";
+function loadFloorH(): number {
+  try {
+    const v = Number(localStorage.getItem(FLOOR_KEY));
+    return v >= 2 && v <= 10 ? v : 3.5;
+  } catch {
+    return 3.5;
+  }
+}
 
 // 데이터 신뢰도 리포트 (A-1) — src/trust_report.py 산출
 interface TrustReport {
@@ -33,7 +45,7 @@ interface ZoningInfo {
 interface GenerateResult {
   ok: boolean;
   job_id: string;
-  files: { "3dm"?: string; ortho_png?: string };
+  files: { "3dm"?: string; ortho_png?: string; package?: string };
   geometry: SiteGeometry | null;
   stats: {
     buildings: number;
@@ -62,6 +74,54 @@ export default function App() {
   const [water, setWater] = useState(false);
   const [qa, setQa] = useState(false);
   const [zoning, setZoning] = useState(false);
+  const [planning, setPlanning] = useState(true);
+  const [floorH, setFloorH] = useState<number>(loadFloorH);
+
+  // 지도 영역: 주소 검색·클릭은 반경 정사각형(반경 바꾸면 따라감), 드래그는 자유 사각형
+  const [area, setArea] = useState<BBox | null>(null);
+  const [areaHow, setAreaHow] = useState<"click" | "draw" | null>(null);
+  const [flyTo, setFlyTo] = useState<{ lon: number; lat: number; key: number } | null>(null);
+  const [finding, setFinding] = useState(false);
+
+  const areaSize = area ? bboxSizeM(area) : null;
+  const areaOk = !areaSize || (Math.max(...areaSize) <= AREA_MAX_M && Math.min(...areaSize) >= AREA_MIN_M);
+
+  function changeFloorH(v: number) {
+    setFloorH(v);
+    try {
+      localStorage.setItem(FLOOR_KEY, String(v));
+    } catch {
+      /* 저장 불가(사생활 모드 등) — 이번 세션만 유지 */
+    }
+  }
+
+  function changeRadius(r: number) {
+    setRadius(r);
+    if (area && areaHow === "click") {
+      setArea(squareAround((area[0] + area[2]) / 2, (area[1] + area[3]) / 2, r));
+    }
+  }
+
+  async function handleFind() {
+    if (!address.trim()) return;
+    setFinding(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/geocode?address=${encodeURIComponent(address)}`);
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) {
+        setError(data?.detail ?? `주소를 찾지 못했습니다 (HTTP ${res.status})`);
+        return;
+      }
+      setFlyTo({ lon: data.lon, lat: data.lat, key: Date.now() });
+      setArea(squareAround(data.lon, data.lat, radius));
+      setAreaHow("click");
+    } catch (err) {
+      setError(`주소 검색 실패: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setFinding(false);
+    }
+  }
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,8 +139,14 @@ export default function App() {
         body: JSON.stringify({
           address,
           radius_m: radius,
-          layers: { buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral, roads, water: terrain && water, qa, zoning },
-          outputs: ["3dm"],
+          // 지도에서 영역을 골랐으면 그 사각형으로(주소는 라벨), 아니면 주소+반경
+          ...(area ? { bbox_4326: area } : {}),
+          floor_height_m: floorH,
+          layers: {
+            buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral, roads,
+            water: terrain && water, qa, zoning, planning,
+          },
+          outputs: ["3dm", "dae"],
         }),
       });
       const text = await res.text();
@@ -110,7 +176,8 @@ export default function App() {
         <header className="mb-8">
           <h1 className="text-2xl font-bold text-slate-900">대지모델 생성기</h1>
           <p className="mt-1 text-sm text-slate-500">
-            주소를 입력하면 주변 지형·건물 3D 모델(.3dm)에 정사영상을 입혀 생성합니다.
+            주소를 찾거나 지도에서 영역을 골라, 5m 지형·실측 층수 건물·정사영상을 입힌 3D 대지모델을
+            만듭니다. Rhino(.3dm)와 SketchUp(.dae) 패키지로 받습니다.
           </p>
         </header>
 
@@ -120,15 +187,65 @@ export default function App() {
           className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
         >
           <label className="block text-sm font-medium text-slate-700">대지 주소</label>
-          <input
-            type="text"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder="예: 대전광역시 서구 괴정동 358"
-            required
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm
-                       focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-          />
+          <div className="mt-1 flex gap-2">
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleFind();
+                }
+              }}
+              placeholder="예: 대전광역시 서구 괴정동 358"
+              required={!area}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm
+                         focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+            <button
+              type="button"
+              onClick={handleFind}
+              disabled={finding || !address.trim()}
+              className="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold
+                         text-slate-700 transition hover:bg-slate-50 disabled:opacity-40"
+            >
+              {finding ? "찾는 중…" : "지도에서 찾기"}
+            </button>
+          </div>
+
+          <div className="mt-4">
+            <AreaMap
+              area={area}
+              radius={radius}
+              flyTo={flyTo}
+              onPick={(b, how) => {
+                setArea(b);
+                setAreaHow(how);
+              }}
+            />
+            {area && (
+              <div className="mt-1 flex items-center justify-between text-xs">
+                {areaOk ? (
+                  <span className="text-emerald-700">이 영역으로 생성합니다 (주소는 파일 이름으로만 쓰입니다).</span>
+                ) : (
+                  <span className="text-rose-700">
+                    영역 한 변은 {AREA_MIN_M}m~{AREA_MAX_M.toLocaleString()}m여야 합니다.
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setArea(null);
+                    setAreaHow(null);
+                  }}
+                  className="text-slate-500 underline hover:text-slate-700"
+                >
+                  영역 지우기(주소+반경으로)
+                </button>
+              </div>
+            )}
+          </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-6">
             <div>
@@ -138,8 +255,24 @@ export default function App() {
                 min={10}
                 max={2000}
                 value={radius}
-                onChange={(e) => setRadius(Number(e.target.value))}
-                className="mt-1 w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm
+                onChange={(e) => changeRadius(Number(e.target.value))}
+                disabled={areaHow === "draw"}
+                title={areaHow === "draw" ? "그린 사각형을 쓰는 중에는 반경이 적용되지 않습니다" : undefined}
+                className="mt-1 w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100
+                           focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">층고(m)</label>
+              <input
+                type="number"
+                min={2}
+                max={10}
+                step={0.1}
+                value={floorH}
+                onChange={(e) => changeFloorH(Number(e.target.value))}
+                title="건물 높이 = 실측 층수 × 층고. 마지막 값을 기억합니다."
+                className="mt-1 w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm
                            focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
             </div>
@@ -207,11 +340,21 @@ export default function App() {
                 className="h-4 w-4 rounded border-slate-300"
               />
               용도지역
-            </label>          </div>
+            </label>
+            <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={planning}
+                onChange={(e) => setPlanning(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              도시계획(지구단위·시설)
+            </label>
+          </div>
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !areaOk}
             className="mt-6 w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold
                        text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed
                        disabled:bg-slate-300"
@@ -264,6 +407,15 @@ export default function App() {
             )}
 
             <div className="mt-6 flex flex-wrap gap-3">
+              {result.files.package && (
+                <a
+                  href={result.files.package}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white
+                             transition hover:bg-emerald-700"
+                >
+                  SketchUp·Rhino 패키지 (.zip)
+                </a>
+              )}
               {result.files["3dm"] && (
                 <a
                   href={result.files["3dm"]}
@@ -323,8 +475,8 @@ export default function App() {
             )}
 
             <p className="mt-4 text-xs text-slate-400">
-              .3dm은 Rhino에서 열 수 있습니다. 정사영상 텍스처는 같은 폴더의 PNG를 참조하므로
-              둘을 함께 두세요.
+              패키지(.zip)를 풀면 SketchUp용 .dae(File &gt; Import), Rhino용 .3dm, 정사영상 PNG,
+              좌표 안내문(readme_coords.txt)이 들어 있습니다. 텍스처는 같은 폴더의 PNG를 참조하니 풀어서 여세요.
             </p>
           </div>
         )}

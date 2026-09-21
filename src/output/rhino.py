@@ -38,6 +38,8 @@ def write_3dm(
     lanes: list | None = None,
     walls: list | None = None,
     qa: dict | None = None,
+    planning: list | None = None,
+    drape=None,
 ) -> str:
     """BuildingSolid(+TerrainMesh+CadastralParcel) → .3dm 파일.
 
@@ -50,9 +52,13 @@ def write_3dm(
     ortho_image: 정사영상 PNG 경로. 지정 시 지형 메시에 평면투영 텍스처로 입힘.
     ortho_extent_m: 정사영상이 덮는 로컬 미터 범위 (x0, y0, x1, y1). 로컬 = 5186 − offset.
       terrain 정점과 동일 좌표계여야 UV가 맞는다. ortho_image와 함께 지정.
+    planning: 도시계획 경계선 [{cat,label,name,line:[[x,y,z]]}] — 분류별 "도시계획_<이름>" 레이어.
+    drape: (x, y) → z 함수(로컬 미터). 지정 시 지적선을 지형에 얹는다(없으면 Z=0).
     반환: 저장된 파일의 절대 경로 문자열.
     """
     model = rhino3dm.File3dm()
+    # 단위를 명시한다 — 좌표는 미터인데 기본값(mm 등)으로 저장되면 Rhino가 1000배 작게 연다.
+    model.Settings.ModelUnitSystem = rhino3dm.UnitSystem.Meters
 
     # --- 레이어 설정 ---
     l_bldg = rhino3dm.Layer()
@@ -128,7 +134,7 @@ def write_3dm(
     # 지적 경계 PolylineCurve
     if cadastral:
         for parcel in cadastral:
-            _add_cadastral(model, parcel, idx_cada)
+            _add_cadastral(model, parcel, idx_cada, drape)
 
     # 도로 노면 / 보도 Mesh (Phase R)
     if roads is not None:
@@ -144,6 +150,9 @@ def write_3dm(
     # 옹벽 상단선(F0040000) — 지형에 심은 수직 단차의 위치. 높이는 객체 속성으로 보존.
     if walls:
         _add_walls(model, walls, idx_wall)
+    # 도시계획 경계선 — 분류마다 레이어 하나(있는 분류만 만든다).
+    if planning:
+        _add_planning(model, planning)
     # 자동 QA 결함 핀(수직 마커) — F2·확장과 동일 피처 (.3dm 정합)
     if qa:
         _add_qa_pins(model, qa, terrain, idx_qa_w, idx_qa_i)
@@ -329,13 +338,14 @@ def _add_cadastral(
     model: rhino3dm.File3dm,
     parcel: CadastralParcel,
     layer_idx: int,
+    drape=None,
 ) -> None:
-    """CadastralParcel → rhino3dm PolylineCurve at Z=0 (대지 경계선)."""
+    """CadastralParcel → rhino3dm PolylineCurve (대지 경계선). drape 있으면 지형 표고, 없으면 Z=0."""
     fp = parcel.footprint_m
     if len(fp) < 3:
         return
 
-    pts = [rhino3dm.Point3d(x, y, 0.0) for x, y in fp]
+    pts = [rhino3dm.Point3d(x, y, float(drape(x, y)) if drape else 0.0) for x, y in fp]
     pts.append(pts[0])   # 닫기
     curve = rhino3dm.PolylineCurve(pts)
 
@@ -367,6 +377,29 @@ def _add_walls(
         attrs.LayerIndex = layer_idx
         attrs.Name = f"wall_h{w.get('h', 0)}"
         attrs.SetUserString("wall_height_m", str(w.get("h", 0)))
+        model.Objects.Add(curve, attrs)
+
+
+def _add_planning(model: rhino3dm.File3dm, planning: list) -> None:
+    """도시계획 경계선 → 분류별 레이어의 PolylineCurve. 결정 도면명은 객체 이름으로."""
+    from src.geo.planning import COLORS, LABELS
+
+    idx: dict[str, int] = {}
+    for item in planning:
+        pts = item.get("line") or []
+        if len(pts) < 2:
+            continue
+        cat = item.get("cat", "other")
+        if cat not in idx:
+            layer = rhino3dm.Layer()
+            layer.Name = f"도시계획_{LABELS.get(cat, cat)}"
+            r, g, b = COLORS.get(cat, (130, 130, 130))
+            layer.Color = (r, g, b, 255)
+            idx[cat] = model.Layers.Add(layer)
+        curve = rhino3dm.PolylineCurve([rhino3dm.Point3d(float(x), float(y), float(z)) for x, y, z in pts])
+        attrs = rhino3dm.ObjectAttributes()
+        attrs.LayerIndex = idx[cat]
+        attrs.Name = item.get("name") or LABELS.get(cat, cat)
         model.Objects.Add(curve, attrs)
 
 

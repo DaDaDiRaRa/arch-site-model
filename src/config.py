@@ -19,7 +19,7 @@ VWORLD_DOMAIN = os.environ.get("VWORLD_DOMAIN", "")
 
 # --- 단위/기본값 ---
 M2I = 39.3701              # meter → inch (SketchUp MCP는 인치 단위)
-DEFAULT_FLOOR_H_M = 3.0    # 기본 층고 (m)
+DEFAULT_FLOOR_H_M = 3.5    # 기본 층고 (m) — 사내 사이트모델링 표준(층수×3.5m). 요청마다 floor_height_m로 재정의
 
 # --- 건물 앉힘(seating) ---
 # 커튼 가드(m): 건물 바닥은 footprint 지반 최저점에 앉히되(뜨지 않게), 대표지반(footprint 내부

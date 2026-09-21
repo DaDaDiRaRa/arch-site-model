@@ -39,11 +39,16 @@
       <label for="radius">반경(m)</label>
       <input type="number" id="radius" min="10" max="2000" value="250" style="width:110px" />
     </div>
+    <div>
+      <label for="floorh">층고(m)</label>
+      <input type="number" id="floorh" min="2" max="10" step="0.1" value="3.5" style="width:90px" />
+    </div>
     <label class="chk"><input type="checkbox" id="terrain" checked /> 지형(TIN)</label>
     <label class="chk"><input type="checkbox" id="orthophoto" /> 정사영상</label>
     <label class="chk"><input type="checkbox" id="roads" /> 도로</label>
     <label class="chk"><input type="checkbox" id="water" /> 수계</label>
     <label class="chk"><input type="checkbox" id="qa" /> QA</label>
+    <label class="chk"><input type="checkbox" id="planning" checked /> 도시계획</label>
   </div>
 
   <button id="go">모델 생성</button>
@@ -102,6 +107,10 @@
       $("go").disabled = false;
     };
 
+    // 마지막으로 쓴 층고를 Ruby(Sketchup 기본설정)에서 받아 채운다.
+    window.setFloorHeight = function (v) { if (v) $("floorh").value = v; };
+    if (window.sketchup && typeof window.sketchup.ready === "function") window.sketchup.ready();
+
     $("cancel").addEventListener("click", function () {
       if (window.sketchup && typeof window.sketchup.cancel === "function") {
         window.sketchup.cancel();
@@ -115,11 +124,13 @@
         var payload = {
           address: $("address").value,
           radius_m: parseInt($("radius").value, 10) || 250,
+          floor_height_m: parseFloat($("floorh").value) || 3.5,
           terrain: $("terrain").checked,
           orthophoto: $("orthophoto").checked,
           roads: $("roads").checked,
           water: $("water").checked,
           qa: $("qa").checked,
+          planning: $("planning").checked,
         };
         // sketchup 브리지가 없으면 클릭이 조용히 죽지 않게 — 원인을 화면에 표시.
         if (window.sketchup && typeof window.sketchup.generate === "function") {

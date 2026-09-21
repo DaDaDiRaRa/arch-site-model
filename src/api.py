@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import tempfile
@@ -26,7 +27,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from src import config
 from src.pipeline import generate as _generate
@@ -57,7 +58,7 @@ def _upload_job(job_id: str, job_dir: Path) -> None:
         return
     try:
         bucket = _gcs_bucket()
-        for p in [*job_dir.glob("*.3dm"), *job_dir.glob("*_ortho.png")]:
+        for p in [*job_dir.glob("*.3dm"), *job_dir.glob("*_ortho.png"), *job_dir.glob("*_package.zip")]:
             bucket.blob(f"{job_id}/{p.name}").upload_from_filename(str(p))
     except Exception as e:  # noqa: BLE001 — 업로드 실패해도 같은 인스턴스 다운로드는 동작
         print(f"[jobs] GCS 업로드 실패 {job_id}: {config.scrub_secrets(str(e))}")
@@ -82,6 +83,8 @@ def _fetch_job(job_id: str, job_dir: Path) -> None:
 
 # 타일 bbox span(m) 상한 — 미인증 /api/generate_tile 자원증폭 방지(정상 타일 ≤ tile_size + margin).
 _MAX_TILE_SPAN_M = 3000.0
+# 지도 영역 지정(/api/generate bbox_4326) 한 변 상한(m) — 반경 상한 2000m의 지름.
+_MAX_AREA_SIDE_M = 4000.0
 
 
 def _json_streaming(payload: dict) -> StreamingResponse:
@@ -172,8 +175,11 @@ app = FastAPI(
 
 
 class GenerateRequest(BaseModel):
-    address: str = Field(..., description="대지 주소")
+    address: str = Field("", description="대지 주소 (bbox_4326 지정 시 라벨용·생략 가능)")
     radius_m: int = Field(250, ge=10, le=2000, description="반경(m)")
+    bbox_4326: list[float] | None = Field(
+        None, description="지도에서 고른 영역 [minlon,minlat,maxlon,maxlat]. 지정 시 주소·반경 대신 사용",
+    )
     floor_height_m: float = Field(config.DEFAULT_FLOOR_H_M, gt=0, description="기본 층고(m)")
     layers: dict = Field(
         default_factory=lambda: {"buildings": True, "terrain": True, "orthophoto": True},
@@ -185,6 +191,25 @@ class GenerateRequest(BaseModel):
     missing_floors_policy: str = Field(
         "default", description='층수 누락 처리: "default"|"skip"|"flag"'
     )
+
+    @model_validator(mode="after")
+    def _address_or_area(self):
+        if self.bbox_4326 is None:
+            if not self.address.strip():
+                raise ValueError("address 또는 bbox_4326 중 하나는 필요합니다")
+            return self
+        b = self.bbox_4326
+        if len(b) != 4 or any(not math.isfinite(v) for v in b):
+            raise ValueError("bbox_4326은 유한한 숫자 4개 [minlon,minlat,maxlon,maxlat]")
+        if not (124.0 <= b[0] < b[2] <= 132.0 and 33.0 <= b[1] < b[3] <= 39.0):
+            raise ValueError("bbox_4326이 한국 범위 밖이거나 min/max 순서가 틀렸습니다")
+        # 한 변 ≤ _MAX_AREA_SIDE_M (반경 상한 2000m의 지름) — 미인증 자원증폭 방지
+        from src.pipeline import _bbox_4326_to_5186
+
+        x0, y0, x1, y1 = _bbox_4326_to_5186(tuple(b))
+        if max(x1 - x0, y1 - y0) > _MAX_AREA_SIDE_M or min(x1 - x0, y1 - y0) < 20:
+            raise ValueError(f"영역 한 변은 20m 이상 {_MAX_AREA_SIDE_M:.0f}m 이하여야 합니다")
+        return self
 
 
 class TilePlanRequest(BaseModel):
@@ -236,6 +261,7 @@ def generate_endpoint(req: GenerateRequest) -> dict:
         output_dir=str(job_dir),
         missing_floors_policy=req.missing_floors_policy,
         include_geometry=True,   # 브라우저 3D 미리보기용 지오메트리 JSON (F2)
+        bbox_4326=tuple(req.bbox_4326) if req.bbox_4326 else None,
     )
 
     if not result.get("ok"):
@@ -250,6 +276,9 @@ def generate_endpoint(req: GenerateRequest) -> dict:
     out3dm = result.get("outputs", {}).get("3dm")
     if out3dm:
         files["3dm"] = f"/api/files/{job_id}/3dm"
+    if (result.get("outputs") or {}).get("dae"):
+        # SketchUp·Rhino 패키지 zip(.dae + .3dm + 정사영상 + 좌표 안내문)
+        files["package"] = f"/api/files/{job_id}/package"
     # 정사영상 PNG는 출력 포맷과 무관하게 생성됨 → 다운로드 URL 제공. .3dm은 Rhino가
     # 텍스처로 참조, .skp 확장은 PNG를 받아 지형에 직접 드레이프(B2).
     ortho_ready = (result.get("geometry") or {}).get("ortho_extent_m") or (
@@ -323,6 +352,43 @@ def generate_tile_endpoint(req: GenerateTileRequest) -> dict:
     return result
 
 
+@app.get("/api/geocode")
+def geocode_endpoint(address: str) -> dict:
+    """주소 → 좌표. 웹 지도가 검색한 주소로 이동할 때 쓴다(VWorld 키는 서버에만)."""
+    from src.geo.geocode import GeocodeError, clean_address, geocode
+
+    cleaned = clean_address(address)
+    try:
+        c = geocode(cleaned)
+    except GeocodeError as e:
+        raise HTTPException(status_code=404, detail=config.scrub_secrets(str(e)))
+    return {"address": cleaned, "lon": c["lon"], "lat": c["lat"]}
+
+
+# 배경지도 타일 중계 — VWorld WMTS를 서버 키로 받아 넘긴다(키를 브라우저에 싣지 않고, 키 등록
+# 도메인 제약도 서버 쪽 한 곳으로). 지도 영역 선택 UI 전용이라 레이어·줌을 좁게 허용한다.
+_BASEMAP_LAYERS = {"base": ("Base", "png"), "satellite": ("Satellite", "jpeg"), "hybrid": ("Hybrid", "png")}
+
+
+@app.get("/api/basemap/{layer}/{z}/{x}/{y}")
+def basemap_tile(layer: str, z: int, x: int, y: int):
+    from fastapi.responses import Response
+
+    if layer not in _BASEMAP_LAYERS or not (6 <= z <= 19) or not (0 <= x < 2**z and 0 <= y < 2**z):
+        raise HTTPException(status_code=400, detail="잘못된 타일 요청")
+    if not config.VWORLD_KEY:
+        raise HTTPException(status_code=503, detail="VWORLD 키 없음")
+    name, ext = _BASEMAP_LAYERS[layer]
+    from src.geo.ortho import _default_fetch
+
+    url = f"https://api.vworld.kr/req/wmts/1.0.0/{config.VWORLD_KEY}/{name}/{z}/{y}/{x}.{ext}"
+    data = _default_fetch(url)
+    if not data:
+        raise HTTPException(status_code=404, detail="타일 없음")
+    media = "image/jpeg" if ext == "jpeg" else "image/png"
+    return Response(content=data, media_type=media, headers={"Cache-Control": "public, max-age=86400"})
+
+
 @app.get("/api/files/{job_id}/{kind}")
 def get_file(job_id: str, kind: str) -> FileResponse:
     """잡 폴더의 생성물 다운로드. kind: "3dm"(모델) | "ortho"(정사영상 PNG).
@@ -330,7 +396,7 @@ def get_file(job_id: str, kind: str) -> FileResponse:
     URL은 ASCII 종류키만 받는다(경로 탈출·한글 URL 문제 차단). 실제 파일은 잡
     폴더에서 확장자/접미사로 찾아 원본 파일명(한글 가능)으로 내려준다.
     """
-    if not _safe_component(job_id) or kind not in ("3dm", "ortho"):
+    if not _safe_component(job_id) or kind not in ("3dm", "ortho", "package"):
         raise HTTPException(status_code=400, detail="잘못된 요청")
     job_dir = (JOBS_DIR / job_id).resolve()
     try:
@@ -342,10 +408,8 @@ def get_file(job_id: str, kind: str) -> FileResponse:
     if not job_dir.is_dir():
         raise HTTPException(status_code=404, detail="잡 없음")
 
-    matches = (
-        list(job_dir.glob("*_ortho.png")) if kind == "ortho"
-        else [p for p in job_dir.glob("*.3dm")]
-    )
+    pattern = {"ortho": "*_ortho.png", "package": "*_package.zip", "3dm": "*.3dm"}[kind]
+    matches = list(job_dir.glob(pattern))
     if not matches:
         raise HTTPException(status_code=404, detail="파일 없음")
     path = matches[0]

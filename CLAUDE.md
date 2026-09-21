@@ -92,6 +92,18 @@
       개선 여지. ⚠️ `dem_staircase`의 quant/flat 지표는 솔버 판단에 오도(조밀 제약·완경사를 페널티) — 힐셰이드로 볼 것.
 - [ ] **NGII 정사영상 소스**(보류): 서버사이드 키 접근 막힘(브라우저 전용 키 정황) + EPSG:5179 타일 구현
       필요. 키 서버사이드 접근이 풀리면 5179 `TileSource` 추가만. [[orthophoto-texture-blocker]].
+- [ ] **SketchUp .dae 실기 import 검증**(사람 손): 웹에서 받은 `_package.zip`을 풀어 SketchUp File>Import →
+      ⓐ 실제 크기(미터) ⓑ 정사영상 텍스처 표시 ⓒ 건물 한 동씩 그룹·이름 ⓓ 도시계획 선 색. pycollada 파싱은 통과(683 geometry).
+      확장(.rbz)의 층고 입력·도시계획 태그도 실기 확인 필요(`build_rbz.py` 재빌드 후).
+- [ ] **현황측량도(DXF) 표고 보정 — 재검토 결론: 후순위 MVP**(2026-09-21 조사): 사내 수요 증거(김동욱 GH "표고숫자에서
+      포인트 레벨 생성하기" 2026-06 갱신)로 YAGNI 재개 조건 충족. 방식 = DXF 업로드(DWG는 ODA 비상업 한정·LibreDWG 불안정
+      → "DXF로 저장" 요구) → TEXT 숫자 + 최근접 점 마커 KD-tree 짝짓기 → `_grid_relax`에 측량점을 Dirichlet 제약으로(경계 밖
+      버퍼 링은 DEM 고정) → 대지 안만 조화 보간. **최대 위험 = 좌표 정렬**(5186 범위 밖이면 2점 정렬 UI, 가BM 표고면 수직
+      오프셋). 공수 약 5일. **착수 전 실제 현황측량도 DXF 샘플 3건 확보**가 선행.
+- [ ] **실사 텍스처 LOD 건물 — 재검토 결론: 자동화 안 함**(2026-09-21): VWorld 3D xdo/dds 수집은 2019 공간정보산업진흥원
+      삭제 요구·API 폐쇄된 **단속 대상 경로**(표고 스크래핑과 동일). 합법 경로는 ⓐ VWorld 3D 지도 웹 내보내기(2025-01부터
+      obj/dae/3ds, 수동·약관 미확인) 안내 링크 ⓑ NGII 3차원 건물모형(공개제한, 기관 신청) — 안심구역 문의(`docs/ngii_data_inquiry_plan.md`)에
+      한 항목 추가. 핵심 원칙(실측 층수 돌출)엔 불필요, 정사영상 드레이프로 시각 요구 대부분 충족.
 - [ ] **이격면(setback) 실연동**(블로커): arch-law-diagnose가 좁은 API 계약(이격만 반환) 노출할 때까지 보류.
 
 ---
@@ -155,7 +167,7 @@ three.js로 지형 mesh+건물 돌출을 렌더(+정사영상 평면 드레이�
 
 - `VWORLD_KEY`: `VWORLD_TEST_KEY` 우선, 없으면 `VWORLD_KEY`
 - `M2I = 39.3701`: 미터→인치 (SketchUp MCP는 인치 단위)
-- `DEFAULT_FLOOR_H_M = 3.0`: 기본 층고
+- `DEFAULT_FLOOR_H_M = 3.5`: 기본 층고 — **사내 사이트모델링 표준(층수×3.5m)**. 요청마다 `floor_height_m`로 재정의(웹·확장 입력칸이 마지막 값 기억)
 - `TERRAIN_MAX_ERROR_M = 0.25`: 지형 TIN 방식. >0=오차 한계 적응형 TIN(그 수직오차[m]를 **목표로**
   정점 삽입 — 대부분 충족하나 극단 급경사서 정점 상한(≈90%) 도달 시 예외 가능. 평지는 큰 삼각형·복잡한 곳만
   촘촘 → 삼각형 대폭 감소로 넓은 반경도 가벼움), 0=균일 격자.
@@ -179,7 +191,7 @@ three.js로 지형 mesh+건물 돌출을 렌더(+정사영상 평면 드레이�
 ```text
 src/
   server.py              FastMCP 서버 진입점 (MCP 도구 4개 등록, Claude 연동)
-  api.py                 FastAPI 백엔드 (배포용 HTTP API — /api/generate, /api/tile_plan+/api/generate_tile(대반경 타일 순차조립), 파일 다운로드, frontend/dist 서빙)
+  api.py                 FastAPI 백엔드 (배포용 HTTP API — /api/generate(주소+반경 또는 **지도 영역 bbox_4326**, 한 변 20m~4km), /api/geocode(주소→좌표), /api/basemap/{base|satellite|hybrid}/z/x/y(VWorld 배경지도 **서버 중계** — 키 비노출), /api/tile_plan+/api/generate_tile(대반경 타일 순차조립), 파일 다운로드(3dm·ortho·**package** zip, JOBS_GCS_BUCKET로 인스턴스 간 공유), frontend/dist 서빙)
   pipeline.py            generate_site_model 파이프라인
   tiles.py               generate_site_tiles — 대량건물 타일분할 .skp 코드 (백로그5)
   tiles_stream.py        tile_plan + generate_tile — SketchUp 확장 대반경(1~2km) 순차조립용 타일별 geometry JSON (계획→타일별 fetch, centroid 중복제거, 타일별 정사영상·도로/보도/차선 통합표면)
@@ -194,6 +206,7 @@ src/
     crs.py               EPSG:4326 ↔ 5186 변환 + origin_offset
     vworld.py            VWorld data API 클라이언트 (페이지네이션 + bbox 분할: 10km²/쿼리 한도 우회 → 반경 2km+)
     ortho.py             정사영상 WMTS 타일수학 + TileSource + 모자이크(재투영→PNG, Tier 1)
+    planning.py          도시계획 결정선 — VWorld UPIS `LT_C_UPISUQ161`(지구단위계획)·`151~159`(도시계획도로·교통·공간시설 등). 폴리곤 경계 ∩ 사이트 사각형(테두리 가짜선 없음) → 5m 간격 드레이프. **판정 없음**(용도지역·행위제한은 arch-law-graph). ID는 2026-09-21 실측 확정
     zoning.py            용도지역 조회 — 형제 앱 arch-law-graph GET /api/zoning 연동(경계 존중: zoning=법령 클러스터 소유). ZONING_BASE 미설정/미도달 시 None(조용한 fallback)
   geometry/
     building.py          LT_C_SPBD features → BuildingSolid (쿼드 솔리드, 홀 포함)
@@ -205,7 +218,8 @@ src/
     water.py             수계 런타임 (수계). clip_water(E계열 폴리곤→로컬미터) + water_surface_z(경계 둑 DEM 저백분위=수면표고) + burn_water(지형을 물 아래로 평탄화) + build_water_mesh(★표고고정 평면 수면, road와 달리 드레이프 아님). road.py 헬퍼 재사용
   output/
     skp_mcp.py           BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk) → SketchUp MCP 코드 문자열
-    rhino.py             BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk/water+차선 lanes+QA 핀) → .3dm (Phase 4-R). _add_lanes(차선 PolylineCurve)·_add_qa_pins(결함 수직 핀)로 F2·확장과 3경로 정합
+    rhino.py             BuildingSolid(+TerrainMesh+Cadastral+RoadMesh road/sidewalk/water+차선 lanes+QA 핀+도시계획) → .3dm (Phase 4-R). _add_lanes(차선 PolylineCurve)·_add_qa_pins(결함 수직 핀)로 F2·확장과 3경로 정합. **단위 Meters 명시**(rhino3dm 기본값 mm — 2026-09-21 전까지 우리 .3dm도 mm였음)
+    collada.py           .dae 출력 — SketchUp이 확장 없이 File>Import. 지형(정사영상 UV)·건물(한 동씩 노드, 이름 "N층 건물명", 추정 층수 주황+[층수추정], 중정 포함 shapely 제약 들로네)·도로/보도/수계 면·차선/지적/옹벽/도시계획 선. unit meter=1·Z_UP·origin_offset을 asset keywords에. write_readme = zip 동봉 좌표·출처 안내문
   terrain/
     store.py             manifest.json/road_manifest.json 조회 (find_tiles/find_road_files(겹치는 도로 타일 전부)/find_road_file(대표 1개)/find_water_file)
     contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A) + bake_tiled(대용량 지역 타일 배치) + 좌표대 재투영(5187→5186)·도엽 중복제거·거리제한 채움(fill_dist_m) + method: clough(기본)/linear/solver(라플라스 조화 격자 솔버 _grid_relax — 계단 완전제거, opt-in)
@@ -224,7 +238,8 @@ geo_store/
                          올리고 ROAD_BASE=gs://…/roads로 서빙(앱이 HTTP fetch, config.road_file_path/road._read_geojson_text). docs/deploy.md §5
 
 frontend/                React + Vite + Tailwind 웹 UI (주소 입력 → /api/generate 호출 → .3dm/정사영상 다운로드)
-  src/App.tsx            메인 폼·결과 화면
+  src/App.tsx            메인 폼·결과 화면 (주소 → "지도에서 찾기", 층고 입력(localStorage 기억), 도시계획 토글, 패키지 zip 다운로드)
+  src/AreaMap.tsx        지도 영역 선택(Leaflet + /api/basemap 중계 타일) — 클릭=반경 정사각형, "사각형으로 그리기"=드래그 자유 사각형, 크기 표시·범위(20m~4km) 검증
   src/Viewer3D.tsx       브라우저 3D 미리보기 (three.js — 지형 mesh+건물 돌출+정사영상 드레이프 + 지적/도로/보도/차선 + 높이색 그라디언트·외곽선·그림자·뷰모드·레이어 토글·SSAO(EffectComposer+GTAOPass, 음영 토글)·QA 결함 수직 핀(경고=빨강/info=주황)) [F2]
   dist/                  빌드 산출물 (FastAPI가 루트에서 서빙)
 
@@ -273,6 +288,8 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 주소 → .skp 코드(build_model 입력) 생성.
 
 - `outputs.skp.code` → SketchUp MCP `build_model`에 그대로 전달
+- `outputs=[..., "dae"]` → `outputs.dae = {path, zip}`. zip(`<이름>_package.zip`) = `.dae` + `.3dm`(요청 시) + 정사영상 PNG + `readme_coords.txt`(원점 EPSG:5186/WGS84·출처·층고). 웹 기본 출력은 `["3dm","dae"]`
+- `bbox_4326=(minlon,minlat,maxlon,maxlat)` → 지오코딩 없이 그 영역으로 생성(address는 라벨·생략 가능, radius_m은 긴 변 절반으로 재계산, provenance.site_bbox_4326)
 - `stats.origin_offset` → EPSG:5186 원점 오프셋, 반드시 보존 (좌표 복원용)
 - **주의**: 엔진은 코드 문자열만 생성. 실제 SketchUp 호출은 오케스트레이터(Claude)가 수행.
 
@@ -288,6 +305,7 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 | `{"buildings": true, "terrain": true, "water": true}` | 지형 + 수계(E계열 하천·호소 → 표고고정 평면 수면 + 지형 물 아래로 버닝). `water_manifest.json`/GeoJSON 비축 필요, 지형(DEM) 필요 — 없으면 조용히 생략+warnings |
 | `{..., "qa": true}` | 자동 QA(검증) 실행 → `result.qa = {findings, summary}` (건물 앉힘·겹침·지형 스파이크). 다른 레이어와 무관하게 켤 수 있음. 웹 UI가 결함 목록 표시 |
 | `{"buildings": true, "terrain": true, "orthophoto": true}` | 지형에 정사영상 텍스처 (.3dm=Rhino 텍스처 / .skp=데스크톱 확장 B2 드레이프) |
+| `{..., "planning": true}` | 도시계획 결정선(지구단위계획구역·도시계획도로·교통·공간시설 등, VWorld UPIS) → `geometry.planning[{cat,label,name,line}]`(지형 드레이프). .3dm `도시계획_<분류>` 레이어·.dae·F2·확장 태그. 판정 없음(표시만) |
 | `{"buildings": true, "zoning": true}` | 사이트 용도지역 조회 (arch-law-graph `/api/zoning`, `ZONING_BASE` 필요) → `result.zoning{zone_name, zone_key, sido, sigungu}`. 웹 배지 표시. 미설정/미도달 시 조용히 생략 |
 
 **신뢰도 리포트(A-1)**: `result.trust_report`가 **항상** 부착된다 — 건물 실측/추정 층수 비율·지형 출처/정확도·
@@ -492,6 +510,7 @@ result = generate_site_model(
 | 수계 | E계열 하천·호소 → 표고고정 평면 수면 + 지형 물아래 버닝 (`water_bake`·`water.py`, F2/.3dm/.skp/확장) | ✅ 완료 (클라우드 서빙 `WATER_BASE`) |
 | 지형솔버 | 계단현상 라플라스 조화 격자 솔버 `--method solver`(등고선 Dirichlet 제약+∇²z=0 완화, 오버슈트 없음, 힐셰이드 검증) | ✅ opt-in (기본 clough, ~10× 느림) |
 | QA | 자동 검증 — 건물 앉힘(급경사/부유/침몰/지형밖)·겹침·footprint 유효성·지형 스파이크 → findings, 웹 패널+F2/확장 3D 핀 | ✅ 완료 (KBS "눈검사→코드") |
+| 경쟁 대응(09-21) | `.dae`+zip 패키지(`collada.py`)·지도 영역 선택(`AreaMap.tsx`+bbox_4326)·도시계획 결정선(`planning.py`)·층고 3.5m+매회 입력·정사영상 zoom 자동 맞춤(`ortho.fit_zoom`, 타일 256장 상한 넘으면 한 단계씩 낮춤)·.3dm 단위 Meters·지적 드레이프 | ✅ (SketchUp .dae 실기 import 검증 대기) |
 | 출력 3경로 정합 | `.3dm`·F2·확장이 동일 레이어 렌더 — `.3dm`에 차선·QA 핀 추가(`rhino.py::_add_lanes`/`_add_qa_pins`), 확장에 지적 추가(`builder.rb::build_cadastral`) | ✅ 완료 |
 
 ---
@@ -502,7 +521,9 @@ result = generate_site_model(
 
 - **건물**: `rhino3dm.Extrusion` (닫힌 PolylineCurve → Z 돌출, 캡 포함)
 - **지형**: `rhino3dm.Mesh` (삼각망). TerrainMesh.vertices는 인치(SketchUp)→ `/M2I` 미터 환산
-- **지적**: `rhino3dm.PolylineCurve` at Z=0 (확장·F2는 지형 드레이프 z, .3dm만 Z=0 — 피처는 3경로 동일)
+- **지적**: `rhino3dm.PolylineCurve` — 지형 있으면 드레이프 z(`write_3dm(drape=dem.elev_at)`), 없으면 Z=0
+- **도시계획**: 분류별 `도시계획_<이름>` 레이어 PolylineCurve(드레이프), 객체 이름=결정 도면명(예: 소로3류)
+- **단위**: `Settings.ModelUnitSystem = Meters` 명시
 - **도로/보도/수계**: `rhino3dm.Mesh` (로컬 미터, 노면 리프트). road/sidewalk/water 각 레이어
 - **차선**: `rhino3dm.PolylineCurve` (`_add_lanes`, `lanes` 레이어) — F2·확장과 3경로 정합
 - **QA 결함 핀**: `rhino3dm.Mesh` 수직 교차쿼드 (`_add_qa_pins`, `qa_warn`/`qa_info` 레이어, 심각도색·지형 표고 밑동)
