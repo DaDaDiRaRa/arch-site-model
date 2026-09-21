@@ -647,6 +647,7 @@ def generate(
             qa=qa_result,
             planning=planning,
             drape=dem.elev_at if dem is not None else None,   # 지적선을 지형에 얹음
+            terrain_dem=dem,   # 같은 DEM으로 NURBS 서피스(terrain_surface 레이어, 기본 꺼짐)
         )
         out["3dm"] = {
             "path": saved,

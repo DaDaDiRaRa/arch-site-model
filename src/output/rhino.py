@@ -40,6 +40,7 @@ def write_3dm(
     qa: dict | None = None,
     planning: list | None = None,
     drape=None,
+    terrain_dem=None,
 ) -> str:
     """BuildingSolid(+TerrainMesh+CadastralParcel) → .3dm 파일.
 
@@ -54,6 +55,8 @@ def write_3dm(
       terrain 정점과 동일 좌표계여야 UV가 맞는다. ortho_image와 함께 지정.
     planning: 도시계획 경계선 [{cat,label,name,line:[[x,y,z]]}] — 분류별 "도시계획_<이름>" 레이어.
     drape: (x, y) → z 함수(로컬 미터). 지정 시 지적선을 지형에 얹는다(없으면 Z=0).
+    terrain_dem: DEMPatch. 지정 시 같은 DEM의 격자점을 정확히 통과하는 3차 NURBS 서피스를
+      `terrain_surface` 레이어(기본 꺼짐 — 메시와 겹쳐 깜빡이지 않게)에 추가. Rhino에서 자르기·투영용.
     반환: 저장된 파일의 절대 경로 문자열.
     """
     model = rhino3dm.File3dm()
@@ -130,6 +133,10 @@ def write_3dm(
     # 지형 Mesh (정사영상 텍스처 옵션)
     if terrain is not None:
         _add_terrain(model, terrain, idx_terr, ortho_image, ortho_extent_m)
+
+    # 지형 NURBS 서피스(설계 작업용) — 메시와 같은 DEM, 레이어는 기본 꺼짐
+    if terrain_dem is not None and terrain is not None:
+        _add_terrain_surface(model, terrain_dem)
 
     # 지적 경계 PolylineCurve
     if cadastral:
@@ -266,6 +273,43 @@ def _add_terrain(
         _apply_ortho_texture(model, mesh, attrs, ortho_image, ortho_extent_m)
 
     model.Objects.AddMesh(mesh, attrs)
+
+
+def _add_terrain_surface(model: rhino3dm.File3dm, dem) -> None:
+    """DEM → 격자점 보간 3차 NurbsSurface를 `terrain_surface` 레이어(꺼짐)에 추가. 실패는 조용히 생략."""
+    from src.geometry.terrain_surface import dem_to_nurbs
+
+    try:
+        ng = dem_to_nurbs(dem)
+    except Exception:  # noqa: BLE001 — 서피스는 부가 산출물, 메시는 이미 있음
+        return
+    if ng is None:
+        return
+    nu, nv, _ = ng.points.shape
+    order = ng.degree + 1
+    srf = rhino3dm.NurbsSurface.Create(3, False, order, order, nu, nv)
+    for i, v in enumerate(ng.knots_u):
+        srf.KnotsU[i] = v
+    for i, v in enumerate(ng.knots_v):
+        srf.KnotsV[i] = v
+    P = ng.points
+    for i in range(nu):
+        for j in range(nv):
+            srf.Points[i, j] = rhino3dm.Point4d(P[i, j, 0], P[i, j, 1], P[i, j, 2], 1.0)
+    if not srf.IsValid:
+        return
+
+    layer = rhino3dm.Layer()
+    layer.Name = "terrain_surface"
+    layer.Color = (100, 150, 80, 255)
+    layer.Visible = False   # 메시(terrain)와 같은 자리 — 켜면 Rhino에서 겹쳐 보인다. 필요할 때 켜서 쓴다
+    idx = model.Layers.Add(layer)
+    attrs = rhino3dm.ObjectAttributes()
+    attrs.LayerIndex = idx
+    attrs.Name = "terrain_nurbs"
+    attrs.SetUserString("source", "DEM 격자점 보간 3차 NURBS (메시와 같은 DEM)")
+    attrs.SetUserString("grid_stride", str(ng.stride))
+    model.Objects.AddSurface(srf, attrs)
 
 
 def _apply_ortho_texture(

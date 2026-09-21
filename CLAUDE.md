@@ -219,6 +219,7 @@ src/
     zoning.py            용도지역 조회 — 형제 앱 arch-law-graph GET /api/zoning 연동(경계 존중: zoning=법령 클러스터 소유). ZONING_BASE 미설정/미도달 시 None(조용한 fallback)
   geometry/
     building.py          LT_C_SPBD features → BuildingSolid (쿼드 솔리드, 홀 포함)
+    terrain_surface.py   DEMPatch → 격자점 보간 3차 NURBS 데이터(.3dm terrain_surface 레이어, Rhino 설계 작업용)
     terrain_mesh.py      DEMPatch → TerrainMesh (TIN 삼각망, Phase 3B). grid_to_tin(균일) + adaptive_tin(오차 한계 적응형, scipy greedy insertion) + adaptive_select/pixel_to_local_m(통합표면용 분리) + build_tin(디스패처, config.TERRAIN_MAX_ERROR_M)
     seating.py           BuildingSolid + DEMPatch → base_z 앉힘 (Phase 3B)
     cadastral.py         LP_PA_CBND_BUBUN features → CadastralParcel (Phase 5)
@@ -533,6 +534,7 @@ result = generate_site_model(
 - **지적**: `rhino3dm.PolylineCurve` — 지형 있으면 드레이프 z(`write_3dm(drape=dem.elev_at)`), 없으면 Z=0
 - **도시계획**: 분류별 `도시계획_<이름>` 레이어 PolylineCurve(드레이프), 객체 이름=결정 도면명(예: 소로3류)
 - **단위**: `Settings.ModelUnitSystem = Meters` 명시
+- **지형 NURBS 서피스**: `terrain_surface` 레이어(**기본 꺼짐** — 메시와 겹침), 객체 `terrain_nurbs`. `geometry/terrain_surface.dem_to_nurbs`가 같은 DEM을 scipy `RectBivariateSpline(s=0, 3차)`로 **격자점 보간** → 매듭·계수를 NURBS로(제어점 x·y=그레빌 좌표라 매개변수=로컬 좌표). 실측: DEM 격자점 오차 0, 격자 사이(도로 경계 1m 조밀점) 중앙값 6cm·최대 1.4m(도로 절토 턱을 5m 곡면이 부드럽게 넘김) → **정밀 경계는 메시, Rhino 자르기·투영·솔리드 작업은 서피스**. 한 방향 제어점 400 상한(넘으면 격자 건너뜀)
 - **도로/보도/수계**: `rhino3dm.Mesh` (로컬 미터, 노면 리프트). road/sidewalk/water 각 레이어
 - **차선**: `rhino3dm.PolylineCurve` (`_add_lanes`, `lanes` 레이어) — F2·확장과 3경로 정합
 - **QA 결함 핀**: `rhino3dm.Mesh` 수직 교차쿼드 (`_add_qa_pins`, `qa_warn`/`qa_info` 레이어, 심각도색·지형 표고 밑동)
