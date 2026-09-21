@@ -77,9 +77,22 @@ def _lines_local(geom: dict, offset: tuple[float, float], site_local) -> list[li
     for ln in parts:
         if ln.length < 0.5:
             continue
-        n = max(1, int(ln.length // DRAPE_STEP_M))
-        pts = [ln.interpolate(i / n, normalized=True) for i in range(n + 1)]
-        out.append([(p.x, p.y) for p in pts])
+        out.append(_densify(list(ln.coords)))
+    return out
+
+
+def _densify(coords) -> list[tuple[float, float]]:
+    """변마다 DRAPE_STEP_M 간격으로 점을 넣되 **원래 꼭짓점은 그대로 둔다**.
+
+    선 전체를 등분하면(interpolate) 꼭짓점이 빠져 모서리가 깎인다 — 길이가 120.0 vs 119.9999로
+    갈리면 등분 수가 달라져 모서리 점이 사라지는 게 CI(리눅스)에서 드러났다(2026-09-21).
+    """
+    pts = [(float(c[0]), float(c[1])) for c in coords]
+    out = [pts[0]]
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+        seg = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+        n = max(1, int(seg // DRAPE_STEP_M))
+        out += [(x1 + (x2 - x1) * k / n, y1 + (y2 - y1) * k / n) for k in range(1, n + 1)]
     return out
 
 

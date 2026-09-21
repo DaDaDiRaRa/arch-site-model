@@ -8,6 +8,7 @@ module ArchSiteModel; end
 require_relative "settings"
 require_relative "api_client"
 require_relative "builder"
+require_relative "import_softener" # 웹에서 받은 .dae 가져오면 지형 모서리 자동 정리
 
 module ArchSiteModel
   module Main

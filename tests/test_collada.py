@@ -66,6 +66,11 @@ def test_building_closed_solid_with_courtyard(tmp_path):
     root = _parse(p)
     g = root.find("c:library_geometries/c:geometry[@id='g_b0']", NS)
     assert g.get("name") == "5층 테스트동"
+    # SketchUp은 library_nodes 구조일 때만 한 동씩 컴포넌트로 살리고, 이름은 첫 공백에서 자른다
+    lib = [n.get("name") for n in root.findall("c:library_nodes/c:node", NS)]
+    assert "5층_테스트동" in lib and "건물" in lib
+    scene = root.find("c:library_visual_scenes/c:visual_scene/c:node", NS)
+    assert scene.find("c:instance_node", NS).get("url") == "#n_buildings-c"
     tri = g.find(".//c:triangles", NS)
     n_tri = int(tri.get("count"))
     # 벽 = (외곽 4변 + 중정 4변) × 2 = 16, 지붕·바닥 각 (링 면적 300㎡ 삼각분할) ≥ 8
@@ -104,3 +109,21 @@ def test_lines_and_faces_layers(tmp_path):
     assert root.find(".//c:geometry[@id='g_plan_district_plan']//c:lines", NS).get("count") == "1"
     mats = [m.get("name") for m in root.findall("c:library_materials/c:material", NS)]
     assert "도시계획_지구단위계획구역" in mats
+
+
+def test_terrain_skirt_split_and_faces_outward():
+    from src.output.collada import _split_terrain
+
+    # 윗면 1장(아래를 향하게 잘못 감김) + 동쪽 벽 1장(안쪽을 향하게 감김)
+    verts = [(0, 0, 10), (10, 0, 10), (10, 10, 10), (10, 0, 0), (10, 10, 0)]
+    top, side = _split_terrain(verts, [(0, 2, 1), (1, 4, 3)])
+    assert len(top) == 1 and len(side) == 1
+
+    def normal(t):
+        a, b, c = (verts[i] for i in t)
+        u = [b[k] - a[k] for k in range(3)]
+        w = [c[k] - a[k] for k in range(3)]
+        return (u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0])
+
+    assert normal(top[0])[2] > 0          # 윗면은 위로
+    assert normal(side[0])[0] > 0         # 동쪽 벽은 바깥(+X)으로

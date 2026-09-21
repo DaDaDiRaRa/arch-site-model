@@ -36,7 +36,8 @@ def test_only_real_boundary_inside_site():
         ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
         for o in out for a, b in zip(o["line"], o["line"][1:])
     )
-    assert abs(total - 120.0) < 0.5   # 60 + 60
+    assert abs(total - 120.0) < 0.01   # 60 + 60 — 모서리(60,60)가 깎이지 않아야 한다
+    assert any(abs(x - 60) < 1e-6 and abs(y - 60) < 1e-6 for x, y, _ in pts)
 
 
 def test_drape_and_failure_is_warning():

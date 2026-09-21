@@ -45,6 +45,13 @@ def _bbox_4326_to_5186(
     return (min(xs), min(ys), max(xs), max(ys))
 
 
+def _local_extent(bbox_4326, offset) -> tuple[float, float, float, float]:
+    """4326 bbox → 로컬 미터 (x0, y0, x1, y1) (origin_offset 기준)."""
+    x0, y0, x1, y1 = _bbox_4326_to_5186(bbox_4326)
+    ox, oy = offset
+    return (x0 - ox, y0 - oy, x1 - ox, y1 - oy)
+
+
 # 지형을 사이트 반경 밖으로 넓힐 수 있는 상한(반경 배수). _terrain_bbox_4326 참조.
 TERRAIN_PAD_CAP = 2.0
 
@@ -360,7 +367,13 @@ def generate(
             cada_features = []
 
         if cada_features:
+            from src.geometry.cadastral import clip_parcels
+
             cadastral_parcels = features_to_parcels(cada_features, offset)
+            # 모델 범위(지형 있으면 지형 범위, 없으면 사이트 bbox)로 자르고 변 조밀화 —
+            # 수 km 뻗은 도로 필지가 지형 밖에서 표고 0으로 떨어지던 문제.
+            ex = _local_extent(terrain_bbox if dem is not None else bbox, offset)
+            cadastral_parcels = clip_parcels(cadastral_parcels, ex)
             cadastral_count = len(cadastral_parcels)
         else:
             warnings.append("반경 내 지적 피처 없음 (LP_PA_CBND_BUBUN)")
@@ -528,11 +541,8 @@ def generate(
     if layers.get("planning"):
         from src.geo.planning import fetch_planning
 
-        sx0, sy0, sx1, sy1 = _bbox_4326_to_5186(bbox)
-        ox, oy = offset
         planning = fetch_planning(
-            client, bbox, (sx0 - ox, sy0 - oy, sx1 - ox, sy1 - oy), offset,
-            dem=dem, warnings=warnings,
+            client, bbox, _local_extent(bbox, offset), offset, dem=dem, warnings=warnings,
         )
         if not planning:
             warnings.append("영역 내 도시계획(지구단위계획·도시계획시설) 결정선 없음")

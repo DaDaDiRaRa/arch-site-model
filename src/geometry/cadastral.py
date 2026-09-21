@@ -42,6 +42,47 @@ def _largest_exterior(geom: dict) -> list[tuple[float, float]] | None:
     return coords if len(coords) >= 3 else None
 
 
+def clip_parcels(
+    parcels: list[CadastralParcel],
+    extent: tuple[float, float, float, float],
+    step_m: float = 5.0,
+) -> list[CadastralParcel]:
+    """필지를 모델 범위(로컬 미터 x0,y0,x1,y1)로 자르고 변을 step_m 간격으로 조밀화.
+
+    VWorld는 bbox에 걸치기만 한 필지도 전체를 준다 — 도로 필지는 수 km 뻗어, 지형 밖 부분이
+    드레이프 표고 0으로 떨어져 모델 아래 허공에 선이 깔렸다(2026-09-21 SketchUp 실기 검증).
+    잘린 필지는 범위 경계를 따라 닫힌다(지형 테두리와 겹쳐 눈에 띄지 않음). 조밀화는 지형
+    드레이프 시 긴 변이 지형을 관통·부유하지 않게 한다.
+    """
+    from shapely.geometry import Polygon, box
+
+    frame = box(*extent)
+    out: list[CadastralParcel] = []
+    for p in parcels:
+        try:
+            poly = Polygon(p.footprint_m)
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+            cut = poly.intersection(frame)
+        except Exception:  # noqa: BLE001 — 깨진 필지는 건너뜀
+            continue
+        if cut.is_empty:
+            continue
+        if cut.geom_type == "MultiPolygon":
+            cut = max(cut.geoms, key=lambda g: g.area)
+        if cut.geom_type != "Polygon" or cut.area < 1.0:
+            continue
+        ring = list(cut.exterior.coords)[:-1]
+        dense: list[tuple[float, float]] = []
+        for i, (x1, y1) in enumerate(ring):
+            x2, y2 = ring[(i + 1) % len(ring)]
+            n = max(1, int(((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5 // step_m))
+            dense += [(x1 + (x2 - x1) * k / n, y1 + (y2 - y1) * k / n) for k in range(n)]
+        if len(dense) >= 3:
+            out.append(CadastralParcel(pnu=p.pnu, footprint_m=dense))
+    return out
+
+
 def features_to_parcels(
     features: list[dict],
     offset: tuple[float, float],

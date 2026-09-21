@@ -111,3 +111,20 @@ def test_multiple_features():
     parcels = features_to_parcels(feats, OFFSET)
     assert len(parcels) == 3
     assert [p.pnu for p in parcels] == ["pnu_0", "pnu_1", "pnu_2"]
+
+
+def test_clip_parcels_cuts_long_parcel_and_keeps_corners():
+    from src.geometry.cadastral import CadastralParcel, clip_parcels
+
+    # 모델 범위 0~100m, 도로 필지는 x -500~2000 (수 km 뻗음) → 범위 안으로 잘린다
+    road = CadastralParcel(pnu="R", footprint_m=[(-500, 40), (2000, 40), (2000, 60), (-500, 60)])
+    out = clip_parcels([road, CadastralParcel(pnu="FAR", footprint_m=[(900, 900), (950, 900), (950, 950)])],
+                       (0, 0, 100, 100), step_m=5.0)
+    assert [p.pnu for p in out] == ["R"]                    # 범위 밖 필지는 사라짐
+    xs = [x for x, _ in out[0].footprint_m]
+    ys = [y for _, y in out[0].footprint_m]
+    assert min(xs) >= 0 and max(xs) <= 100
+    for corner in [(0, 40), (100, 40), (100, 60), (0, 60)]:  # 모서리 보존
+        assert any(abs(x - corner[0]) < 1e-6 and abs(y - corner[1]) < 1e-6 for x, y in out[0].footprint_m)
+    assert len(out[0].footprint_m) >= 2 * (100 // 5)       # 변 조밀화(지형 드레이프용)
+    assert min(ys) >= 40

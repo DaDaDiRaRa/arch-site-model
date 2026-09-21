@@ -24,6 +24,7 @@ _MATERIALS = {
     "mat_building": ("건물", (0.86, 0.86, 0.84)),
     "mat_building_est": ("건물_층수추정", (0.95, 0.62, 0.35)),
     "mat_terrain": ("지형", (0.55, 0.62, 0.45)),
+    "mat_terrain_side": ("지형_단면", (0.55, 0.45, 0.33)),   # 흙색 — 대지모델 둘레 벽
     "mat_road": ("도로", (0.45, 0.47, 0.50)),
     "mat_sidewalk": ("보도", (0.69, 0.67, 0.63)),
     "mat_water": ("수계", (0.23, 0.43, 0.65)),
@@ -35,6 +36,11 @@ _MATERIALS = {
 
 def _f(v: float) -> str:
     return f"{v:.3f}".rstrip("0").rstrip(".") if v == v else "0"
+
+
+def _su_name(name: str) -> str:
+    """SketchUp은 가져올 때 노드 이름을 첫 공백에서 자른다("5층 테스트동" → "5층") — 공백을 _로."""
+    return escape("_".join(str(name).split()))
 
 
 def _signed_area(pts) -> float:
@@ -124,6 +130,25 @@ class _Mesh:
         )
 
 
+def _split_terrain(verts, tris):
+    """지형 삼각형 → (윗면, 둘레 벽). 윗면은 법선이 위(+Z), 벽은 모델 중심 반대쪽(바깥)을 향하게 정렬."""
+    cx = sum(v[0] for v in verts) / len(verts)
+    cy = sum(v[1] for v in verts) / len(verts)
+    top, side = [], []
+    for a, b, c in tris:
+        (ax, ay, az), (bx, by, bz), (qx, qy, qz) = verts[a], verts[b], verts[c]
+        ux, uy, uz = bx - ax, by - ay, bz - az
+        wx, wy, wz = qx - ax, qy - ay, qz - az
+        nx, ny, nz = uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx
+        norm = (nx * nx + ny * ny + nz * nz) ** 0.5 or 1.0
+        if abs(nz) / norm < 0.2:  # 거의 수직 = 스커트
+            mx, my = (ax + bx + qx) / 3 - cx, (ay + by + qy) / 3 - cy
+            side.append((a, b, c) if nx * mx + ny * my >= 0 else (a, c, b))
+        else:
+            top.append((a, b, c) if nz > 0 else (a, c, b))
+    return top, side
+
+
 def _building_mesh(solid, gid: str, material: str) -> _Mesh | None:
     fp = solid.footprint_m
     if len(fp) < 3 or solid.height_m <= 0:
@@ -205,13 +230,22 @@ def write_dae(
     groups: list[tuple[str, str, list[_Mesh]]] = []  # (node id, 이름, 메시들)
     materials = dict(_MATERIALS)
 
-    # 지형(+정사영상 UV)
+    # 지형(+정사영상 UV). 윗면과 둘레 벽(스커트)을 나눈다 — 스커트는 안쪽을 향해 만들어져 SketchUp에서
+    # 뒷면색(하늘색)으로 보였고(2026-09-21 실기), 정사영상이 세로로 늘어나 붙는다. 방향을 바깥으로 맞추고
+    # 흙색 재질로 분리한다.
     if terrain is not None and terrain.vertices and terrain.triangles:
         use_tex = bool(ortho_image and ortho_extent_m)
         mat = "mat_ortho" if use_tex else "mat_terrain"
+        verts = [(x / M2I, y / M2I, z / M2I) for x, y, z in terrain.vertices]
+        top_tris, side_tris = _split_terrain(verts, terrain.triangles)
         tm = _Mesh("g_terrain", "지형", mat, uv_extent=tuple(ortho_extent_m) if use_tex else None)
-        tm.add_indexed([(x / M2I, y / M2I, z / M2I) for x, y, z in terrain.vertices], terrain.triangles)
-        groups.append(("n_terrain", "지형", [tm]))
+        tm.add_indexed(verts, top_tris)
+        parts = [tm]
+        if side_tris:
+            sm = _Mesh("g_terrain_side", "지형_단면", "mat_terrain_side")
+            sm.add_indexed(verts, side_tris)
+            parts.append(sm)
+        groups.append(("n_terrain", "지형", parts))
 
     # 건물 — 한 동씩 노드(SketchUp 개별 그룹). 추정 층수는 주황 재질.
     bl = []
@@ -285,18 +319,25 @@ def write_dae(
             effects.append(_effect(mid, rgb))
             mats.append(f'<material id="{mid}" name="{escape(name)}"><instance_effect url="#{mid}-fx"/></material>')
 
-    geoms, nodes = [], []
+    # 계층은 library_nodes + instance_node로 쓴다 — SketchUp은 이 구조일 때만 노드를 컴포넌트로
+    # 살린다. visual_scene에 node를 중첩만 하면 전부 정의 하나로 합쳐 버렸다(2026-09-21 SketchUp 2026
+    # 실험: 중첩 node 3동 → 컴포넌트 1개 18면, library_nodes → 컴포넌트 3개). 합쳐지면 건물 그룹이
+    # 사라지고, 지형 모서리 정리(확장 import_softener)가 건물까지 둥글게 만든다.
+    ident = "<matrix>1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1</matrix>"
+    geoms, lib_nodes, nodes = [], [], []
     for nid, gname, ms in groups:
-        inner = []
+        children = []
         for m in ms:
             geoms.append(m.xml())
-            inner.append(
-                f'<node id="{m.gid}-n" name="{escape(m.name)}"><instance_geometry url="#{m.gid}">'
+            lib_nodes.append(
+                f'<node id="{m.gid}-c" name="{_su_name(m.name)}"><instance_geometry url="#{m.gid}">'
                 f'<bind_material><technique_common><instance_material symbol="{m.material}" target="#{m.material}">'
                 '<bind_vertex_input semantic="UVSET0" input_semantic="TEXCOORD" input_set="0"/>'
                 "</instance_material></technique_common></bind_material></instance_geometry></node>"
             )
-        nodes.append(f'<node id="{nid}" name="{escape(gname)}">{"".join(inner)}</node>')
+            children.append(f'<node id="{m.gid}-i" name="{_su_name(m.name)}">{ident}<instance_node url="#{m.gid}-c"/></node>')
+        lib_nodes.append(f'<node id="{nid}-c" name="{_su_name(gname)}">{"".join(children)}</node>')
+        nodes.append(f'<node id="{nid}" name="{_su_name(gname)}">{ident}<instance_node url="#{nid}-c"/></node>')
 
     ox, oy = offset
     doc = (
@@ -310,6 +351,7 @@ def write_dae(
         f"{images}<library_effects>{''.join(effects)}</library_effects>"
         f"<library_materials>{''.join(mats)}</library_materials>"
         f"<library_geometries>{''.join(geoms)}</library_geometries>"
+        f"<library_nodes>{''.join(lib_nodes)}</library_nodes>"
         f'<library_visual_scenes><visual_scene id="scene" name="대지모델">{"".join(nodes)}</visual_scene>'
         "</library_visual_scenes>"
         '<scene><instance_visual_scene url="#scene"/></scene></COLLADA>'

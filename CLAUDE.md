@@ -92,9 +92,9 @@
       개선 여지. ⚠️ `dem_staircase`의 quant/flat 지표는 솔버 판단에 오도(조밀 제약·완경사를 페널티) — 힐셰이드로 볼 것.
 - [ ] **NGII 정사영상 소스**(보류): 서버사이드 키 접근 막힘(브라우저 전용 키 정황) + EPSG:5179 타일 구현
       필요. 키 서버사이드 접근이 풀리면 5179 `TileSource` 추가만. [[orthophoto-texture-blocker]].
-- [ ] **SketchUp .dae 실기 import 검증**(사람 손): 웹에서 받은 `_package.zip`을 풀어 SketchUp File>Import →
-      ⓐ 실제 크기(미터) ⓑ 정사영상 텍스처 표시 ⓒ 건물 한 동씩 그룹·이름 ⓓ 도시계획 선 색. pycollada 파싱은 통과(683 geometry).
-      확장(.rbz)의 층고 입력·도시계획 태그도 실기 확인 필요(`build_rbz.py` 재빌드 후).
+- [ ] **확장 다이얼로그 실기 확인**(사람 손, 선택): 층고 입력칸·도시계획 토글이 있는 새 확장은 이 PC Plugins에 설치됨
+      (Cloud Run 백엔드). 다이얼로그에서 주소 생성 1회만 눈으로 확인하면 끝. `.dae` 가져오기는 **자동 검증 완료**
+      (`scripts/sketchup_verify/run.py` — 아래 "SketchUp 실기 자동 검증").
 - [ ] **현황측량도(DXF) 표고 보정 — 재검토 결론: 후순위 MVP**(2026-09-21 조사): 사내 수요 증거(김동욱 GH "표고숫자에서
       포인트 레벨 생성하기" 2026-06 갱신)로 YAGNI 재개 조건 충족. 방식 = DXF 업로드(DWG는 ODA 비상업 한정·LibreDWG 불안정
       → "DXF로 저장" 요구) → TEXT 숫자 + 최근접 점 마커 KD-tree 짝짓기 → `_grid_relax`에 측량점을 Dirichlet 제약으로(경계 밖
@@ -162,6 +162,15 @@ base_z/height/flagged/verified + 지형 vertices/triangles + ortho_extent)가 �
 three.js로 지형 mesh+건물 돌출을 렌더(+정사영상 평면 드레이프). `pipeline.generate(include_geometry=True)`
 일 때만 직렬화(MCP 응답 비대화 방지 — 기본 False). rhino3dm/WASM 미사용(생성 Extrusion에 렌더
 메시가 없어 3DMLoader가 건물을 못 그림 → geometry JSON 직접 렌더로 결정).
+
+**SketchUp 실기 자동 검증(사람 손 없음)**: `python scripts/sketchup_verify/run.py <패키지.zip>` — 데스크톱
+SketchUp을 `-RubyStartup verify_dae.rb`로 띄워 가져오기 → 확장 자동 모서리 정리 대기 → report.json(크기·z_min·재질·
+텍스처·재질별 soft/hard 모서리·auto_runs) + 스크린샷 → 저장 → 종료(1~2분). 2026-09-21 이 검증으로 잡은 것:
+ⓐ 지적 필지가 지형 밖 2km까지 뻗어 z=0에 깔림 → `cadastral.clip_parcels` ⓑ SketchUp COLLADA 가져오기는 모서리를
+**절대** 안 부드럽게 함(법선 넣어도 0) → 확장 `import_softener.rb`가 가져오기 감지해 지형·도로·보도·수계만 정리
+ⓒ visual_scene 중첩 node는 **전부 한 정의로 합쳐짐** → `library_nodes`+`instance_node`여야 한 동씩 컴포넌트,
+이름은 첫 공백에서 잘림(→ `_`) ⓓ 스커트가 안쪽을 향해 뒷면색 → `_split_terrain`으로 바깥 정렬·흙색 분리.
+**CI 리눅스 재현**: 로컬 Docker로 `python:3.11` 컨테이너에서 pytest(윈도만 통과하던 도시계획 조밀화 모서리 깎임 버그를 잡음).
 
 **`src/config.py` 주요 설정값:**
 
@@ -245,7 +254,7 @@ frontend/                React + Vite + Tailwind 웹 UI (주소 입력 → /api/
 
 sketchup_ext/            SketchUp 확장(.rbz) — 주소→백엔드 geometry JSON→SketchUp 조립 (Phase B) [B1: 지형+건물]
   arch_site_model.rb     로더(SketchupExtension 등록)
-  arch_site_model/       main(메뉴·HtmlDialog)·api_client(Sketchup::Http)·builder(지형mesh+건물돌출+정사영상 드레이프+도로/보도 메시·차선·수계 평면·지적 경계(build_cadastral)·QA 결함 핀 — .3dm/F2와 3경로 정합)·settings·dialog.html
+  arch_site_model/       import_softener(웹 .dae 가져오기 감지 → 지형·도로·보도·수계 면 모서리 soft/smooth, 건물 제외 — EntitiesObserver+ModelObserver#onPlaceComponent, AppObserver#expectsStartupModelNotifications)·main(메뉴·HtmlDialog, 층고 입력 Sketchup 기본설정 기억)·api_client(Sketchup::Http)·builder(지형mesh+건물돌출+정사영상 드레이프+도로/보도 메시·차선·수계 평면·지적 경계(build_cadastral)·QA 결함 핀 — .3dm/F2와 3경로 정합)·settings·dialog.html
   build_rbz.py           확장 폴더 → dist/arch_site_model.rbz 패키징
 
 docs/
