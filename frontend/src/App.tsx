@@ -177,8 +177,33 @@ export default function App() {
           <h1 className="text-2xl font-bold text-slate-900">대지모델 생성기</h1>
           <p className="mt-1 text-sm text-slate-500">
             주소를 찾거나 지도에서 영역을 골라, 5m 지형·실측 층수 건물·정사영상을 입힌 3D 대지모델을
-            만듭니다. Rhino(.3dm)와 SketchUp(.dae) 패키지로 받습니다.
+            만듭니다.
           </p>
+          {/* 받게 될 파일 — 첫 화면에서 SketchUp·Rhino 둘 다 된다는 걸 바로 보이게 */}
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-rose-200 bg-white p-3">
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-rose-600 px-2 py-0.5 text-xs font-bold text-white">SketchUp</span>
+                <span className="text-sm font-semibold text-slate-900">.dae — 확장 설치 없이 바로</span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                zip을 풀고 SketchUp에서 <b>File &gt; Import</b>. 지형(정사영상)·건물(한 동씩 그룹)·도로·도시계획선, 실제 크기(m).
+              </p>
+              <p className="mt-1 text-[11px] text-slate-400">
+                지형에 삼각형 선이 많이 보이면: 지형 그룹을 열고 전체 선택 → 우클릭 “모서리 부드럽게”.
+                (대지모델 SketchUp 확장이 설치돼 있으면 자동 처리)
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-300 bg-white p-3">
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-slate-800 px-2 py-0.5 text-xs font-bold text-white">Rhino</span>
+                <span className="text-sm font-semibold text-slate-900">.3dm — 레이어 정리 + NURBS 지형</span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                건물·지형·도로·지적·도시계획 레이어, 설계용 NURBS 지형 서피스(terrain_surface 레이어), 원점 좌표 포함.
+              </p>
+            </div>
+          </div>
         </header>
 
         {/* 입력 폼 */}
@@ -410,10 +435,10 @@ export default function App() {
               {result.files.package && (
                 <a
                   href={result.files.package}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white
-                             transition hover:bg-emerald-700"
+                  className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white
+                             transition hover:bg-rose-700"
                 >
-                  SketchUp·Rhino 패키지 (.zip)
+                  SketchUp용 받기 (.dae, zip)
                 </a>
               )}
               {result.files["3dm"] && (
@@ -422,7 +447,7 @@ export default function App() {
                   className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white
                              transition hover:bg-slate-700"
                 >
-                  .3dm 다운로드
+                  Rhino용 받기 (.3dm)
                 </a>
               )}
               {result.files.ortho_png && (
