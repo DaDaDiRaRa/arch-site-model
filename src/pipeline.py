@@ -135,6 +135,9 @@ def _build_geometry(
             "holes": [_ring(h) for h in (s.holes_m or [])],
             "base_z": round(s.base_z_m, 3),
             "height": round(s.height_m, 3),
+            # 실측 층수(gro_flo_co). 누락이면 None — 높이÷층고로 역산하지 말고 이 값을 쓸 것
+            # (형제 앱이 높이÷3.0으로 층수를 계산해 층고 3.5 전환 때 층수가 틀어졌다, 2026-09-21).
+            "floors": s.floors,
             "flagged": bool(s.flagged),
             # 실측 층수(measured)이며 flag도 아닐 때만 verified — 추정(default)은 시각 구분(A-2).
             "verified": s.floors_source == "measured" and not s.flagged,

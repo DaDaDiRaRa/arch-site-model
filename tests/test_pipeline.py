@@ -431,7 +431,10 @@ def test_generate_include_geometry(monkeypatch):
     assert len(g["buildings"]) == 4
     b0 = g["buildings"][0]
     assert len(b0["footprint"]) >= 3
-    assert {"base_z", "height", "flagged", "verified"} <= b0.keys()
+    assert {"base_z", "height", "floors", "flagged", "verified"} <= b0.keys()
+    # 층수는 실측값 그대로(형제 앱이 높이÷층고로 역산하지 않게) — 픽스처 층수 4/10/0/null
+    assert sorted(b["floors"] for b in g["buildings"] if b["floors"]) == [4, 10]
+    assert sum(b["floors"] is None for b in g["buildings"]) == 2
     # 지형: vertices/triangles, 인덱스는 순수 int (numpy.int32 혼입 방지)
     assert g["terrain"] is not None
     assert g["terrain"]["vertices"] and g["terrain"]["triangles"]
