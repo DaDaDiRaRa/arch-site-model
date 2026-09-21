@@ -42,6 +42,8 @@ module ArchSiteModel
           "water"      => params["water"] == true,
           "qa"         => params["qa"] == true,
           "planning"   => params["planning"] == true,  # 지구단위계획·도시계획시설 결정선
+          "cadastral"  => params["cadastral"] == true, # 지적선(지형 드레이프) — builder.build_cadastral
+          "walls"      => params["walls"] == true,     # 옹벽 상단선 + 지형 단차(지형 필요)
         },
         "outputs"    => ["skp"],  # .3dm 불필요 — geometry + 정사영상 URL만 받음
       }
@@ -76,7 +78,13 @@ module ArchSiteModel
       ext = geom["ortho_extent_m"]
       ourl = (data["files"] || {})["ortho_png"]
       ortho = { extent: ext, url: ourl } if ext && ourl
-      { geometry: geom, warnings: data["warnings"] || [], ortho: ortho, qa: data["qa"] }
+      stats = data["stats"] || {}
+      meta = {
+        "origin_offset" => stats["origin_offset"], "coord" => data["coord"],
+        "floor_height_m" => data.dig("provenance", "floor_height_m"),
+        "fetched_at" => data.dig("provenance", "fetched_at"),
+      }
+      { geometry: geom, warnings: data["warnings"] || [], ortho: ortho, qa: data["qa"], meta: meta }
     rescue JSON::ParserError => e
       { error: "응답 파싱 실패: #{e.message}" }
     rescue StandardError => e

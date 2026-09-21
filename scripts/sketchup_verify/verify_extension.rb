@@ -34,6 +34,11 @@ def report(model)
   $out[:tags] = model.layers.map(&:name).grep(/building|terrain|road|lane|cadastral|도시계획|sidewalk/)
   plan = root.entities.grep(Sketchup::Group).find { |g| g.name == "도시계획" }
   $out[:planning_subgroups] = plan ? plan.entities.grep(Sketchup::Group).map { |g| "#{g.name}(#{g.entities.grep(Sketchup::Edge).length}선)" } : nil
+  $out[:root_attrs] = (root.attribute_dictionary("arch_site_model") || {}).to_h
+  si = model.shadow_info
+  $out[:shadow_location] = { lat: si["Latitude"], lon: si["Longitude"], city: si["City"] }
+  $out[:walls_edges] = (g = root.entities.grep(Sketchup::Group).find { |x| x.name == "walls" }) ? g.entities.grep(Sketchup::Edge).length : 0
+  $out[:cadastral_edges] = (g = root.entities.grep(Sketchup::Group).find { |x| x.name == "cadastral" }) ? g.entities.grep(Sketchup::Edge).length : 0
   $out[:ortho_material] = model.materials.select { |m| m.texture }.map { |m| m.name }
   bb = root.bounds
   $out[:size_m] = [bb.width, bb.height, bb.depth].map { |v| v.to_m.round(1) }
@@ -49,14 +54,20 @@ UI.start_timer(4, false) do
       next
     end
     stage("timer")
-    $out[:backend] = ArchSiteModel::Settings.backend_url
     params = {
       "address" => "대전광역시 서구 괴정동 358", "radius_m" => 150, "floor_height_m" => FLOOR_H,
       "terrain" => true, "orthophoto" => true, "roads" => true, "planning" => true, "qa" => true,
+      "cadastral" => true, "walls" => true,
     }
+    # run.py --address/--backend 가 params.json으로 덮어쓴다(옹벽 있는 대지, 로컬 새 백엔드 등)
+    pj = File.join(DIR, "params.json")
+    params.merge!(JSON.parse(File.read(pj, encoding: "utf-8"))) if File.exist?(pj)
+    backend = params.delete("backend") || ArchSiteModel::Settings.backend_url
+    $out[:backend] = backend
+    $out[:address] = params["address"]
     t0 = Time.now
     stage("request")
-    ArchSiteModel::ApiClient.generate(ArchSiteModel::Settings.backend_url, params) do |result|
+    ArchSiteModel::ApiClient.generate(backend, params) do |result|
       begin
         stage("api-callback")
         $out[:api_sec] = (Time.now - t0).round(1)
@@ -72,10 +83,14 @@ UI.start_timer(4, false) do
         $out[:floor_height_ok] = with.all? { |b| (b["height"] - b["floors"] * FLOOR_H).abs < 0.01 }
         $out[:sample_building] = with.first && { floors: with.first["floors"], height: with.first["height"] }
         $out[:planning_lines] = (geom["planning"] || []).length
+        $out[:cadastral_in_response] = (geom["cadastral"] || []).length
+        $out[:walls_in_response] = (geom["walls"] || []).length
+        $out[:meta] = result[:meta]
         build = lambda do |png, ext|
           begin
             stage("build")
-            $out[:built] = ArchSiteModel::Builder.build(geom, result[:warnings], png, ext, result[:qa])
+            meta = (result[:meta] || {}).merge("address" => params["address"])
+            $out[:built] = ArchSiteModel::Builder.build(geom, result[:warnings], png, ext, result[:qa], meta)
             report(Sketchup.active_model)
           rescue Exception => e
             $out[:error] = "조립 실패: #{e.class}: #{e.message} #{e.backtrace.first(3)}"
@@ -85,7 +100,7 @@ UI.start_timer(4, false) do
         end
         ortho = result[:ortho]
         if ortho && ortho[:url]
-          ArchSiteModel::ApiClient.download_binary("#{ArchSiteModel::Settings.backend_url}#{ortho[:url]}") do |bytes|
+          ArchSiteModel::ApiClient.download_binary("#{backend}#{ortho[:url]}") do |bytes|
             $out[:ortho_bytes] = bytes ? bytes.bytesize : nil
             png = bytes ? ArchSiteModel::Main.write_temp_png(bytes) : nil
             build.call(png, ortho[:extent])

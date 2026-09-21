@@ -29,7 +29,8 @@ module ArchSiteModel
     # 단일 조립(소반경): root 그룹 생성 + 전체 조립 + zoom. 반환: 생성된 건물 수.
     # geometry: {"buildings"=>[...], "terrain"=>{...}|nil}
     # ortho_png/ortho_extent: 정사영상 PNG 경로 + 로컬미터 extent[x0,y0,x1,y1](선택)
-    def self.build(geometry, _warnings = [], ortho_png = nil, ortho_extent = nil, qa = nil)
+    # meta: {"origin_offset"=>[ox,oy], "coord"=>{"lon","lat"}, "address", "floor_height_m", "fetched_at"}(선택)
+    def self.build(geometry, _warnings = [], ortho_png = nil, ortho_extent = nil, qa = nil, meta = nil)
       model = Sketchup.active_model
       count = 0
       model.start_operation("대지모델 생성", true)
@@ -37,6 +38,7 @@ module ArchSiteModel
         root = model.active_entities.add_group
         root.name = "arch-site-model"
         count = build_into(model, root.entities, geometry, ortho_png, ortho_extent, qa)
+        record_meta(model, root, meta) if meta
         model.commit_operation
         model.active_view.zoom_extents
       rescue StandardError => e
@@ -46,6 +48,61 @@ module ArchSiteModel
       end
       hide_profiles(model)
       count
+    end
+
+    # 좌표 복원 정보를 모델에 남긴다 — .3dm·.dae와 같은 원점(EPSG:5186) 규약.
+    #  - root 그룹 속성 사전 "arch_site_model": origin_offset_x/y, crs, address, floor_height_m, fetched_at
+    #    (확장 프로그램 > 개발자 > Ruby 콘솔이나 속성 플러그인으로 읽음. 완료 메시지에도 표시)
+    #  - 모델 위치(그림자 정보)의 위도·경도를 대지 중심으로 → SketchUp 그림자 방향이 실제와 맞는다.
+    #    이미 지리 위치가 지정된 모델(georeferenced)이면 사용자가 정한 위치를 건드리지 않는다.
+    def self.record_meta(model, root, meta)
+      d = "arch_site_model"
+      ox, oy = meta["origin_offset"]
+      if ox && oy
+        root.set_attribute(d, "origin_offset_x", ox.to_f)
+        root.set_attribute(d, "origin_offset_y", oy.to_f)
+        root.set_attribute(d, "crs", "EPSG:5186 (로컬 미터 = 5186 - origin_offset)")
+      end
+      %w[address floor_height_m fetched_at].each do |k|
+        root.set_attribute(d, k, meta[k]) if meta[k]
+      end
+      c = meta["coord"]
+      if c && c["lat"] && c["lon"] && !model.georeferenced?
+        si = model.shadow_info
+        si["Latitude"] = c["lat"].to_f
+        si["Longitude"] = c["lon"].to_f
+        si["TZOffset"] = 9.0
+        si["City"] = meta["address"].to_s unless meta["address"].to_s.empty?
+        si["Country"] = "대한민국"
+      end
+    rescue StandardError => e
+      puts "[meta] 기록 실패: #{e.message}"
+    end
+
+    # 옹벽 상단선 → 갈색 엣지(태그 walls). 지형에는 백엔드가 이미 수직 단차를 심어 두었고, 이 선은
+    # 그 위치와 실측 높이(그룹 이름)를 보여 준다. walls = [{"points"=>[[x,y,z],...], "h"=>높이}, ...]
+    def self.build_walls(model, parent_ents, walls)
+      return unless walls && !walls.empty?
+      grp = parent_ents.add_group
+      grp.name = "walls"
+      t = tag(model, "walls")
+      begin
+        t.color = Sketchup::Color.new(140, 92, 60)
+      rescue StandardError
+        nil
+      end
+      grp.layer = t
+      walls.each do |w|
+        pts = w["points"] || []
+        next if pts.length < 2
+        begin
+          grp.entities.add_edges(pts.map { |p| Geom::Point3d.new(p[0] * M2I, p[1] * M2I, p[2] * M2I) })
+        rescue StandardError
+          next
+        end
+      end
+    rescue StandardError => e
+      puts "[walls] 조립 오류: #{e.message}"
     end
 
     # 프로파일(그룹 외곽선) 표시 끄기 — 타일 지형이 타일마다 별도 그룹이라 SketchUp이
@@ -71,6 +128,7 @@ module ArchSiteModel
       build_surface_mesh(model, parent_ents, geometry["water"], "water", C_WATER, 0.0)
       n = build_buildings(model, parent_ents, geometry["buildings"] || [])
       build_cadastral(model, parent_ents, geometry["cadastral"])
+      build_walls(model, parent_ents, geometry["walls"])
       build_planning(model, parent_ents, geometry["planning"])
       build_qa(model, parent_ents, qa, geometry) if qa
       n # 건물 수 — 마지막 줄이 build_qa면 QA 목록이 반환돼 "완료 — 건물 N동"이 틀렸다(2026-09-21 무인 검증)

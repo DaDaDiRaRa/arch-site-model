@@ -33,6 +33,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("package", nargs="?", help="웹/파이프라인이 만든 *_package.zip")
     ap.add_argument("--extension", action="store_true", help="확장 생성 흐름 검증(verify_extension.rb)")
+    ap.add_argument("--address", help="--extension: 생성할 주소(기본 대전 괴정동 358)")
+    ap.add_argument("--backend", help="--extension: 백엔드 URL(기본 확장에 박힌 운영 주소, 예: http://127.0.0.1:8000)")
     ap.add_argument("--sketchup", default=DEFAULT_EXE)
     ap.add_argument("--timeout", type=int, default=420)
     a = ap.parse_args()
@@ -42,6 +44,10 @@ def main() -> None:
     if a.extension:
         script, report = "verify_extension.rb", work / "ext_report.json"
         shutil.copy(HERE / script, work / script)
+        over = {k: v for k, v in (("address", a.address), ("backend", a.backend)) if v}
+        if over:
+            import json as _json
+            (work / "params.json").write_text(_json.dumps(over, ensure_ascii=False), encoding="utf-8")
         _run(a, work, script, report, ["ext_shot.png"])
         return
     if not a.package:

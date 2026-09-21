@@ -89,18 +89,19 @@ module ArchSiteModel
             puts "[ortho] 다운로드: #{bytes ? "#{bytes.bytesize}B" : 'nil(실패)'}"
             png = bytes ? write_temp_png(bytes) : nil
             puts "[ortho] temp png: #{png || 'nil'}"
-            finish_single(dlg, result, png, ortho[:extent])
+            finish_single(dlg, result, png, ortho[:extent], params["address"])
           end
         else
-          finish_single(dlg, result, nil, nil)
+          finish_single(dlg, result, nil, nil, params["address"])
         end
       end
     end
 
-    def self.finish_single(dlg, result, ortho_png, ortho_extent)
+    def self.finish_single(dlg, result, ortho_png, ortho_extent, address = nil)
       qa = result[:qa]
-      n = Builder.build(result[:geometry], result[:warnings], ortho_png, ortho_extent, qa)
-      done = { "count" => n, "warnings" => result[:warnings] || [] }
+      meta = (result[:meta] || {}).merge("address" => address)
+      n = Builder.build(result[:geometry], result[:warnings], ortho_png, ortho_extent, qa, meta)
+      done = { "count" => n, "warnings" => result[:warnings] || [], "origin" => meta["origin_offset"] }
       if qa && qa["summary"]
         done["qa"] = { "total" => qa["summary"]["total"], "warnings" => qa["summary"]["warnings"] }
       end

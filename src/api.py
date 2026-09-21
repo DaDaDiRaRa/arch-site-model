@@ -296,6 +296,7 @@ def generate_endpoint(req: GenerateRequest) -> dict:
         "geometry": result.get("geometry"),  # 3D 미리보기용 (로컬 미터)
         "outputs": result.get("outputs"),
         "stats": result.get("stats"),
+        "coord": result.get("coord"),   # 대지 중심 위경도 — SketchUp 확장이 모델 위치(그림자)로 씀
         "provenance": result.get("provenance"),
         "warnings": [config.scrub_secrets(w) for w in (result.get("warnings") or [])],
         "qa": result.get("qa"),   # 자동 QA findings (layers.qa=True 시)

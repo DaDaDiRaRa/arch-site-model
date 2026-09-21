@@ -231,3 +231,14 @@ def test_extension_rbz_injects_site_url():
     assert "arch_site_model.rb" in names and "arch_site_model/import_softener.rb" in names
     settings = z.read("arch_site_model/settings.rb").decode("utf-8")
     assert 'DEFAULT_BACKEND = "https://asm.example.run.app".freeze' in settings
+
+
+def test_generate_response_includes_coord(monkeypatch, tmp_path):
+    # SketchUp 확장이 모델 위치(그림자)로 쓰는 대지 중심 위경도
+    def fake(address, **kw):
+        return {"ok": True, "coord": {"lon": 127.1, "lat": 37.4}, "outputs": {}, "stats": {}, "warnings": []}
+
+    monkeypatch.setattr(api, "_generate", fake)
+    monkeypatch.setattr(api, "JOBS_DIR", tmp_path.resolve())
+    body = _client().post("/api/generate", json={"address": "x"}).json()
+    assert body["coord"] == {"lon": 127.1, "lat": 37.4}
