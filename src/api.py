@@ -23,7 +23,7 @@ from uuid import uuid4
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import PlainTextResponse
@@ -387,6 +387,32 @@ def basemap_tile(layer: str, z: int, x: int, y: int):
         raise HTTPException(status_code=404, detail="타일 없음")
     media = "image/jpeg" if ext == "jpeg" else "image/png"
     return Response(content=data, media_type=media, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/api/extension.rbz")
+def extension_rbz(request: Request):
+    """SketchUp 확장(.rbz)을 현재 소스로 즉석 패키징해 내려준다. 백엔드 주소는 이 사이트 주소.
+
+    팀원이 설명서(/guide.html)에서 바로 받아 확장 관리자로 설치한다 — 빌드 산출물을 따로 돌리지 않아
+    항상 서버와 같은 버전이다. Cloud Run은 TLS를 앞단에서 끊으므로 x-forwarded-proto로 https를 복원.
+    """
+    import importlib.util
+
+    from fastapi.responses import Response
+
+    src = Path(__file__).resolve().parent.parent / "sketchup_ext" / "build_rbz.py"
+    if not src.exists():
+        raise HTTPException(status_code=404, detail="확장 소스 없음")
+    spec = importlib.util.spec_from_file_location("_asm_build_rbz", src)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    base = os.environ.get("PUBLIC_BASE_URL") or f"{proto}://{request.headers.get('host', request.url.netloc)}"
+    data = mod.build_bytes(base.rstrip("/"))
+    return Response(
+        content=data, media_type="application/octet-stream",
+        headers={"Content-Disposition": 'attachment; filename="arch_site_model.rbz"'},
+    )
 
 
 @app.get("/api/files/{job_id}/{kind}")

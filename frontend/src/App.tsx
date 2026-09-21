@@ -174,7 +174,18 @@ export default function App() {
     <div className="min-h-screen bg-slate-100 text-slate-800">
       <div className="mx-auto max-w-3xl px-4 py-10">
         <header className="mb-8">
-          <h1 className="text-2xl font-bold text-slate-900">대지모델 생성기</h1>
+          <div className="flex items-baseline justify-between gap-3">
+            <h1 className="text-2xl font-bold text-slate-900">대지모델 생성기</h1>
+            <a
+              href="/guide.html"
+              target="_blank"
+              rel="noreferrer"
+              className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-semibold
+                         text-slate-700 transition hover:bg-slate-50"
+            >
+              사용 설명서 · SketchUp 확장 받기
+            </a>
+          </div>
           <p className="mt-1 text-sm text-slate-500">
             주소를 찾거나 지도에서 영역을 골라, 5m 지형·실측 층수 건물·정사영상을 입힌 3D 대지모델을
             만듭니다.

@@ -69,10 +69,11 @@ module ArchSiteModel
       build_lanes(model, parent_ents, geometry["lanes"])
       # 수계 — 평면 수면(z는 백엔드가 이미 리프트) → lift_m=0.
       build_surface_mesh(model, parent_ents, geometry["water"], "water", C_WATER, 0.0)
-      build_buildings(model, parent_ents, geometry["buildings"] || [])
+      n = build_buildings(model, parent_ents, geometry["buildings"] || [])
       build_cadastral(model, parent_ents, geometry["cadastral"])
       build_planning(model, parent_ents, geometry["planning"])
       build_qa(model, parent_ents, qa, geometry) if qa
+      n # 건물 수 — 마지막 줄이 build_qa면 QA 목록이 반환돼 "완료 — 건물 N동"이 틀렸다(2026-09-21 무인 검증)
     end
 
     # 도시계획 분류색 — src/geo/planning.py PLANNING_LAYERS 와 동일(.3dm·.dae·F2와 통일)

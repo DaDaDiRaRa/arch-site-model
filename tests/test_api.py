@@ -218,3 +218,16 @@ def test_basemap_rejects_bad_tiles():
     assert _client().get("/api/basemap/evil/10/1/1").status_code == 400
     assert _client().get("/api/basemap/base/3/1/1").status_code == 400      # 줌 범위 밖
     assert _client().get("/api/basemap/base/10/5000/1").status_code == 400  # 타일 범위 밖
+
+
+def test_extension_rbz_injects_site_url():
+    import io
+    import zipfile
+
+    r = _client().get("/api/extension.rbz", headers={"host": "asm.example.run.app", "x-forwarded-proto": "https"})
+    assert r.status_code == 200
+    z = zipfile.ZipFile(io.BytesIO(r.content))
+    names = z.namelist()
+    assert "arch_site_model.rb" in names and "arch_site_model/import_softener.rb" in names
+    settings = z.read("arch_site_model/settings.rb").decode("utf-8")
+    assert 'DEFAULT_BACKEND = "https://asm.example.run.app".freeze' in settings

@@ -163,8 +163,10 @@ three.js로 지형 mesh+건물 돌출을 렌더(+정사영상 평면 드레이�
 일 때만 직렬화(MCP 응답 비대화 방지 — 기본 False). rhino3dm/WASM 미사용(생성 Extrusion에 렌더
 메시가 없어 3DMLoader가 건물을 못 그림 → geometry JSON 직접 렌더로 결정).
 
+**사용 설명서**: `frontend/public/guide.html` → 배포 사이트 `/guide.html`(첫 화면 우상단 링크). 웹·.dae·.3dm·확장 사용법, 좌표, 한계, 문제 해결. 스크린샷은 `frontend/public/guide/`(무인 검증 산출물). **확장 배포 = `/api/extension.rbz`**: 요청 시 `sketchup_ext` 소스를 즉석 패키징하고 백엔드 주소를 그 사이트 주소로 주입(`build_rbz.build_bytes`, Docker 이미지에 sketchup_ext 포함) — 팀원은 설명서에서 받아 확장 관리자로 설치.
+
 **SketchUp 실기 자동 검증(사람 손 없음)**: `python scripts/sketchup_verify/run.py <패키지.zip>` — 데스크톱
-SketchUp을 `-RubyStartup verify_dae.rb`로 띄워 가져오기 → 확장 자동 모서리 정리 대기 → report.json(크기·z_min·재질·
+SketchUp을 `-RubyStartup verify_dae.rb`로 띄워(`--extension`이면 verify_extension.rb로 확장 생성 흐름 — 운영 백엔드 호출→조립→층고·도시계획·건물 수 보고. blank.skp를 함께 열어 시작 화면 멈춤 회피) 가져오기 → 확장 자동 모서리 정리 대기 → report.json(크기·z_min·재질·
 텍스처·재질별 soft/hard 모서리·auto_runs) + 스크린샷 → 저장 → 종료(1~2분). 2026-09-21 이 검증으로 잡은 것:
 ⓐ 지적 필지가 지형 밖 2km까지 뻗어 z=0에 깔림 → `cadastral.clip_parcels` ⓑ SketchUp COLLADA 가져오기는 모서리를
 **절대** 안 부드럽게 함(법선 넣어도 0) → 확장 `import_softener.rb`가 가져오기 감지해 지형·도로·보도·수계만 정리

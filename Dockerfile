@@ -32,6 +32,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ ./src/
 COPY geo_store/ ./geo_store/
+# SketchUp 확장 소스 — /api/extension.rbz 가 요청 시 즉석 패키징(설명서에서 다운로드)
+COPY sketchup_ext/ ./sketchup_ext/
 # 빌드된 프론트를 FastAPI가 루트에서 서빙
 COPY --from=frontend /fe/dist ./frontend/dist
 

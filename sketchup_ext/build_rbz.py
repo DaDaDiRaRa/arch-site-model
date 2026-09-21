@@ -56,17 +56,19 @@ def _inject_backend(settings_text: str, url: str) -> str:
     return result
 
 
-def build(backend_url: str | None = None) -> Path:
+def build_bytes(backend_url: str | None = None) -> bytes:
+    """.rbz 내용을 메모리에서 만든다 — 웹 백엔드가 /api/extension.rbz로 즉석 배포할 때도 쓴다."""
+    import io
+
     if backend_url and not re.match(r"^https?://", backend_url):
         raise ValueError(f"backend-url은 http(s)://로 시작해야 합니다: {backend_url!r}")
-
-    OUT.parent.mkdir(parents=True, exist_ok=True)
     members = _members()
     missing = [m for m in members if not m.exists()]
     if missing:
         raise FileNotFoundError(f"누락 파일: {missing}")
 
-    with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED) as zf:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for m in members:
             arcname = m.relative_to(HERE).as_posix()
             if backend_url and arcname == SETTINGS_REL:
@@ -74,6 +76,12 @@ def build(backend_url: str | None = None) -> Path:
                 zf.writestr(arcname, _inject_backend(text, backend_url))
             else:
                 zf.write(m, arcname)
+    return buf.getvalue()
+
+
+def build(backend_url: str | None = None) -> Path:
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_bytes(build_bytes(backend_url))
     return OUT
 
 
