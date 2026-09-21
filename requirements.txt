@@ -20,3 +20,4 @@ mcp>=1.2,<2.0.0       # MCP 서버 — 2.0.0 은 mcp.server.fastmcp 를 없앴�
                        # src/server.py 는 1.x FastMCP 를 쓰므로 상한 없인 다음 재빌드에서 깨진다
                        # (실측: 2026-08-24 배포 실패, ModuleNotFoundError: mcp.server.fastmcp)
 python-dotenv>=1.0    # .env 로드 (로컬 개발)
+google-cloud-storage>=2.10  # 잡 산출물 공유 버킷(JOBS_GCS_BUCKET) — 인스턴스 간 다운로드

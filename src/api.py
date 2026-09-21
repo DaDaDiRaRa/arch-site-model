@@ -38,6 +38,48 @@ JOBS_DIR = Path(
     os.environ.get("JOBS_DIR") or (Path(tempfile.gettempdir()) / "arch_site_model_jobs")
 ).resolve()
 
+# 잡 산출물 공유 저장소(GCS 버킷명). Cloud Run은 인스턴스가 여러 개라 생성(POST)과 다운로드(GET)가
+# 다른 인스턴스로 갈 수 있고, 그 인스턴스의 /tmp엔 잡이 없어 "잡 없음" 404가 났다(2026-09-21 로그 실측).
+# 설정 시 생성 직후 잡 파일을 gs://<버킷>/<job_id>/에 올리고, 로컬에 없으면 버킷에서 받아 서빙한다.
+# 버킷은 비공개 + 수명주기 1일 삭제. 미설정(로컬 개발)이면 로컬 폴더만 쓴다.
+JOBS_GCS_BUCKET = os.environ.get("JOBS_GCS_BUCKET", "")
+
+
+def _gcs_bucket():
+    from google.cloud import storage  # 지연 import — 로컬/테스트엔 불필요
+
+    return storage.Client().bucket(JOBS_GCS_BUCKET)
+
+
+def _upload_job(job_id: str, job_dir: Path) -> None:
+    """잡 폴더의 다운로드 대상 파일(.3dm, *_ortho.png)을 공유 버킷에 올린다. 실패는 경고만."""
+    if not JOBS_GCS_BUCKET or not job_dir.is_dir():
+        return
+    try:
+        bucket = _gcs_bucket()
+        for p in [*job_dir.glob("*.3dm"), *job_dir.glob("*_ortho.png")]:
+            bucket.blob(f"{job_id}/{p.name}").upload_from_filename(str(p))
+    except Exception as e:  # noqa: BLE001 — 업로드 실패해도 같은 인스턴스 다운로드는 동작
+        print(f"[jobs] GCS 업로드 실패 {job_id}: {config.scrub_secrets(str(e))}")
+
+
+def _fetch_job(job_id: str, job_dir: Path) -> None:
+    """로컬에 없는 잡을 공유 버킷에서 job_dir로 내려받는다(없으면 아무것도 안 함)."""
+    if not JOBS_GCS_BUCKET:
+        return
+    try:
+        blobs = list(_gcs_bucket().list_blobs(prefix=f"{job_id}/"))
+        if not blobs:
+            return
+        job_dir.mkdir(parents=True, exist_ok=True)
+        for b in blobs:
+            name = b.name.split("/", 1)[1]
+            if name and _safe_component(name):
+                b.download_to_filename(str(job_dir / name))
+    except Exception as e:  # noqa: BLE001
+        print(f"[jobs] GCS 다운로드 실패 {job_id}: {config.scrub_secrets(str(e))}")
+
+
 # 타일 bbox span(m) 상한 — 미인증 /api/generate_tile 자원증폭 방지(정상 타일 ≤ tile_size + margin).
 _MAX_TILE_SPAN_M = 3000.0
 
@@ -200,6 +242,8 @@ def generate_endpoint(req: GenerateRequest) -> dict:
         # 생성 실패(주소 오류·건물 없음 등)는 4xx로 전달. 시크릿 마스킹.
         raise HTTPException(status_code=400, detail=config.scrub_secrets(result.get("error", "생성 실패")))
 
+    _upload_job(job_id, job_dir)  # 다른 인스턴스에서도 다운로드되도록 공유 버킷에 보관
+
     # 다운로드 URL은 ASCII 종류키(3dm/ortho)로 — 한글 파일명 URL 인코딩 문제 회피.
     # 실제 파일명(한글 가능)은 다운로드 시 Content-Disposition으로 전달.
     files: dict[str, str] = {}
@@ -293,6 +337,8 @@ def get_file(job_id: str, kind: str) -> FileResponse:
         job_dir.relative_to(JOBS_DIR)  # 경로 탈출 방지(startswith prefix 매칭 아님)
     except ValueError:
         raise HTTPException(status_code=404, detail="잡 없음")
+    if not job_dir.is_dir():
+        _fetch_job(job_id, job_dir)  # 생성이 다른 인스턴스에서 됐으면 공유 버킷에서 가져옴
     if not job_dir.is_dir():
         raise HTTPException(status_code=404, detail="잡 없음")
 

@@ -114,6 +114,14 @@ gcloud run deploy arch-site-model \
 gcloud run deploy ... --set-secrets "VWORLD_KEY=vworld-key:latest"
 ```
 
+**잡 산출물 공유 버킷(필수)**: 인스턴스가 여러 개(maxScale 20·concurrency 2)라 생성과 다운로드가
+다른 인스턴스로 가면 `/tmp` 잡이 없어 `{"detail":"잡 없음"}` 404가 난다. 비공개 버킷
+`gs://arch-site-model-jobs`(수명주기 1일 삭제)에 잡 파일을 올리고 없으면 받아 서빙한다:
+```bash
+gcloud run services update arch-site-model --region asia-northeast3 \
+  --update-env-vars JOBS_GCS_BUCKET=arch-site-model-jobs
+```
+
 ---
 
 ## 5. 데이터 서빙 (DEM·도로 = 공개 GCS)

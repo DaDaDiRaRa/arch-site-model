@@ -88,6 +88,49 @@ def test_generate_and_download(monkeypatch, tmp_path):
     assert rpng.content == b"png-bytes"
 
 
+class _FakeBlob:
+    def __init__(self, store, name):
+        self._store, self.name = store, name
+
+    def upload_from_filename(self, path):
+        self._store[self.name] = Path(path).read_bytes()
+
+    def download_to_filename(self, path):
+        Path(path).write_bytes(self._store[self.name])
+
+
+class _FakeBucket:
+    def __init__(self):
+        self.store: dict[str, bytes] = {}
+
+    def blob(self, name):
+        return _FakeBlob(self.store, name)
+
+    def list_blobs(self, prefix):
+        return [_FakeBlob(self.store, n) for n in self.store if n.startswith(prefix)]
+
+
+def test_download_from_other_instance_via_bucket(monkeypatch, tmp_path):
+    # Cloud Run: 생성(인스턴스 A)과 다운로드(인스턴스 B)가 갈려도 공유 버킷으로 받아진다
+    bucket = _FakeBucket()
+    monkeypatch.setattr(api, "_generate", _fake_generate_factory())
+    monkeypatch.setattr(api, "JOBS_GCS_BUCKET", "fake-bucket")
+    monkeypatch.setattr(api, "_gcs_bucket", lambda: bucket)
+
+    monkeypatch.setattr(api, "JOBS_DIR", (tmp_path / "instA").resolve())
+    body = _client().post("/api/generate", json={"address": "대전 서구"}).json()
+    assert any(n.endswith("site.3dm") for n in bucket.store)
+
+    (tmp_path / "instB").mkdir()
+    monkeypatch.setattr(api, "JOBS_DIR", (tmp_path / "instB").resolve())
+    r3dm = _client().get(body["files"]["3dm"])
+    assert r3dm.status_code == 200
+    assert r3dm.content == b"3dm-bytes"
+    assert _client().get(body["files"]["ortho_png"]).content == b"png-bytes"
+    # 버킷에도 없는 잡은 여전히 404
+    assert _client().get("/api/files/nojobxyz/3dm").status_code == 404
+
+
 def test_generate_failure_maps_to_400(monkeypatch, tmp_path):
     def failing(address, **kw):
         return {"ok": False, "error": "반경 내 건물이 없습니다."}
