@@ -47,6 +47,8 @@ module ArchSiteModel
         },
         "outputs"    => ["skp"],  # .3dm 불필요 — geometry + 정사영상 URL만 받음
       }
+      # 지도에서 고른 영역 [minlon,minlat,maxlon,maxlat] — 있으면 주소·반경 대신 이 영역(주소는 이름용)
+      body["bbox_4326"] = params["bbox_4326"].map(&:to_f) if params["bbox_4326"].is_a?(Array)
 
       request = Sketchup::Http::Request.new(url, Sketchup::Http::POST)
       request.headers = { "Content-Type" => "application/json" }
@@ -89,6 +91,28 @@ module ArchSiteModel
       { error: "응답 파싱 실패: #{e.message}" }
     rescue StandardError => e
       { error: "응답 처리 오류: #{e.message}" }
+    end
+
+    # 주소 → 좌표 (/api/geocode). yield: {"lon","lat","address"} 또는 {"error"}.
+    def self.geocode(base_url, address, &callback)
+      q = address.to_s.bytes.map { |b| b.chr =~ /[A-Za-z0-9\-_.~]/ ? b.chr : format("%%%02X", b) }.join
+      request = Sketchup::Http::Request.new("#{base_url}/api/geocode?address=#{q}", Sketchup::Http::GET)
+      retain(request)
+      request.start do |_req, response|
+        begin
+          if response.status_code == 200
+            callback.call(JSON.parse(response.body))
+          else
+            callback.call({ "error" => safe_detail(response.body) || "주소를 찾지 못했습니다 (HTTP #{response.status_code})" })
+          end
+        rescue StandardError => e
+          callback.call({ "error" => "주소 검색 오류: #{e.message}" })
+        ensure
+          release(request)
+        end
+      end
+    rescue StandardError => e
+      callback.call({ "error" => "주소 검색 요청 실패: #{e.message}" })
     end
 
     # 바이너리(정사영상 PNG 등) 다운로드. yield: 바이트 문자열 또는 nil(실패).

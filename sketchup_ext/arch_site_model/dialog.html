@@ -12,27 +12,47 @@
     label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin: 12px 0 4px; }
     input[type=text], input[type=number] { width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; }
     input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 1px #10b981; }
-    .row { display: flex; gap: 12px; align-items: flex-end; }
+    .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
     .row > div { flex: 0 0 auto; }
     .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; margin-top: 8px; font-weight: 500; }
     .chk input { width: auto; }
     button { margin-top: 16px; width: 100%; padding: 10px; border: 0; border-radius: 8px; background: #059669; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
     button:disabled { background: #cbd5e1; cursor: not-allowed; }
+    button.small { width: auto; margin: 0; padding: 7px 12px; font-size: 12px; background: #fff; color: #334155; border: 1px solid #cbd5e1; white-space: nowrap; flex: 0 0 auto; }
+    button.small.on { background: #059669; color: #fff; border-color: #059669; }
+    .addr { display: flex; gap: 6px; }
+    .addr input { flex: 1 1 auto; }
+    #map { height: 280px; margin-top: 8px; border: 1px solid #cbd5e1; border-radius: 8px; background: #e2e8f0; }
+    .maptools { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-size: 11px; color: #64748b; flex-wrap: wrap; }
+    .maptools .size { margin-left: auto; font-weight: 600; color: #334155; }
+    #areanote { font-size: 11px; margin-top: 4px; }
+    #areanote.ok { color: #047857; } #areanote.bad { color: #b91c1c; }
+    #areanote a { color: #64748b; margin-left: 8px; cursor: pointer; text-decoration: underline; }
     .hint { font-size: 11px; color: #94a3b8; margin-top: 4px; }
     #status { margin-top: 14px; font-size: 13px; padding: 10px; border-radius: 8px; display: none; }
     #status.busy { display: block; background: #eff6ff; color: #1d4ed8; }
     #status.done { display: block; background: #ecfdf5; color: #047857; }
     #status.error { display: block; background: #fef2f2; color: #b91c1c; }
     #warns { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: #92400e; }
-    details { margin-top: 12px; }
-    summary { font-size: 12px; color: #64748b; cursor: pointer; }
   </style>
 </head>
 <body>
   <h1>대지모델 생성</h1>
 
   <label for="address">대지 주소</label>
-  <input type="text" id="address" placeholder="예: 대전광역시 서구 괴정동 358" value="대전광역시 서구 괴정동 358" />
+  <div class="addr">
+    <input type="text" id="address" placeholder="예: 대전광역시 서구 괴정동 358" value="대전광역시 서구 괴정동 358" />
+    <button class="small" id="find">지도에서 찾기</button>
+  </div>
+
+  <!-- 지도 영역 선택 — 웹사이트와 같은 방식(클릭=반경 정사각형, 사각형 그리기=드래그). 고르지 않으면 주소+반경 -->
+  <div class="maptools">
+    <button class="small" id="draw">▭ 사각형으로 그리기</button>
+    <span id="maphint">지도를 클릭하면 반경 정사각형이 놓입니다.</span>
+    <span class="size" id="size"></span>
+  </div>
+  <div id="map"></div>
+  <div id="areanote"></div>
 
   <div class="row">
     <div>
@@ -65,12 +85,122 @@
   <script>
     function $(id) { return document.getElementById(id); }
 
+    // ── 지도 영역 ─────────────────────────────────────────────────────────────
+    // 서버 src/api.py _MAX_AREA_SIDE_M 과 같게. 좌표는 [minlon, minlat, maxlon, maxlat].
+    var AREA_MIN_M = 20, AREA_MAX_M = 4000, R = 6371008.8;
+    var map = null, rect = null, area = null, areaHow = null, drawing = false;
+    function rad(d) { return d * Math.PI / 180; }
+    function sizeM(b) {
+      var mid = rad((b[1] + b[3]) / 2);
+      return [rad(b[2] - b[0]) * R * Math.cos(mid), rad(b[3] - b[1]) * R];
+    }
+    function square(lon, lat, r) {
+      var dLat = (r / R) * 180 / Math.PI, dLon = dLat / Math.cos(rad(lat));
+      return [lon - dLon, lat - dLat, lon + dLon, lat + dLat];
+    }
+    function radius() { return parseInt($("radius").value, 10) || 250; }
+    function areaOk() {
+      if (!area) return true;
+      var s = sizeM(area);
+      return Math.max(s[0], s[1]) <= AREA_MAX_M && Math.min(s[0], s[1]) >= AREA_MIN_M;
+    }
+    function setArea(b, how) {
+      area = b; areaHow = how;
+      if (rect) { rect.remove(); rect = null; }
+      var note = $("areanote");
+      if (!b) {
+        $("size").textContent = "";
+        note.className = ""; note.textContent = "";
+        return;
+      }
+      var s = sizeM(b), ok = areaOk();
+      $("size").textContent = Math.round(s[0]).toLocaleString() + " × " + Math.round(s[1]).toLocaleString() + " m";
+      if (map) rect = L.rectangle([[b[1], b[0]], [b[3], b[2]]],
+        { color: ok ? "#059669" : "#dc2626", weight: 2, fillOpacity: 0.08, interactive: false }).addTo(map);
+      note.className = ok ? "ok" : "bad";
+      note.innerHTML = (ok ? "이 영역으로 생성합니다 (주소는 이름으로만 쓰임)."
+        : "영역 한 변은 " + AREA_MIN_M + "m~" + AREA_MAX_M.toLocaleString() + "m여야 합니다.") +
+        '<a id="clear">영역 지우기(주소+반경으로)</a>';
+      $("clear").onclick = function () { setArea(null, null); };
+    }
+
+    // 백엔드 주소를 받으면 그 서버의 Leaflet·배경지도로 지도를 띄운다(외부 CDN 불필요 — 사내망 대비).
+    window.setBackend = function (base) {
+      if (map || !base) return;
+      var css = document.createElement("link");
+      css.rel = "stylesheet"; css.href = base + "/vendor/leaflet/leaflet.css";
+      document.head.appendChild(css);
+      var js = document.createElement("script");
+      js.src = base + "/vendor/leaflet/leaflet.js";
+      js.onload = function () { initMap(base); };
+      js.onerror = function () { $("maphint").textContent = "지도를 불러오지 못했습니다(주소+반경으로는 생성 가능)."; };
+      document.head.appendChild(js);
+    };
+    function initMap(base) {
+      map = L.map("map", { minZoom: 6, maxZoom: 19 }).setView([36.34, 127.37], 15);
+      var baseLayer = L.tileLayer(base + "/api/basemap/base/{z}/{x}/{y}", { maxZoom: 19, attribution: "© VWorld" }).addTo(map);
+      var sat = L.layerGroup([
+        L.tileLayer(base + "/api/basemap/satellite/{z}/{x}/{y}", { maxZoom: 19 }),
+        L.tileLayer(base + "/api/basemap/hybrid/{z}/{x}/{y}", { maxZoom: 19 }),
+      ]);
+      L.control.layers({ "일반지도": baseLayer, "위성": sat }, {}, { position: "topright" }).addTo(map);
+      map.on("click", function (e) {
+        if (drawing) return;
+        setArea(square(e.latlng.lng, e.latlng.lat, radius()), "click");
+      });
+      var start = null, temp = null;
+      map.on("mousedown", function (e) {
+        if (!drawing) return;
+        start = e.latlng;
+        temp = L.rectangle(L.latLngBounds(start, start), { color: "#059669", weight: 2, dashArray: "4" }).addTo(map);
+      });
+      map.on("mousemove", function (e) { if (start && temp) temp.setBounds(L.latLngBounds(start, e.latlng)); });
+      map.on("mouseup", function (e) {
+        if (!start || !temp) return;
+        var b = L.latLngBounds(start, e.latlng);
+        temp.remove(); start = null; temp = null;
+        setDrawing(false);
+        setArea([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], "draw");
+      });
+      if (area) setArea(area, areaHow);
+    }
+    function setDrawing(on) {
+      drawing = on;
+      $("draw").className = on ? "small on" : "small";
+      $("draw").textContent = on ? "지도에서 드래그하세요…" : "▭ 사각형으로 그리기";
+      if (map) { if (on) map.dragging.disable(); else map.dragging.enable(); }
+      $("map").style.cursor = on ? "crosshair" : "";
+    }
+    $("draw").addEventListener("click", function () { setDrawing(!drawing); });
+    $("radius").addEventListener("change", function () {
+      if (area && areaHow === "click") setArea(square((area[0] + area[2]) / 2, (area[1] + area[3]) / 2, radius()), "click");
+    });
+
+    // 주소 검색 — 로컬 파일 창이라 서버 직접 호출(CORS) 대신 Ruby를 거친다(sketchup.geocode → onGeocode).
+    function find() {
+      var a = $("address").value.trim();
+      if (!a) return;
+      if (window.sketchup && typeof window.sketchup.geocode === "function") {
+        $("find").disabled = true; $("find").textContent = "찾는 중…";
+        window.sketchup.geocode(a);
+      }
+    }
+    window.onGeocode = function (res) {
+      $("find").disabled = false; $("find").textContent = "지도에서 찾기";
+      if (!res || res.error) { window.showError((res && res.error) || "주소를 찾지 못했습니다."); return; }
+      var b = square(res.lon, res.lat, radius());
+      setArea(b, "click");
+      // 고른 영역이 여백을 두고 딱 보이게(반경에 따라 확대 수준이 달라진다)
+      if (map) map.fitBounds([[b[1], b[0]], [b[3], b[2]]], { padding: [24, 24], animate: false });
+    };
+    $("find").addEventListener("click", find);
+    $("address").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); find(); } });
+
+    // ── 진행·결과 (Ruby → JS) ────────────────────────────────────────────────
     function hideProgress() {
       $("progress-wrap").style.display = "none";
       $("cancel").style.display = "none";
     }
-
-    // Ruby → JS
     window.showBusy = function () {
       $("warns").innerHTML = "";
       hideProgress();
@@ -126,9 +256,11 @@
 
     $("go").addEventListener("click", function () {
       try {
+        if (!areaOk()) { window.showError("영역 크기가 허용 범위를 벗어났습니다."); return; }
+        if (!area && !$("address").value.trim()) { window.showError("주소를 입력하거나 지도에서 영역을 고르세요."); return; }
         var payload = {
           address: $("address").value,
-          radius_m: parseInt($("radius").value, 10) || 250,
+          radius_m: radius(),
           floor_height_m: parseFloat($("floorh").value) || 3.5,
           terrain: $("terrain").checked,
           orthophoto: $("orthophoto").checked,
@@ -139,6 +271,7 @@
           cadastral: $("cadastral").checked,
           walls: $("walls").checked,
         };
+        if (area) payload.bbox_4326 = area;   // 지도에서 고른 영역 — 주소는 이름으로만
         // sketchup 브리지가 없으면 클릭이 조용히 죽지 않게 — 원인을 화면에 표시.
         if (window.sketchup && typeof window.sketchup.generate === "function") {
           window.sketchup.generate(JSON.stringify(payload));

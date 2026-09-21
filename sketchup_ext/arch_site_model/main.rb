@@ -26,11 +26,11 @@ module ArchSiteModel
     def self.create_dialog
       dlg = UI::HtmlDialog.new(
         dialog_title: "대지모델 생성",
-        preferences_key: "arch_site_model_dialog",
+        preferences_key: "arch_site_model_dialog_v2", # v2: 지도 추가로 창이 커짐 — 예전 저장 크기(440x480) 무시
         scrollable: true,
         resizable: true,
-        width: 440,
-        height: 480,
+        width: 520,
+        height: 860,
         style: UI::HtmlDialog::STYLE_DIALOG,
       )
       dlg.set_file(DIALOG_HTML)
@@ -39,6 +39,14 @@ module ArchSiteModel
       dlg.add_action_callback("ready") do |_ctx, _p|
         fh = Sketchup.read_default(PREF_KEY, "floor_height_m")
         dlg.execute_script("window.setFloorHeight(#{JSON.generate(fh)});") if fh
+        # 지도(Leaflet·배경 타일)는 백엔드가 서빙 — 창이 서버 주소를 알아야 지도를 띄운다.
+        dlg.execute_script("window.setBackend(#{JSON.generate(Settings.backend_url)});")
+      end
+      # 주소 검색: 창은 로컬 파일이라 서버를 직접 부르면 CORS에 막힌다 → Ruby(Sketchup::Http)가 중계.
+      dlg.add_action_callback("geocode") do |_ctx, address|
+        ApiClient.geocode(Settings.backend_url, address.to_s) do |res|
+          dlg.execute_script("window.onGeocode(#{JSON.generate(res)});")
+        end
       end
       dlg
     end
@@ -57,8 +65,8 @@ module ArchSiteModel
 
     def self.handle_generate(dlg, payload)
       params = JSON.parse(payload)
-      if params["address"].to_s.strip.empty?
-        dlg.execute_script("window.showError(#{JSON.generate('주소를 입력하세요.')});")
+      if params["address"].to_s.strip.empty? && params["bbox_4326"].nil?
+        dlg.execute_script("window.showError(#{JSON.generate('주소를 입력하거나 지도에서 영역을 고르세요.')});")
         return
       end
       @cancel = false

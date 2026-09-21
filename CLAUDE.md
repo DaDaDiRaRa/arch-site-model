@@ -260,7 +260,7 @@ frontend/                React + Vite + Tailwind 웹 UI (주소 입력 → /api/
 
 sketchup_ext/            SketchUp 확장(.rbz) — 주소→백엔드 geometry JSON→SketchUp 조립 (Phase B) [B1: 지형+건물]
   arch_site_model.rb     로더(SketchupExtension 등록)
-  arch_site_model/       import_softener(웹 .dae 가져오기 감지 → 지형·도로·보도·수계 면 모서리 soft/smooth, 건물 제외 — EntitiesObserver+ModelObserver#onPlaceComponent, AppObserver#expectsStartupModelNotifications)·main(메뉴·HtmlDialog, 층고 입력 Sketchup 기본설정 기억)·api_client(Sketchup::Http)·builder(지형mesh+건물돌출+정사영상 드레이프+도로/보도 메시·차선·수계 평면·지적 경계(build_cadastral)·QA 결함 핀 — .3dm/F2와 3경로 정합)·settings·dialog.html
+  arch_site_model/       dialog.html(주소 검색·**지도 영역 선택**(Leaflet은 백엔드 `/vendor/leaflet/`에서, 배경은 `/api/basemap` — 외부 CDN 불필요) → bbox_4326로 생성. 주소 검색은 CORS 회피로 Ruby `ApiClient.geocode` 중계, 창 저장키 v2)·import_softener(웹 .dae 가져오기 감지 → 지형·도로·보도·수계 면 모서리 soft/smooth, 건물 제외 — EntitiesObserver+ModelObserver#onPlaceComponent, AppObserver#expectsStartupModelNotifications)·main(메뉴·HtmlDialog, 층고 입력 Sketchup 기본설정 기억)·api_client(Sketchup::Http)·builder(지형mesh+건물돌출+정사영상 드레이프+도로/보도 메시·차선·수계 평면·지적 경계(build_cadastral)·QA 결함 핀 — .3dm/F2와 3경로 정합)·settings·dialog.html
   build_rbz.py           확장 폴더 → dist/arch_site_model.rbz 패키징
 
 docs/

@@ -35,6 +35,7 @@ def main() -> None:
     ap.add_argument("--extension", action="store_true", help="확장 생성 흐름 검증(verify_extension.rb)")
     ap.add_argument("--address", help="--extension: 생성할 주소(기본 대전 괴정동 358)")
     ap.add_argument("--backend", help="--extension: 백엔드 URL(기본 확장에 박힌 운영 주소, 예: http://127.0.0.1:8000)")
+    ap.add_argument("--bbox", help="--extension: 지도 영역 minlon,minlat,maxlon,maxlat (확장 창 사각형 선택과 같은 경로)")
     ap.add_argument("--sketchup", default=DEFAULT_EXE)
     ap.add_argument("--timeout", type=int, default=420)
     a = ap.parse_args()
@@ -45,6 +46,8 @@ def main() -> None:
         script, report = "verify_extension.rb", work / "ext_report.json"
         shutil.copy(HERE / script, work / script)
         over = {k: v for k, v in (("address", a.address), ("backend", a.backend)) if v}
+        if a.bbox:
+            over["bbox_4326"] = [float(v) for v in a.bbox.split(",")]
         if over:
             import json as _json
             (work / "params.json").write_text(_json.dumps(over, ensure_ascii=False), encoding="utf-8")

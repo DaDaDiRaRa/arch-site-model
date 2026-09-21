@@ -65,6 +65,8 @@ UI.start_timer(4, false) do
     backend = params.delete("backend") || ArchSiteModel::Settings.backend_url
     $out[:backend] = backend
     $out[:address] = params["address"]
+    # 주소 검색(확장 창 "지도에서 찾기"가 쓰는 경로)도 함께 확인
+    ArchSiteModel::ApiClient.geocode(backend, params["address"].to_s) { |g| $out[:geocode] = g } if ArchSiteModel::ApiClient.respond_to?(:geocode)
     t0 = Time.now
     stage("request")
     ArchSiteModel::ApiClient.generate(backend, params) do |result|
