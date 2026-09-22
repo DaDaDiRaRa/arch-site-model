@@ -512,7 +512,7 @@ export default function App() {
 
             <p className="mt-4 text-xs text-slate-400">
               패키지(.zip)를 풀면 SketchUp용 .dae(File &gt; Import), Rhino용 .3dm, 정사영상 PNG,
-              좌표 안내문(readme_coords.txt)이 들어 있습니다. 텍스처는 같은 폴더의 PNG를 참조하니 풀어서 여세요.
+              좌표 안내문(readme_coords.txt)이 들어 있습니다. SketchUp용 .dae는 같은 폴더의 PNG를 참조하니 풀어서 여세요(.3dm은 정사영상이 파일 안에 들어 있음).
             </p>
           </div>
         )}

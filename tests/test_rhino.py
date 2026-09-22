@@ -248,6 +248,9 @@ def test_write_3dm_ortho_sets_texcoords_and_material():
         bt = m.Materials[0].GetBitmapTexture()
         assert bt is not None
         assert bt.FileName.endswith("ortho.png")
+        # 정사영상이 .3dm 안에 내장되고, 텍스처 경로가 내장 파일 경로와 같다(.3dm 하나만 받아도 텍스처)
+        embedded = list(m.EmbeddedFilePaths())
+        assert len(embedded) == 1 and embedded[0] == bt.FileName
 
 
 def test_building_extrudes_upward_regardless_of_winding():

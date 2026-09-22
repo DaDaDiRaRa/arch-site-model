@@ -407,7 +407,7 @@ def write_readme(path: str | Path, result_like: dict) -> str:
         "",
         "[파일]",
         "- *.dae : SketchUp File > Import (텍스처는 같은 폴더의 PNG를 참조 — zip을 풀고 여세요)",
-        "- *.3dm : Rhino (같은 PNG 참조)",
+        "- *.3dm : Rhino (정사영상이 파일 안에 들어 있음 — 이 파일만 있어도 텍스처가 붙는다)",
     ]
     p = Path(path)
     p.write_text("\n".join(lines) + "\n", encoding="utf-8-sig")

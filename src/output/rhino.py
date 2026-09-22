@@ -337,8 +337,17 @@ def _apply_ortho_texture(
     mat = rhino3dm.Material()
     mat.Name = "orthophoto"
     tex = rhino3dm.Texture()
-    # 파일명만 저장(절대경로 X) → 다운로드한 .3dm과 PNG를 같은 폴더에 두면 Rhino가 찾음.
-    tex.FileName = Path(ortho_image).name
+    # 정사영상을 .3dm 안에 **내장**한다 — 예전엔 "같은 폴더의 PNG" 참조만 해서, .3dm만 받으면
+    # 텍스처가 빠졌다(2026-09-22 사용자 보고). Rhino는 참조 경로에 파일이 없으면 같은 경로로
+    # 내장된 사본을 쓰고, 그다음 문서 폴더에서 같은 이름을 찾는다 → 경로를 내장 파일과 똑같이 둔다.
+    img = str(Path(ortho_image).resolve())
+    try:
+        ef = rhino3dm.EmbeddedFile.Read(img)
+        if ef is not None:
+            model.EmbeddedFiles.Add(ef)
+    except Exception:  # noqa: BLE001 — 내장 실패해도 같은 폴더 PNG 참조는 동작
+        pass
+    tex.FileName = img
     tex.Enabled = True
     tex.TextureType = rhino3dm.TextureType.Bitmap
     mat.SetBitmapTexture(tex)   # 반환 False라도 참조는 기록됨(rhino3dm 디코더 없음)
