@@ -242,3 +242,17 @@ def test_generate_response_includes_coord(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "JOBS_DIR", tmp_path.resolve())
     body = _client().post("/api/generate", json={"address": "x"}).json()
     assert body["coord"] == {"lon": 127.1, "lat": 37.4}
+
+
+def test_frontend_html_not_cached_assets_immutable():
+    # 배포 뒤 예전 첫 화면이 보이지 않게 HTML은 no-cache, 해시 붙은 assets는 장기 캐시
+    import pytest
+    from starlette.testclient import TestClient as _TC
+
+    if not api._FRONTEND_DIST.is_dir():
+        pytest.skip("frontend/dist 없음(CI는 프론트 빌드 안 함)")
+    c = _TC(api.app)
+    assert c.get("/").headers.get("cache-control") == "no-cache"
+    assert c.get("/guide.html").headers.get("cache-control") == "no-cache"
+    js = next((api._FRONTEND_DIST / "assets").glob("*.js")).name
+    assert "immutable" in c.get(f"/assets/{js}").headers.get("cache-control", "")

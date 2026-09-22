@@ -447,8 +447,28 @@ def get_file(job_id: str, kind: str) -> FileResponse:
 # 반드시 모든 API 라우트 정의 이후에 마운트(루트 "/"가 API를 가리지 않도록).
 # 빌드 산출물(frontend/dist)이 있을 때만 마운트 → 백엔드 단독 실행(개발/테스트)에도 무해.
 _FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+
+class _FrontendFiles(StaticFiles):
+    """프론트 정적 서빙 + 캐시 규칙.
+
+    HTML(index·guide)은 매번 서버에 확인(no-cache) — 캐시 헤더가 없으면 브라우저가 Last-Modified로
+    추정 캐시해, 배포 뒤에도 사용자가 예전 첫 화면을 봤다(2026-09-22 "설명서 버튼이 없다").
+    Vite가 해시를 붙이는 /assets/* 는 내용이 바뀌면 이름이 바뀌므로 1년 immutable.
+    """
+
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        p = str(path).replace("\\", "/")  # 윈도 경로 구분자 통일
+        if p.startswith("assets/"):
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif p in ("", ".", "index.html") or p.endswith((".html", ".txt")):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 if _FRONTEND_DIST.is_dir():
-    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend")
+    app.mount("/", _FrontendFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend")
 
 # --- MCP 마운트 (라우팅 이후, 최종 wrap) -----------------------------------------
 # Starlette Mount 는 "/mcp/{나머지}" 정규식이라 트레일링 슬래시 없는 "/mcp" 자체는
