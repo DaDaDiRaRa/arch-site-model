@@ -24,7 +24,7 @@ from uuid import uuid4
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import PlainTextResponse
 from pydantic import BaseModel, Field, model_validator
@@ -440,7 +440,24 @@ def get_file(job_id: str, kind: str) -> FileResponse:
     if not matches:
         raise HTTPException(status_code=404, detail="파일 없음")
     path = matches[0]
-    return FileResponse(path, filename=path.name)
+    # 청크 스트리밍(Content-Length 없음)으로 보낸다 — Cloud Run은 비스트리밍 응답을 32MiB에서 자른다.
+    # FileResponse는 길이를 먼저 밝혀 상한에 걸렸다: 아산 초사동 패키지 35.7MB → 500
+    # "Response size was too large"(2026-09-22). _json_streaming과 같은 우회.
+    from urllib.parse import quote
+
+    def _chunks():
+        with open(path, "rb") as f:
+            while True:
+                b = f.read(1 << 20)
+                if not b:
+                    break
+                yield b
+
+    media = {".3dm": "application/octet-stream", ".png": "image/png", ".zip": "application/zip"}.get(
+        path.suffix.lower(), "application/octet-stream")
+    # 한글 파일명은 RFC 5987(filename*)로 — 브라우저가 원래 이름으로 저장
+    disp = ("inline" if kind == "ortho" else "attachment") + f"; filename*=UTF-8''{quote(path.name)}"
+    return StreamingResponse(_chunks(), media_type=media, headers={"Content-Disposition": disp})
 
 
 # --- 프론트엔드 정적 서빙 (빌드된 React) ---------------------------------------

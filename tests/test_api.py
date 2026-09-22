@@ -256,3 +256,16 @@ def test_frontend_html_not_cached_assets_immutable():
     assert c.get("/guide.html").headers.get("cache-control") == "no-cache"
     js = next((api._FRONTEND_DIST / "assets").glob("*.js")).name
     assert "immutable" in c.get(f"/assets/{js}").headers.get("cache-control", "")
+
+
+def test_file_download_is_streamed_without_length(monkeypatch, tmp_path):
+    # Cloud Run 32MiB 비스트리밍 상한 회피 — Content-Length 없이 청크 전송, 한글 파일명 보존
+    job = tmp_path / "abc123"
+    job.mkdir()
+    data = b"z" * (3 * (1 << 20) + 17)                     # 여러 청크
+    (job / "대전_package.zip").write_bytes(data)
+    monkeypatch.setattr(api, "JOBS_DIR", tmp_path.resolve())
+    r = _client().get("/api/files/abc123/package")
+    assert r.status_code == 200 and r.content == data
+    assert "content-length" not in {k.lower() for k in r.headers.keys()} or r.headers.get("transfer-encoding") == "chunked"
+    assert "filename*=UTF-8''" in r.headers["content-disposition"]
