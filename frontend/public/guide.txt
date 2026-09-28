@@ -5,7 +5,7 @@
 
 웹사이트 : https://arch-site-model-30350777436.asia-northeast3.run.app
 설명서   : 위 주소 + /guide.html (그림 포함 버전)
-최종 수정: 2026-09-21
+최종 수정: 2026-09-28
 
 
 목차

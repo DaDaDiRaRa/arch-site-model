@@ -66,7 +66,7 @@
   <header>
     <h1>대지모델 생성기 사용 설명서</h1>
     <p>주소나 지도 영역만으로 5m 지형·실측 층수 건물·정사영상이 들어간 3D 대지모델을 만들어 SketchUp·Rhino로 가져옵니다.</p>
-    <p class="muted">최종 수정 2026-09-21 · 앱: <a href="/">대지모델 생성기</a> · <a href="/guide.txt" download>텍스트 파일로 받기</a></p>
+    <p class="muted">최종 수정 <span id="mtime">2026-09-28</span> · 앱: <a href="/">대지모델 생성기</a> · <a href="/guide.txt" download>텍스트 파일로 받기</a></p>
   </header>
 
   <nav class="toc" aria-label="목차">
@@ -250,5 +250,15 @@
     <p class="muted">문의: 앱 담당 김정현</p>
   </section>
 </div>
+<script>
+  // 날짜를 손으로 고치다 빠뜨리지 않게 — 서버가 준 이 파일의 최종 수정 시각을 그대로 보여 준다.
+  (function () {
+    var d = new Date(document.lastModified);
+    if (!isNaN(d)) {
+      document.getElementById("mtime").textContent =
+        d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    }
+  })();
+</script>
 </body>
 </html>
