@@ -91,6 +91,68 @@ def _terrain_bbox_4326(
     )
 
 
+def _grade_pads(client, bbox, offset, coord, dem, solids, layers, warnings):
+    """조성 대지 평탄화 대상 필지를 찾는다 → (지적 피처(재사용), Pad 목록).
+
+    지적을 여기서 먼저 받아 두고 §7 지적 레이어가 그대로 재사용한다(중복 조회 방지).
+    """
+    from shapely.geometry import Point, Polygon
+
+    from src.geo.vworld import DATASET_CADASTRAL, VWorldError
+    from src.geometry.cadastral import features_to_parcels
+    from src.geometry.pad import detect_pads
+
+    try:
+        cada_features = client.get_features(DATASET_CADASTRAL, bbox, geometry=True)
+    except VWorldError as e:
+        warnings.append(f"대지 평탄화: 지적 취득 실패 → 생략 ({e})")
+        return None, []
+    parcels = features_to_parcels(cada_features, offset)
+    if not parcels:
+        warnings.append("대지 평탄화: 반경 내 지적 피처 없음 → 생략")
+        return cada_features, []
+
+    # 대상 필지 = 주소(또는 영역 중심)가 들어 있는 필지
+    ox, oy = offset
+    cx, cy = to_5186(coord["lon"], coord["lat"])
+    site = Point(cx - ox, cy - oy)
+    target_pnu = None
+    if layers.get("pads"):
+        for p in parcels:
+            try:
+                if Polygon(p.footprint_m).contains(site):
+                    target_pnu = p.pnu
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+        if target_pnu is None:
+            warnings.append("대지 평탄화: 대상 지점이 든 필지를 찾지 못함 (주변 후보만 적용)")
+
+    walls = []
+    if layers.get("pads_candidates"):
+        from src.geometry.wall import clip_walls
+        from src.terrain.store import find_wall_files
+
+        wl = find_wall_files(bbox)
+        if wl:
+            walls = clip_walls(
+                [config.wall_file_path(w["file"]) for w in wl], _bbox_4326_to_5186(bbox), offset,
+            )
+
+    pads = detect_pads(
+        parcels, dem, footprints=[s.footprint_m for s in solids], target_pnu=target_pnu,
+        include_candidates=bool(layers.get("pads_candidates")), walls=walls,
+    )
+    if not pads:
+        warnings.append("대지 평탄화: 조건(지목·건물·고저차)에 맞는 필지 없음 → 지형 그대로")
+    else:
+        warnings.append(
+            f"대지 평탄화(추정): 필지 {len(pads)}개를 '높은 쪽' 높이로 평탄화 — "
+            "원지형(등고선)에는 없는 조성 지형 추정입니다. 정확히 하려면 현황측량도가 필요합니다."
+        )
+    return cada_features, pads
+
+
 def _safe_filename(address: str) -> str:
     """주소 → 파일명으로 쓸 수 있는 ASCII-safe 문자열."""
     s = re.sub(r"[^\w가-힣]+", "_", address).strip("_")
@@ -311,6 +373,8 @@ def generate(
     elev_range: list[float] | None = None
     terrain_tile_file: str | None = None
     dem = None  # 지적 드레이프(_build_geometry)에서도 재사용 — 함수 스코프로 유지
+    pads: list = []          # 조성 대지 평탄화(추정) 결과 — stats·경고·신뢰도 리포트에 싣는다
+    prefetched_cada = None   # 평탄화가 먼저 받아 둔 지적 피처(§7이 재사용 → 중복 조회 방지)
 
     # 지형(및 그 위에 드레이프되는 정사영상)은 건물 실제 범위까지 덮는다 —
     # 경계에 걸친 건물이 지형 없는 허공에 앉지 않도록. 건물이 bbox를 안 넘으면 bbox와 동일.
@@ -347,7 +411,17 @@ def generate(
                     )
                 else:
                     elev_range = list(zr)
-                    # 건물은 원본(버닝 전) 지면에 앉힌다 — 도로 버닝 영향 안 받게.
+                    # 6a. 조성 대지 평탄화(옵션) — **건물 앉히기 전에** 해야 건물이 평평해진 대지에
+                    #     올라앉는다. 추정이므로 기본 꺼짐(layers.pads / pads_candidates).
+                    if layers.get("pads") or layers.get("pads_candidates"):
+                        prefetched_cada, pads = _grade_pads(
+                            client, bbox, offset, coord, dem, solids, layers, warnings,
+                        )
+                        if pads:
+                            from src.geometry.pad import burn_pads
+
+                            dem = burn_pads(dem, pads)
+                    # 건물은 (평탄화 반영된) 원본 지면에 앉힌다 — 도로 버닝 영향은 안 받게.
                     solids = [
                         replace(s, base_z_m=seat_building(s, dem))
                         for s in solids
@@ -362,7 +436,8 @@ def generate(
         from src.geometry.cadastral import features_to_parcels
 
         try:
-            cada_features = client.get_features(
+            # 평탄화가 이미 받아 둔 게 있으면 그대로 쓴다(같은 bbox — 중복 조회 방지)
+            cada_features = prefetched_cada if prefetched_cada is not None else client.get_features(
                 DATASET_CADASTRAL, bbox, geometry=True
             )
         except VWorldError as e:
@@ -736,6 +811,7 @@ def generate(
             "water": water_count,
             "walls": len(walls_geom) if walls_geom else 0,
             "planning_lines": len(planning) if planning else 0,
+            "pads_graded": len(pads),
             "origin_offset": list(offset),   # 복원용 — 필수 저장 (사양서 §6.1)
             "elev_range_m": elev_range,
         },
@@ -743,6 +819,7 @@ def generate(
         "warnings": warnings,
         "qa": qa_result,
         "zoning": zoning,
+        "pads": [p.to_dict() for p in pads] or None,   # 조성 대지 평탄화(추정) 내역
     }
     # 데이터 신뢰도 리포트(A-1) — 조립된 결과 위의 순수 뷰. 소비자(웹/노트)가 렌더만.
     from src.trust_report import build_trust_report

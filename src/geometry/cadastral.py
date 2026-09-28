@@ -17,6 +17,8 @@ from src.geo.crs import apply_offset, to_5186
 class CadastralParcel:
     pnu: str
     footprint_m: list[tuple[float, float]]  # 로컬 미터 (origin_offset 적용)
+    jibun: str = ""     # 예 "450-1 대"
+    jimok: str = ""     # 지목 한 글자(대·장·창·전·임…) — 조성 대지 판별(pad.py)에 쓴다
 
 
 def _largest_exterior(geom: dict) -> list[tuple[float, float]] | None:
@@ -79,7 +81,7 @@ def clip_parcels(
             n = max(1, int(((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5 // step_m))
             dense += [(x1 + (x2 - x1) * k / n, y1 + (y2 - y1) * k / n) for k in range(n)]
         if len(dense) >= 3:
-            out.append(CadastralParcel(pnu=p.pnu, footprint_m=dense))
+            out.append(CadastralParcel(pnu=p.pnu, footprint_m=dense, jibun=p.jibun, jimok=p.jimok))
     return out
 
 
@@ -95,10 +97,13 @@ def features_to_parcels(
     for feat in features:
         props = feat.get("properties") or {}
         pnu = str(props.get("pnu") or props.get("bub_cd") or "unknown")
+        jibun = str(props.get("jibun") or "")
+        # 지목은 지번 끝 글자("450-1 대" → "대"). 숫자로 끝나면 지목 정보가 없는 것.
+        jimok = jibun.strip()[-1:] if jibun.strip()[-1:].isalpha() or not jibun.strip()[-1:].isdigit() else ""
         ring = _largest_exterior(feat.get("geometry"))
         if ring is None:
             continue
         fp_5186 = [to_5186(lon, lat) for lon, lat in ring]
         fp_local = apply_offset(fp_5186, offset)
-        parcels.append(CadastralParcel(pnu=pnu, footprint_m=fp_local))
+        parcels.append(CadastralParcel(pnu=pnu, footprint_m=fp_local, jibun=jibun, jimok=jimok))
     return parcels

@@ -75,6 +75,7 @@ export default function App() {
   const [qa, setQa] = useState(false);
   const [zoning, setZoning] = useState(false);
   const [planning, setPlanning] = useState(true);
+  const [pads, setPads] = useState(false);          // 조성 대지 평탄화(추정) — 기본 꺼짐
   const [floorH, setFloorH] = useState<number>(loadFloorH);
 
   // 지도 영역: 주소 검색·클릭은 반경 정사각형(반경 바꾸면 따라감), 드래그는 자유 사각형
@@ -145,6 +146,7 @@ export default function App() {
           layers: {
             buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral, roads,
             water: terrain && water, qa, zoning, planning,
+            pads: terrain && pads,
           },
           outputs: ["3dm", "dae"],
         }),
@@ -376,6 +378,19 @@ export default function App() {
                 className="h-4 w-4 rounded border-slate-300"
               />
               용도지역
+            </label>
+            <label
+              className="mt-5 flex items-center gap-2 text-sm text-slate-700"
+              title="대상 대지가 깎고 채워 평평하게 조성됐다고 보고, 지형을 '높은 쪽' 높이로 맞춥니다. 등고선에 없는 추정입니다."
+            >
+              <input
+                type="checkbox"
+                checked={pads}
+                disabled={!terrain}
+                onChange={(e) => setPads(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 disabled:opacity-40"
+              />
+              대상 대지 평탄화 <span className="text-xs text-amber-600">(추정)</span>
             </label>
             <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
               <input

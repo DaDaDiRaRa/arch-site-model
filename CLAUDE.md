@@ -104,6 +104,11 @@
       삭제 요구·API 폐쇄된 **단속 대상 경로**(표고 스크래핑과 동일). 합법 경로는 ⓐ VWorld 3D 지도 웹 내보내기(2025-01부터
       obj/dae/3ds, 수동·약관 미확인) 안내 링크 ⓑ NGII 3차원 건물모형(공개제한, 기관 신청) — 안심구역 문의(`docs/ngii_data_inquiry_plan.md`)에
       한 항목 추가. 핵심 원칙(실측 층수 돌출)엔 불필요, 정사영상 드레이프로 시각 요구 대부분 충족.
+- [ ] **조성 대지 평탄화 검증·보정**(2026-09-28 도입, 기본 꺼짐): 전국 표본(건물 있는 지점 200곳·개발지 필지 2,126개,
+      `scripts/graded_site_survey.py sample`) — 필지 안 고저차 ≥2m가 30%, 그중 경계 옹벽 등록은 34%뿐. 지목 '대'만으론
+      자연 비탈과 구분 불가라 **주변 필지는 공장·창고 등 지목 또는 등록 옹벽(13%)만** 후보로 잡는다. 정답 데이터가 없어
+      정확도 미검증 — **현장 아는 대지 10곳(평탄 조성/비탈 그대로 혼합)** 확보해 규칙 보정 필요. 평탄화 높이는 "높은 쪽"
+      고정(사용자 결정, 사진 근거). 근본 해법은 현황측량도 DXF·1m 라이다 DEM.
 - [ ] **층수 공백 보강 검토**: VWorld LT_C_SPBD `gro_flo_co`가 오래된 저층 밀집지에서 대량 0(실측 2026-09-21 성남 태평동
       6795 반경 150m: 504동 중 491동 → 전부 1층 추정·주황). 2019 사내 표준 PPT는 국가공간정보포털 **건물통합정보**(새움터)
       SHP가 "층수는 빠짐없이 있다"고 기록 — 보조 출처로 붙일지(오프라인 비축 or API) 검토. 추정 규칙(A-2 주황 표시)은 유지.
@@ -226,6 +231,7 @@ src/
     building.py          LT_C_SPBD features → BuildingSolid (쿼드 솔리드, 홀 포함)
     terrain_surface.py   DEMPatch → 격자점 보간 3차 NURBS 데이터(.3dm terrain_surface 레이어, Rhino 설계 작업용)
     terrain_mesh.py      DEMPatch → TerrainMesh (TIN 삼각망, Phase 3B). grid_to_tin(균일) + adaptive_tin(오차 한계 적응형, scipy greedy insertion) + adaptive_select/pixel_to_local_m(통합표면용 분리) + build_tin(디스패처, config.TERRAIN_MAX_ERROR_M)
+    pad.py               조성 대지 평탄화(추정) — detect_pads(지목·건물·고저차 규칙)·burn_pads(필지 안 DEM을 pad_z로). 건물 앉히기 **전에** 적용(pipeline §6a). 경계 옹벽 버닝 재사용은 같은 셀 반복 하강으로 지형이 더 파여 폐기(2026-09-28)
     seating.py           BuildingSolid + DEMPatch → base_z 앉힘 (Phase 3B)
     cadastral.py         LP_PA_CBND_BUBUN features → CadastralParcel (Phase 5)
     road.py              도로/보도 런타임 (Phase R). clip_roads/clip_sidewalks/clip_centerlines/clip_lane_markings(GeoJSON→로컬미터, json+shapely — _load_features로 단일 경로 또는 겹치는 타일 리스트 병합 수용, 메트로 타일 서빙) + burn_roads(도로를 DEM에 소각: footprint 절토/성토·스커트·IDW교차블렌딩·자기지면 클램프) + build_unified_surface(★지형·도로·보도를 1번 Delaunay로 삼각화→재질별 3메시, 정점공유로 이음매0. 보도우선(도로겹침 컬링 방지)·경계 edge_cell 샤프닝) + clip_lane_markings(중심선 props 차로수·도로폭→평행 차선 구분선, offset_curve, 구분선은 _dash_line 점선·중앙선 실선)/drape_centerlines(차선 드레이프) + _read_geojson_text(로컬/HTTP fetch+캐시 — 클라우드 도로 서빙) + apply_crown + build_road_mesh/carve_terrain/build_terrain_conformed(폴백·구버전)
@@ -320,6 +326,7 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 | `{"buildings": true, "terrain": true, "water": true}` | 지형 + 수계(E계열 하천·호소 → 표고고정 평면 수면 + 지형 물 아래로 버닝). `water_manifest.json`/GeoJSON 비축 필요, 지형(DEM) 필요 — 없으면 조용히 생략+warnings |
 | `{..., "qa": true}` | 자동 QA(검증) 실행 → `result.qa = {findings, summary}` (건물 앉힘·겹침·지형 스파이크). 다른 레이어와 무관하게 켤 수 있음. 웹 UI가 결함 목록 표시 |
 | `{"buildings": true, "terrain": true, "orthophoto": true}` | 지형에 정사영상 텍스처 (.3dm=Rhino 텍스처 / .skp=데스크톱 확장 B2 드레이프) |
+| `{..., "pads": true}` | **조성 대지 평탄화(추정, 기본 꺼짐)** — 등고선 DEM엔 없는 "깎고 채워 평평하게 만든 대지"를 반영. 대상 필지(주소·영역 중심이 든 필지)를 원지형 상위90%("높은 쪽") 높이로 평탄화하고 그 위에 건물을 앉힌다. `pads_candidates`면 주변 필지도 — 단 지목이 공장·창고·주차장 등이거나 경계에 실측 옹벽이 있는 필지만(전국 표본 13%). `result.pads`·`stats.pads_graded`·경고에 추정임을 남긴다 |
 | `{..., "planning": true}` | 도시계획 결정선(지구단위계획구역·도시계획도로·교통·공간시설 등, VWorld UPIS) → `geometry.planning[{cat,label,name,line}]`(지형 드레이프). .3dm `도시계획_<분류>` 레이어·.dae·F2·확장 태그. 판정 없음(표시만) |
 | `{"buildings": true, "zoning": true}` | 사이트 용도지역 조회 (arch-law-graph `/api/zoning`, `ZONING_BASE` 필요) → `result.zoning{zone_name, zone_key, sido, sigungu}`. 웹 배지 표시. 미설정/미도달 시 조용히 생략 |
 

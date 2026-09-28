@@ -71,6 +71,7 @@
     <label class="chk"><input type="checkbox" id="planning" checked /> 도시계획</label>
     <label class="chk"><input type="checkbox" id="cadastral" checked /> 지적</label>
     <label class="chk"><input type="checkbox" id="walls" /> 옹벽</label>
+    <label class="chk" title="대상 대지를 '높은 쪽' 높이로 평평하게 — 등고선에 없는 조성 지형 추정"><input type="checkbox" id="pads" /> 대지 평탄화(추정)</label>
   </div>
 
   <button id="go">모델 생성</button>
@@ -270,6 +271,7 @@
           planning: $("planning").checked,
           cadastral: $("cadastral").checked,
           walls: $("walls").checked,
+          pads: $("pads").checked,
         };
         if (area) payload.bbox_4326 = area;   // 지도에서 고른 영역 — 주소는 이름으로만
         // sketchup 브리지가 없으면 클릭이 조용히 죽지 않게 — 원인을 화면에 표시.

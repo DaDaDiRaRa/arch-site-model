@@ -51,14 +51,18 @@ end
 UI.start_timer(4, false) do
   begin
     model = Sketchup.active_model
-    # 기본 템플릿의 사람 모형 제거(치수·재질 통계 오염 방지)
+    # 기본 템플릿의 사람 모형·이전 실험 잔재 제거(치수·재질 통계 오염 방지)
     model.entities.to_a.each { |e| e.erase! if e.valid? }
+    model.definitions.purge_unused
+    before = model.definitions.map(&:name)
     $out[:import_ok] = model.import(DAE, show_summary: false)
     model.select_tool(nil)
     if model.entities.length == 0
       # 실제 사용처럼 가져온 최상위 정의를 원점에 놓는다(사용자가 배치 도구로 클릭하는 것과 같은 결과)
+      # 이번 가져오기로 새로 생긴 정의 중에서만 고른다(빈 파일 잔재를 잘못 놓던 문제)
       root = model.definitions.to_a
-                  .reject { |d| d.group? || d.image? || d.name.start_with?("Sree") || !d.instances.empty? }
+                  .reject { |d| d.group? || d.image? || d.name.start_with?("Sree") || !d.instances.empty? ||
+                                before.include?(d.name) }
                   .max_by { |d| d.entities.length }
       model.entities.add_instance(root, Geom::Transformation.new) if root
       $out[:placed_manually] = root ? root.name : nil

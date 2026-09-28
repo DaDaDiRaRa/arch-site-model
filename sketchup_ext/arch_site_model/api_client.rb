@@ -44,6 +44,7 @@ module ArchSiteModel
           "planning"   => params["planning"] == true,  # 지구단위계획·도시계획시설 결정선
           "cadastral"  => params["cadastral"] == true, # 지적선(지형 드레이프) — builder.build_cadastral
           "walls"      => params["walls"] == true,     # 옹벽 상단선 + 지형 단차(지형 필요)
+          "pads"       => params["pads"] == true,      # 조성 대지 평탄화(추정, 지형 필요)
         },
         "outputs"    => ["skp"],  # .3dm 불필요 — geometry + 정사영상 URL만 받음
       }
