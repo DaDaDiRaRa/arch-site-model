@@ -228,8 +228,11 @@ def _water_burn(out: SurfaceResult) -> None:
 def _decks(out: SurfaceResult, bbox_4326, bbox_5186, offset, warnings) -> None:
     """교량·터널 발자국 확보 → 종단 풀이. `config.DECK_SOURCE`가 데이터원을 고른다.
 
-    "auto"(기본)는 데크 레이어가 비축돼 있으면 그걸 쓰고, 없으면 **수계 프록시**(도로 ∩ 수계)로
-    떨어진다 — 재베이크 0으로 코즈웨이를 잡되, 두 경로가 완전히 같은 코드를 탄다.
+    "auto"(기본)는 **두 소스를 합친다** — 실측 데크 레이어와 수계 프록시(도로 ∩ 수계).
+    둘 다 실측이고 서로를 보완한다: 레이어는 물 없는 곳의 교량·터널까지 주지만 교량이 없는
+    타일은 아예 없어 공백이 생기고(실측: 부여 구교리 2km 타일에 교량 폴리곤 없음), 프록시는
+    물을 건너는 곳만 보지만 빠짐이 없다. 겹치면 `deck_u` union이 흡수한다.
+    "layer"/"water"는 한쪽만 — 두 소스를 교차검증할 때 쓴다.
     """
     from src.geometry import deck as D
     from src.terrain.store import find_deck_files
@@ -241,11 +244,11 @@ def _decks(out: SurfaceResult, bbox_4326, bbox_5186, offset, warnings) -> None:
     if src in ("auto", "layer"):
         dl = find_deck_files(bbox_4326)
         if dl:
-            feats = D.clip_decks(
+            feats += D.clip_decks(
                 [config.deck_file_path(d["file"]) for d in dl], bbox_5186, offset
             )
-    if not feats and src in ("auto", "water"):
-        feats = D.decks_from_water(
+    if src in ("auto", "water"):
+        feats += D.decks_from_water(
             out.water_features or [], out.road_features or [],
             margin_m=config.DECK_MARGIN_M,
         )

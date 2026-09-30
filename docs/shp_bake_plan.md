@@ -162,6 +162,33 @@ python -m src.terrain.wall_bake "<SHP폴더>" `
 
 ---
 
+## 4c. 교량·터널 굽기 (데크)
+
+```powershell
+python -m src.terrain.deck_bake "<SHP폴더>" `
+    --out geo_store/decks_<지역>.geojson --region "<지역명>" `
+    --tile-km 2
+```
+
+`A0070000` 교량 · `A0090000` 지하/고가차도 · `A0110020` 터널의 **면**을 담는다. 등고선 DEM에는
+교량 데크가 없어 도로가 하천 바닥까지 구워졌다 — 실측 기준선(`docs/bridge_baseline.json`,
+서울 4지점): 수면 3m 내 도로 정점 6,135개 중 **4,779개(78%)가 수면 아래**. 런타임
+(`geometry/deck.py`)이 이 면을 **도로 버닝 제외 마스크**로 쓰고 양단 실측 표고를 이은 데크를
+DEM 위로 띄운다 → 같은 지점 **254개(-95%)**, 이촌동은 4,133 → 4.
+
+- ⚠️ **하드클립하지 않는다.** 폴리곤 양 끝이 종단 z를 정의하므로(아붓먼트) 자르면 그 정보가
+  파괴된다. 닿는 타일마다 **통째로 복제**하고 전역 id `"i"`로 런타임이 중복 제거
+  (실측 충남: 원본 17,544 → 배치 18,088, 복제계수 1.03 — 비용 무의미)
+- `HEIG`는 **통과높이이지 데크고가 아니다**. 데크 표고는 런타임이 양단에서 구한다
+- 고가차도는 **비활성**(아붓먼트가 지면이라 2점 보간이 물리적으로 틀림). 데이터만 실어 둔다
+- 서빙은 `DECK_BASE`(옹벽 `WALL_BASE`와 동형)
+- **이 레이어 없이도 동작한다** — `DECK_SOURCE="auto"`(기본)가 수계 프록시(도로 ∩ 수계)와
+  **합집합**으로 쓴다. 프록시는 재베이크 0으로 물 횡단을 빠짐없이 잡고, 레이어는 물 없는
+  교량·터널을 더한다(실측 아산: 프록시 7 · 레이어 6 → 합집합 **9**)
+- 비축 현황: **충청남도만**(2,047타일). 나머지 시도는 같은 명령 반복
+
+---
+
 ## 5. COG 변환 + GCS 업로드
 
 ```powershell
@@ -169,10 +196,11 @@ python -m src.terrain.wall_bake "<SHP폴더>" `
 python scripts/dem_to_cog.py geo_store --out cog_out --bucket arch-site-model-dem --prefix dem
 gcloud storage cp cog_out/*.tif gs://arch-site-model-dem/dem/
 
-# 도로·수계·옹벽 GeoJSON (COG 변환 없이 그대로)
+# 도로·수계·옹벽·데크 GeoJSON (COG 변환 없이 그대로)
 gcloud storage cp geo_store/roads_<지역>*.geojson gs://<버킷>/roads/
 gcloud storage cp geo_store/water_<지역>*.geojson gs://<버킷>/water/
 gcloud storage cp geo_store/walls_<지역>*.geojson gs://<버킷>/walls/
+gcloud storage cp geo_store/decks_<지역>*.geojson gs://<버킷>/decks/
 ```
 
 공개 버킷이라 `/vsicurl` 익명 읽기가 되고 인증·서비스계정이 필요 없다.
