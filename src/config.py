@@ -146,6 +146,22 @@ ROAD_CROWN_CAP_M = _envf("ROAD_CROWN_CAP_M", 15.0)
 ROAD_EDGE_CELL_M = _envf("ROAD_EDGE_CELL_M", 1.0)
 
 
+# --- 교량 데크(deck) ---
+# 등고선 DEM에는 교량 데크가 없어 도로가 하천 바닥까지 구워진다(실측: 수면 근처 도로 정점의
+# 78%가 수면 아래, docs/bridge_baseline.json). 데크를 DEM에 넣지 않고 양단 실측 표고 사이를
+# 호장 선형으로 이어 **DEM 위로 띄운다**(src/geometry/deck.py).
+#
+# DECK_SOURCE: "auto"(기본) = 데크 레이어가 비축돼 있으면 그걸 쓰고, 없으면 수계 프록시
+#   (도로 ∩ 수계 = 교량, 재베이크 0). "layer"|"water"로 고정, "off"면 기능 끔.
+DECK_SOURCE = os.environ.get("DECK_SOURCE", "auto")
+DECK_MARGIN_M = _envf("DECK_MARGIN_M", 4.0)          # 프록시: 물가선 대신 둑 위에서 노면과 만나게
+DECK_MAX_SPAN_M = _envf("DECK_MAX_SPAN_M", 400.0)    # 이보다 긴 구간은 교량으로 보지 않음
+DECK_MIN_STRAIGHTNESS = _envf("DECK_MIN_STRAIGHTNESS", 0.8)  # 현/호장 — 사행 강변도로 걸러냄
+DECK_MIN_CLEARANCE_M = _envf("DECK_MIN_CLEARANCE_M", 0.30)   # 노면이 수면보다 최소 이만큼 위
+DECK_ANCHOR_SPAN_M = _envf("DECK_ANCHOR_SPAN_M", 10.0)       # 아붓먼트 표고 읽을 육상 구간
+# 데크 타일도 도로·수계·옹벽과 같은 방식으로 서빙(gs:// 주면 HTTP로 읽음).
+DECK_BASE = os.environ.get("DECK_BASE", str(GEO_STORE))
+
 # 수계(E계열) GeoJSON 서빙 위치 — 도로(ROAD_BASE)와 동형. 미설정 시 로컬 geo_store.
 WATER_BASE = os.environ.get("WATER_BASE", str(GEO_STORE))
 # 옹벽 타일도 도로·수계와 같은 방식으로 서빙(gs:// 주면 HTTP로 읽음).
@@ -174,6 +190,16 @@ def water_file_path(filename: str) -> str:
 def wall_file_path(filename: str) -> str:
     """wall_manifest의 옹벽 파일명 → 실제 읽기 위치. water_file_path와 동형."""
     base = WALL_BASE
+    if base.startswith("gs://"):
+        base = "https://storage.googleapis.com/" + base[len("gs://"):]
+    if base.startswith(("http://", "https://")):
+        return base.rstrip("/") + "/" + filename
+    return str(Path(base) / filename)
+
+
+def deck_file_path(filename: str) -> str:
+    """deck_manifest의 교량·터널 파일명 → 실제 읽기 위치. wall_file_path와 동형."""
+    base = DECK_BASE
     if base.startswith("gs://"):
         base = "https://storage.googleapis.com/" + base[len("gs://"):]
     if base.startswith(("http://", "https://")):

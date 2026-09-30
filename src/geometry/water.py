@@ -121,9 +121,15 @@ def build_water_mesh(features, water_zs, dem, cell: float = 10.0, lift: float = 
 
 
 def burn_water(dem, features, water_zs):
-    """수계 폴리곤 내부 DEM 셀을 수면 z로 세팅 → 지형이 물 위로 삐져나오지 않게(평평한 수저).
+    """수계 폴리곤 내부 지형을 수면 z 이하로 **내린다** → 지형이 물 위로 삐져나오지 않게.
 
     새 DEMPatch 반환(원본 불변). 수계 없으면 원본 그대로.
+
+    ⚠️ `= wz`(덮어쓰기)가 아니라 `minimum`(내리기만)이다. 선언한 계약("지형이 물 위로 삐져
+    나오지 않게")은 minimum으로 정확히 달성되고, 덮어쓰기는 그 이상으로 **하천 바닥까지
+    메운다**. 수면 메시가 `wz + WATER_LIFT_M` 평면이라 바닥이 낮아도 가려진다.
+    덮어쓰기는 두 가지를 망쳤다 — 도로 버닝이 세운 교량 데크 표고를 지웠고(코즈웨이),
+    수계 경계를 따라 그려진 제방 마루를 `all_touched` 한 셀 번짐으로 깎았다.
     """
     grid = getattr(dem, "grid", None)
     if grid is None or grid.size == 0 or not features:
@@ -152,5 +158,5 @@ def burn_water(dem, features, water_zs):
         mask = rasterize(
             [(poly, 1)], out_shape=(rows, cols), transform=tf, fill=0, all_touched=True
         ).astype(bool)
-        new[mask] = wz
+        new[mask] = np.minimum(new[mask], wz)
     return DEMPatch(grid=new.astype(np.float32), transform=tf, offset=dem.offset)

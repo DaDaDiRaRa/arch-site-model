@@ -34,6 +34,12 @@ export interface SiteGeometry {
     triangles: [number, number, number][];
     outlines: [number, number, number][][];
   } | null;
+  // 교량 데크 — 도로와 같은 노면이지만 z가 DEM이 아니라 실측 양단 보간(공중 구조물).
+  decks?: {
+    vertices: [number, number, number][];
+    triangles: [number, number, number][];
+    outlines: [number, number, number][][];
+  } | null;
   // 도시계획 경계선(지구단위계획·도시계획시설) — 지형 드레이프, 분류(cat)별 색
   planning?: { cat: string; label: string; name: string; line: [number, number, number][] }[] | null;
   ortho_extent_m: [number, number, number, number] | null;
@@ -71,6 +77,7 @@ const C_ROAD_EDGE = 0x3a3f45; // 짙은 그레이 — 도로 외곽선
 const C_SIDEWALK = 0xb0aca0; // 콘크리트 베이지그레이 — 보도 (R3)
 const C_LANE = 0xe8c84a; // 노랑 — 차선/중심선 마킹 (R3)
 const C_WATER = 0x3a6ea5; // 강물 블루 — 수계 (평면 수면)
+const C_DECK = 0x787880; // 교량 데크 — 지형이 아니라 공중 구조물(도로보다 밝은 회색)
 // 도시계획 분류색 — src/geo/planning.py PLANNING_LAYERS 와 동일(.3dm·.dae와 통일)
 const C_PLANNING: Record<string, number> = {
   district_plan: 0xe632b4, plan_road: 0xdc3c28, transport: 0x285ac8, open_space: 0x22a03c,
@@ -97,6 +104,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
     sidewalks?: THREE.Object3D | null;
     lanes?: THREE.Object3D | null;
     water?: THREE.Object3D | null;
+    decks?: THREE.Object3D | null;
     planning?: THREE.Object3D | null;
     qa?: THREE.Object3D | null;
     buildingMeshes: THREE.Mesh[];
@@ -192,6 +200,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
       const sidewalks = buildSurfaceMesh(geometry.sidewalks, C_SIDEWALK, SIDEWALK_LIFT);
       const lanes = buildLanes(geometry.lanes);
       const water = buildSurfaceMesh(geometry.water, C_WATER, 0);
+      const decks = buildSurfaceMesh(geometry.decks, C_DECK, 0);
       const qaMarkers = buildQaMarkers(qa, geometry);
       const planning = buildPlanning(geometry.planning);
       if (buildings) root.add(buildings);
@@ -201,6 +210,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
       if (sidewalks) root.add(sidewalks);
       if (lanes) root.add(lanes);
       if (water) root.add(water);
+      if (decks) root.add(decks);
       if (qaMarkers) root.add(qaMarkers);
       if (planning) root.add(planning);
 
@@ -210,7 +220,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
       // 지형이 없으면 그림자를 받을 바닥면을 깔아 건물 그림자가 보이게 한다.
       if (!terrain && !box.isEmpty()) root.add(shadowGround(box));
 
-      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, water, planning, qa: qaMarkers, buildingMeshes: meshes, edges, sun };
+      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, water, decks, planning, qa: qaMarkers, buildingMeshes: meshes, edges, sun };
       if (!box.isEmpty()) {
         fitCamera(camera, controls, box);
         frameSunShadow(sun, box);
@@ -283,6 +293,8 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
     if (sceneRefs.current.sidewalks) sceneRefs.current.sidewalks.visible = showSidewalks;
     if (sceneRefs.current.lanes) sceneRefs.current.lanes.visible = showLanes;
     if (sceneRefs.current.water) sceneRefs.current.water.visible = showWater;
+    // 데크는 노면이므로 '도로' 토글을 따른다.
+    if (sceneRefs.current.decks) sceneRefs.current.decks.visible = showRoads;
     if (sceneRefs.current.qa) sceneRefs.current.qa.visible = showQa;
     if (sceneRefs.current.planning) sceneRefs.current.planning.visible = showPlanning;
   }, [showBuildings, showTerrain, showCadastral, showRoads, showSidewalks, showLanes, showWater, showQa, showPlanning]);

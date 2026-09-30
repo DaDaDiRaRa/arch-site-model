@@ -17,6 +17,7 @@ module ArchSiteModel
     C_SIDEWALK = [176, 172, 160].freeze # 콘크리트 베이지그레이 (F2 C_SIDEWALK)
     C_LANE     = [232, 200, 74].freeze  # 노랑 — 차선/중심선 마킹 (F2 C_LANE)
     C_WATER    = [58, 110, 165].freeze  # 강물 블루 — 수계 (F2 C_WATER)
+    C_DECK     = [120, 120, 128].freeze # 교량 데크 — 공중 구조물(F2 C_DECK)
     C_QA_WARN  = [220, 38, 38].freeze   # 빨강 — QA 경고 핀
     C_QA_INFO  = [245, 158, 11].freeze  # 주황 — QA info 핀
     C_CADASTRAL = [220, 200, 100].freeze # 샌디 옐로 — 지적 경계 (rhino .3dm / F2와 동일)
@@ -126,6 +127,8 @@ module ArchSiteModel
       build_lanes(model, parent_ents, geometry["lanes"])
       # 수계 — 평면 수면(z는 백엔드가 이미 리프트) → lift_m=0.
       build_surface_mesh(model, parent_ents, geometry["water"], "water", C_WATER, 0.0)
+      # 교량 데크 — z가 이미 실측 양단 보간 종단이므로 리프트 없음.
+      build_surface_mesh(model, parent_ents, geometry["decks"], "decks", C_DECK, 0.0)
       n = build_buildings(model, parent_ents, geometry["buildings"] || [])
       build_cadastral(model, parent_ents, geometry["cadastral"])
       build_walls(model, parent_ents, geometry["walls"])

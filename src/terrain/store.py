@@ -189,6 +189,41 @@ def find_wall_files(bbox, manifest: list[dict] | None = None) -> list[dict]:
     return [h[0] for h in hits]
 
 
+def _deck_manifest_path() -> Path:
+    return config.GEO_STORE / "deck_manifest.json"
+
+
+def load_deck_manifest(path: Path | None = None) -> list[dict]:
+    """deck_manifest.json의 교량·터널 타일 목록. 파일 없으면 빈 목록(비축 없음)."""
+    path = path or _deck_manifest_path()
+    if not path.exists():
+        return []
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, dict):
+        return data.get("decks", [])
+    if isinstance(data, list):
+        return data
+    return []
+
+
+def find_deck_files(bbox, manifest: list[dict] | None = None) -> list[dict]:
+    """질의 bbox(EPSG:4326)와 겹치는 교량·터널 타일 전부(겹침 큰 순)."""
+    entries = manifest if manifest is not None else load_deck_manifest()
+    query = box(*bbox)
+    hits: list[tuple[dict, float]] = []
+    for e in entries:
+        bounds = e.get("bounds_4326")
+        if not bounds or len(bounds) != 4:
+            continue
+        overlap = box(*bounds).intersection(query).area
+        if overlap <= 0.0:
+            continue
+        hits.append((e, overlap))
+    hits.sort(key=lambda h: -h[1])
+    return [h[0] for h in hits]
+
+
 def find_water_files(bbox, manifest: list[dict] | None = None) -> list[dict]:
     """질의 bbox(EPSG:4326)와 겹치는 수계 파일 전부(겹침 큰 순).
 

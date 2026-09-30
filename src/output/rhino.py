@@ -33,6 +33,7 @@ def write_3dm(
     roads: RoadMesh | None = None,
     sidewalks: RoadMesh | None = None,
     water: RoadMesh | None = None,
+    decks: RoadMesh | None = None,
     ortho_image: str | Path | None = None,
     ortho_extent_m: tuple[float, float, float, float] | None = None,
     lanes: list | None = None,
@@ -94,6 +95,10 @@ def write_3dm(
     l_sw.Color = (176, 172, 160, 255)          # concrete beige-gray
     idx_sw = model.Layers.Add(l_sw)
 
+    l_deck = rhino3dm.Layer()
+    l_deck.Name = "decks"
+    l_deck.Color = (120, 120, 128, 255)      # 교량 데크 — 지형이 아니라 공중 구조물
+    idx_deck = model.Layers.Add(l_deck)
     l_water = rhino3dm.Layer()
     l_water.Name = "water"
     l_water.Color = (58, 110, 165, 255)        # river blue
@@ -151,6 +156,9 @@ def write_3dm(
     # 수계(평면 수면) — z에 이미 리프트가 있으므로 lift=0.
     if water is not None:
         _add_roads(model, water, idx_water, "water", lift=0.0)
+    # 데크는 이미 종단 표고(실측 양단 보간)를 갖고 있다 — 노면 리프트를 더하지 않는다.
+    if decks is not None:
+        _add_roads(model, decks, idx_deck, "deck", lift=0.0)
     # 차선 마킹(R3) — 드레이프 폴리라인 (F2·확장과 동일 피처, .3dm 정합)
     if lanes:
         _add_lanes(model, lanes, idx_lane)

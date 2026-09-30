@@ -176,7 +176,7 @@ def _resolve_ortho_source():
 def _build_geometry(
     solids, terrain_mesh, ortho_info,
     cadastral=None, dem=None, roads=None, sidewalks=None, lanes=None, water=None,
-    walls=None, planning=None,
+    walls=None, planning=None, decks=None,
 ) -> dict:
     """브라우저 3D 미리보기용 경량 지오메트리 JSON (F2).
 
@@ -248,6 +248,8 @@ def _build_geometry(
         "sidewalks": sidewalks_out,
         "lanes": lanes_out,
         "water": water.to_geometry() if water is not None else None,
+        # 교량 데크 — 도로와 **다른 재질 클래스**다(z가 DEM이 아니라 종단 보간).
+        "decks": decks.to_geometry() if decks is not None else None,
         "walls": walls,          # 옹벽 상단선(드레이프) + 실측 높이 — 뷰어가 단차 위치 표시
         "planning": planning,    # 도시계획 경계선 [{cat,label,name,line:[[x,y,z]]}] (드레이프)
         "ortho_extent_m": list(ortho_info["extent_local_m"]) if ortho_info else None,
@@ -468,6 +470,7 @@ def generate(
     terrain_mesh = surf.terrain
     road_mesh, sidewalk_mesh, water_mesh = surf.road, surf.sidewalk, surf.water
     lanes, walls_geom = surf.lanes, surf.walls_geom
+    deck_mesh = surf.deck
     road_count = surf.counts.get("roads", 0)
     water_count = surf.counts.get("water", 0)
 
@@ -580,6 +583,7 @@ def generate(
             roads=road_mesh,
             sidewalks=sidewalk_mesh,
             water=water_mesh,
+            decks=deck_mesh,
             ortho_image=ortho_info["image_path"] if ortho_info else None,
             ortho_extent_m=ortho_info["extent_local_m"] if ortho_info else None,
             lanes=lanes,
@@ -635,7 +639,7 @@ def generate(
             solids, terrain_mesh, ortho_info,
             cadastral=cadastral_parcels, dem=dem, roads=road_mesh,
             sidewalks=sidewalk_mesh, lanes=lanes, water=water_mesh,
-            walls=walls_geom, planning=planning,
+            walls=walls_geom, planning=planning, decks=deck_mesh,
         )
         if include_geometry
         else None
@@ -672,6 +676,7 @@ def generate(
             "roads": road_count,
             "water": water_count,
             "walls": len(walls_geom) if walls_geom else 0,
+            "decks": surf.counts.get("decks", 0),   # 종단이 풀린 교량 구간 수
             "planning_lines": len(planning) if planning else 0,
             "pads_graded": len(pads),
             "origin_offset": list(offset),   # 복원용 — 필수 저장 (사양서 §6.1)
@@ -701,6 +706,7 @@ def generate(
         dae_path = write_dae(
             odir / f"{stem}.dae", solids, terrain_mesh, offset,
             roads=road_mesh, sidewalks=sidewalk_mesh, water=water_mesh, lanes=lanes,
+            decks=deck_mesh,
             cadastral=cadastral_parcels, drape=dem.elev_at if dem is not None else None,
             walls=walls_geom, planning=planning,
             ortho_image=ortho_name,

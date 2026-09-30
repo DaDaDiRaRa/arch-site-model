@@ -490,6 +490,30 @@ def test_write_3dm_walls_layer(tmp_path):
     assert objs[0].Attributes.GetUserString("wall_height_m") == "2.5"
 
 
+def test_write_3dm_decks_layer(tmp_path):
+    """교량 데크가 decks 레이어 메시로 들어간다 — 리프트 없이 종단 표고 그대로.
+
+    데크는 지형이 아니라 공중 구조물이므로 도로와 **다른 레이어**여야 한다(Rhino에서 끄고
+    켜며 검토할 수 있게). z는 이미 실측 양단 보간 종단이라 노면 리프트를 더하지 않는다.
+    """
+    from src.geometry.road import RoadMesh
+
+    deck = RoadMesh(
+        vertices=[(0.0, 0.0, 12.0), (10.0, 0.0, 12.0), (10.0, 5.0, 12.0)],
+        triangles=[(0, 1, 2)], outlines=[],
+    )
+    out = write_3dm([], None, tmp_path / "d.3dm", (0.0, 0.0), decks=deck)
+
+    model = rhino3dm.File3dm.Read(str(out))
+    names = [model.Layers[i].Name for i in range(len(model.Layers))]
+    assert "decks" in names
+    idx = names.index("decks")
+    objs = [o for o in model.Objects if o.Attributes.LayerIndex == idx]
+    assert len(objs) == 1
+    bb = objs[0].Geometry.GetBoundingBox()
+    assert bb.Min.Z == pytest.approx(12.0, abs=0.01)   # 리프트 0
+
+
 def test_3dm_units_are_meters(tmp_path):
     # rhino3dm 기본값은 mm — 좌표가 미터인데 mm로 저장되면 Rhino가 1000배 작게 연다.
     p = write_3dm([_make_solid()], None, tmp_path / "u.3dm", (0.0, 0.0))

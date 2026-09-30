@@ -534,8 +534,10 @@ def test_build_unified_surface_shares_boundary_vertices():
     dem = DEMPatch(grid=grid, transform=tf, offset=(0.0, 0.0))
     road = RoadFeature(rings=[[(40.0, 40.0), (80.0, 40.0), (80.0, 80.0), (40.0, 80.0)]])
 
-    terrain, rm, sm = build_unified_surface(dem, 0.25, [road], [], 2.5, M2I, centerlines=None, crown_pct=0.0)
+    u = build_unified_surface(dem, 0.25, [road], [], 2.5, M2I, centerlines=None, crown_pct=0.0)
+    terrain, rm = u.terrain, u.road
     assert terrain.triangles and rm is not None and rm.triangles
+    assert u.deck is None          # 데크 미지정 → 데크 클래스 없음
 
     poly = Polygon([(40, 40), (80, 40), (80, 80), (40, 80)])
     V = terrain.vertices

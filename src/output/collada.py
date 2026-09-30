@@ -28,6 +28,7 @@ _MATERIALS = {
     "mat_road": ("도로", (0.45, 0.47, 0.50)),
     "mat_sidewalk": ("보도", (0.69, 0.67, 0.63)),
     "mat_water": ("수계", (0.23, 0.43, 0.65)),
+    "mat_deck": ("교량데크", (0.47, 0.47, 0.50)),
     "mat_lane": ("차선", (0.91, 0.78, 0.29)),
     "mat_cadastral": ("지적", (0.86, 0.78, 0.39)),
     "mat_wall": ("옹벽", (0.55, 0.36, 0.24)),
@@ -210,6 +211,7 @@ def write_dae(
     roads=None,
     sidewalks=None,
     water=None,
+    decks=None,
     lanes=None,
     cadastral=None,
     drape=None,
@@ -265,6 +267,8 @@ def write_dae(
         ("road", "도로", roads, "mat_road", road_lift),
         ("sidewalk", "보도", sidewalks, "mat_sidewalk", road_lift),
         ("water", "수계", water, "mat_water", 0.0),
+        # 데크는 이미 종단 표고를 갖는다(실측 양단 보간) — 리프트 없음.
+        ("deck", "교량데크", decks, "mat_deck", 0.0),
     ):
         if mesh is not None and mesh.vertices and mesh.triangles:
             m = _Mesh(f"g_{key}", label, mat)

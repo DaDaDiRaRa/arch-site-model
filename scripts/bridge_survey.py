@@ -75,8 +75,10 @@ def measure(address: str, radius_m: int) -> dict:
     from shapely.ops import unary_union
 
     surf, warnings = _surface(address, radius_m)
-    road = surf.road
-    if road is None or not surf.water_features:
+    # 물 위 노면은 **데크 클래스**로 분리돼 나온다 — 운전자가 보는 면은 도로 ∪ 데크다.
+    verts = list(getattr(surf.road, "vertices", None) or [])
+    verts += list(getattr(surf.deck, "vertices", None) or [])
+    if not verts or not surf.water_features:
         return {"address": address, "skip": "도로 또는 수계 없음", "warnings": warnings}
 
     # 수계 폴리곤(구멍 포함) + 폴리곤별 수면 표고. 정점마다 **가장 가까운** 수계의 z를 쓴다.
@@ -99,7 +101,7 @@ def measure(address: str, radius_m: int) -> dict:
 
     tree = STRtree(polys)
     water_u = unary_union(polys)
-    V = np.asarray(road.vertices, dtype=float)
+    V = np.asarray(verts, dtype=float)
     diffs = []
     for x, y, z in V:
         from shapely.geometry import Point

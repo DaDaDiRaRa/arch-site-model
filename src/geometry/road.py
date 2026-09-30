@@ -739,17 +739,37 @@ def _polygon_sample_points(rings, cell: float, edge_cell: float | None = None):
     return list(pts)
 
 
+@dataclass
+class UnifiedSurface:
+    """통합 삼각화 산출물. 튜플 대신 이름으로 — 재질 클래스가 늘어도 호출부가 안 깨진다."""
+
+    terrain: object
+    road: RoadMesh | None = None
+    sidewalk: RoadMesh | None = None
+    deck: RoadMesh | None = None
+
+
 def build_unified_surface(
     dem, max_error_m, road_features, sidewalk_features, cell, m2i,
-    centerlines=None, crown_pct=0.0, crown_cap=15.0, edge_cell=None,
+    centerlines=None, crown_pct=0.0, crown_cap=15.0, edge_cell=None, decks=None,
 ):
-    """지형+도로+보도를 **한 번의 Delaunay**로 삼각화해 재질별 3메시로 분리한다.
+    """지형+도로+보도(+교량 데크)를 **한 번의 Delaunay**로 삼각화해 재질별로 분리한다.
 
     지형 DEM 점(도로/보도 밖) + 도로/보도 경계·내부 샘플점을 한 점집합으로 삼각화 → 삼각형을
-    중심점 재질(도로>보도>지형)로 분류 → 각 클래스를 재색인해 (TerrainMesh, RoadMesh road,
-    RoadMesh sidewalk)로 낸다. **모든 메시가 같은 정점 위치를 공유**하므로 경계가 100% 일치 —
-    구멍·뜸·z-fighting·겹침이 구조적으로 불가능하다. z는 (버닝된) DEM 표고 + 도로 크라운.
-    road/sidewalk 둘 다 없으면 (build_tin, None, None). 좌표: 지형=인치(×m2i), 도로/보도=미터.
+    중심점 재질(데크>보도>도로>지형)로 분류 → 각 클래스를 재색인해 `UnifiedSurface`로 낸다.
+    **모든 메시가 같은 정점 위치를 공유**하므로 경계가 100% 일치 — 구멍·뜸·z-fighting·겹침이
+    구조적으로 불가능하다. z는 (버닝된) DEM 표고 + 도로 크라운.
+    road/sidewalk 둘 다 없으면 지형 TIN만. 좌표: 지형=인치(×m2i), 나머지=미터.
+
+    `decks`(`geometry.deck.DeckSurface`)가 있으면 **데크만 DEM이 아닌 종단 z**를 읽는다.
+    평면 Delaunay는 한 (x,y)에 z가 하나뿐이라 데크 정점 z를 지형과 공유하면 강 양안이 데크
+    높이로 솟는다 — 그래서 클래스별로 정점 배열을 따로 만드는 `_split`을 이용해 **데크
+    클래스만 다른 z 배열(Zd)을 읽게** 한다. 같은 (x,y)가 지형에는 하천 바닥, 데크에는 노면
+    표고로 두 번 존재하고, 그 수직 간격이 곧 교량 측면이다.
+    데크 정점 판정은 경계를 **포함**해야 한다(strict interior면 데크가 자기 가장자리에서
+    지면으로 내려앉아 천막이 된다).
+
+    터널·지하차도(`decks.hidden`)는 지형으로 되돌린다 — 그 위는 노면이 아니라 땅이다.
     """
     from src.geometry.terrain_mesh import (
         TerrainMesh,
@@ -761,7 +781,7 @@ def build_unified_surface(
     road_features = road_features or []
     sidewalk_features = sidewalk_features or []
     if not road_features and not sidewalk_features:
-        return build_tin(dem, max_error_m), None, None
+        return UnifiedSurface(terrain=build_tin(dem, max_error_m))
 
     import numpy as np
     from scipy.spatial import Delaunay
@@ -784,6 +804,8 @@ def build_unified_surface(
 
     road_u = _union(road_features)
     sw_u = _union(sidewalk_features)
+    deck_u = decks.polygon() if decks is not None else None
+    hidden_u = decks.hidden_polygon() if decks is not None else None
 
     sel = adaptive_select(dem, max_error_m)
     if sel is None:
@@ -791,11 +813,13 @@ def build_unified_surface(
         terr = build_terrain_conformed(dem, max_error_m, road_features + sidewalk_features, cell, m2i)
         rm = build_road_mesh(road_features, dem, cell) if road_features else None
         sm = build_road_mesh(sidewalk_features, dem, cell) if sidewalk_features else None
-        return terr, rm, sm
+        return UnifiedSurface(terrain=terr, road=rm, sidewalk=sm)
     pts_pixel, zsel = sel
     local = pixel_to_local_m(pts_pixel, dem)   # (N,2) 로컬 미터
 
-    all_polys = [u for u in (road_u, sw_u) if u is not None]
+    # 데크 안 원 DEM 점(하천 바닥)이 남으면 데크 샘플점과 뒤섞여 데크가 톱니처럼 찢어진다.
+    # 터널(hidden_u)은 **넣지 않는다** — 터널 위는 지형이어야 한다.
+    all_polys = [u for u in (road_u, sw_u, deck_u) if u is not None]
     all_u = unary_union(all_polys) if all_polys else None
     outside = (
         ~contains_xy(all_u, local[:, 0], local[:, 1]) if all_u is not None
@@ -824,6 +848,18 @@ def build_unified_surface(
             d, _ = tree.query(P)
             Z = Z - np.where(in_road_v, np.minimum(d, crown_cap) * (crown_pct / 100.0), 0.0)
 
+    # 데크 z 배열 — 크라운 **뒤**에 만든다(데크는 평평하다, 횡단구배 없음).
+    # 경계 정점도 데크로 잡아야 데크가 자기 가장자리에서 지면으로 내려앉지 않는다.
+    Zd = Z
+    if deck_u is not None:
+        in_deck_v = contains_xy(deck_u.buffer(0.05), P[:, 0], P[:, 1])
+        if in_deck_v.any():
+            Zd = Z.copy()
+            for i in np.flatnonzero(in_deck_v):
+                dz = decks.z_at(float(P[i, 0]), float(P[i, 1]))
+                if dz is not None:
+                    Zd[i] = dz
+
     tri = Delaunay(P)
     simp = tri.simplices
     cx = (P[simp[:, 0], 0] + P[simp[:, 1], 0] + P[simp[:, 2], 0]) / 3.0
@@ -833,31 +869,69 @@ def build_unified_surface(
     # 보도 우선(겹침 구간): 수치지도 A0033320 보도가 A0010000 도로경계 안에 크게 들어가 있어
     # 도로우선이면 보도가 거의 컬링된다(실측 97% 겹침). 보도를 우선해 인도가 제대로 보이게 하고
     # 도로는 보도 몫만 뺀다(도로우선→보도우선 뒤집기).
-    sw_t = simp[in_sw]
-    road_t = simp[in_road & ~in_sw]
-    terr_t = simp[~in_road & ~in_sw]
+    in_deck = contains_xy(deck_u, cx, cy) if deck_u is not None else np.zeros(len(simp), bool)
+    in_hid = contains_xy(hidden_u, cx, cy) if hidden_u is not None else np.zeros(len(simp), bool)
+    # 서로소·전사 우선순위: 데크 > 보도 > 도로 > 지형. 터널 위는 무조건 지형.
+    # 데크가 보도보다 위인 이유 — 교량 위 보도가 물에 남으면 안 된다(대가: 데크 색으로 나옴).
+    m_deck = in_deck & ~in_hid
+    m_sw = ~m_deck & in_sw & ~in_hid
+    m_road = ~m_deck & ~m_sw & in_road & ~in_hid
+    deck_t, sw_t, road_t = simp[m_deck], simp[m_sw], simp[m_road]
+    terr_t = simp[~(m_deck | m_sw | m_road)]
 
-    def _split(tris_idx, scale):
+    def _split(tris_idx, scale, zarr):
         used = np.unique(tris_idx)
         remap = {int(o): n for n, o in enumerate(used)}
-        verts = [(float(P[i, 0]) * scale, float(P[i, 1]) * scale, float(Z[i]) * scale) for i in used]
+        verts = [(float(P[i, 0]) * scale, float(P[i, 1]) * scale, float(zarr[i]) * scale)
+                 for i in used]
         tris = [(remap[int(a)], remap[int(b)], remap[int(c)]) for a, b, c in tris_idx]
         return verts, tris
 
-    tv, tt = _split(terr_t, m2i) if len(terr_t) else ([], [])
+    tv, tt = _split(terr_t, m2i, Z) if len(terr_t) else ([], [])
     terrain = TerrainMesh(vertices=tv, triangles=tt)
 
-    def _road_mesh(tris_idx, feats):
+    from shapely.geometry import LineString
+
+    def _ground(x, y):
+        return _z(dem, x, y)
+
+    def _outlines(feats):
+        """면 외곽선(지면 z). 데크 구간은 빼낸다 — 안 그러면 외곽선만 강물에 잠긴 채 남는다."""
+        out = []
+        for f in feats:
+            for ring in f.rings:
+                if len(ring) < 3:
+                    continue
+                if deck_u is None:
+                    out.append([(x, y, _ground(x, y)) for x, y in ring])
+                    continue
+                rest = LineString(list(ring) + [ring[0]]).difference(deck_u)
+                for ls in _iter_lines(rest):
+                    pts = [(float(x), float(y)) for x, y in ls.coords]
+                    if len(pts) >= 2:
+                        out.append([(x, y, _ground(x, y)) for x, y in pts])
+        return out
+
+    def _mesh(tris_idx, feats):
         if len(tris_idx) == 0:
             return None
-        verts, tris = _split(tris_idx, 1.0)   # 미터
-        outlines = [
-            [(x, y, _z(dem, x, y)) for x, y in ring]
-            for f in feats for ring in f.rings if len(ring) >= 3
-        ]
-        return RoadMesh(vertices=verts, triangles=tris, outlines=outlines)
+        verts, tris = _split(tris_idx, 1.0, Z)   # 미터
+        return RoadMesh(vertices=verts, triangles=tris, outlines=_outlines(feats))
 
-    return terrain, _road_mesh(road_t, road_features), _road_mesh(sw_t, sidewalk_features)
+    deck_mesh = None
+    if len(deck_t):
+        verts, tris = _split(deck_t, 1.0, Zd)
+        deck_mesh = RoadMesh(
+            vertices=verts, triangles=tris,
+            outlines=[[(x, y, z) for (x, y), z in zip(p.xy, p.z)]
+                      for p in decks.profiles],   # 외곽선 = 종단선(데크 z)
+        )
+    return UnifiedSurface(
+        terrain=terrain,
+        road=_mesh(road_t, road_features),
+        sidewalk=_mesh(sw_t, sidewalk_features),
+        deck=deck_mesh,
+    )
 
 
 def build_terrain_conformed(dem, max_error_m, road_features, cell, m2i):
@@ -938,6 +1012,7 @@ def build_terrain_conformed(dem, max_error_m, road_features, cell, m2i):
 def burn_roads(
     dem, road_features, centerlines,
     win_m=40.0, sample_m=5.0, max_dist_m=30.0, skirt_m=12.0, max_dev=None,
+    exclude_polys=None,
 ):
     """도로를 DEM에 구워 지형이 도로에 맞게 절토/성토되게 한다(R2b).
 
@@ -946,8 +1021,16 @@ def burn_roads(
     ② footprint 밖 skirt_m 밴드는 도로 표고↔자연 표고로 선형 블렌딩(비탈) → 수직 절벽 방지.
     새 DEMPatch 반환(원본 불변). 중심선 없거나 도로 없으면 원본 그대로.
 
-    터널/지하차도(A0110020·A0090000)는 애초에 베이크(A0010000)에 없어 여기 도달 안 함 → 자동 제외
-    (연속 지형을 개착하지 않음).
+    `exclude_polys`(shapely 폴리곤 목록)는 **지형을 건드리지 않을** 영역이다 — 교량 데크와
+    터널·지하차도(`geometry.deck.DeckSurface.exclude_polys()`). 교량 아래는 강·골짜기로 남고
+    데크는 DEM이 아니라 별도 표고로 뜬다(`deck.solve_decks`).
+
+    ⚠️ 제외는 ①과 ③에 **모두** 걸어야 한다. ①만 빼면 그 셀이 `~road_mask`가 되어 스커트
+    밴드에 들어가고, 최근접 도로셀(=아붓먼트 노면) 표고로 블렌딩돼 **하천 바닥이 아붓먼트
+    높이로 skirt_m까지 끌려 올라온다**.
+
+    터널/지하차도는 A0010000 도로경계에는 없지만 `synthesize_gap_roads`가 중심선에서 노면을
+    합성하므로 여기 도달할 수 있다 — `exclude_polys`로 명시 제외해야 개착이 안 생긴다.
     """
     import numpy as np
 
@@ -986,6 +1069,18 @@ def burn_roads(
     road_mask = rasterize(
         shapes, out_shape=(rows, cols), transform=tf, fill=0, all_touched=True
     ).astype(bool)
+
+    # 데크·터널 발자국은 지형에서 제외(아래 ①③ 양쪽). 절대좌표로 래스터화한다.
+    exclude = None
+    if exclude_polys:
+        from shapely.affinity import translate
+
+        eshapes = [(translate(p, ox, oy), 1) for p in exclude_polys if p is not None]
+        if eshapes:
+            exclude = rasterize(
+                eshapes, out_shape=(rows, cols), transform=tf, fill=0, all_touched=True
+            ).astype(bool)
+            road_mask &= ~exclude
     if not road_mask.any():
         return dem
 
@@ -1027,6 +1122,8 @@ def burn_roads(
         t = np.clip(dist_m / skirt_m, 0.0, 1.0)
         blended = near_z * (1.0 - t) + orig * t
         band = (~road_mask) & (dist_m > 0.0) & (dist_m <= skirt_m) & np.isfinite(orig)
+        if exclude is not None:
+            band &= ~exclude          # 하천 바닥이 아붓먼트 높이로 끌려 올라오는 것 방지
         new[band] = blended[band]
 
     return DEMPatch(grid=new.astype(np.float32), transform=tf, offset=dem.offset)

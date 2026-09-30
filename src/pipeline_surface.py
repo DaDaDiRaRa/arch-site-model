@@ -35,6 +35,7 @@ class SurfaceResult:
     terrain: object | None = None
     road: object | None = None
     sidewalk: object | None = None
+    deck: object | None = None           # 교량 데크 메시(RoadMesh, 로컬 미터)
     water: object | None = None
     lanes: object | None = None
     walls_geom: list | None = None
@@ -43,6 +44,7 @@ class SurfaceResult:
     centerlines: list | None = None
     water_features: list | None = None
     water_zs: list | None = None
+    decks: object | None = None          # deck.DeckSurface — 종단이 풀린 교량 데크
     road_paths: list | None = None       # 읽은 도로 GeoJSON 경로 — 차선 클립이 재사용
     counts: dict = field(default_factory=dict)
 
@@ -73,19 +75,40 @@ def build_surface(
     if layers.get("roads"):
         _roads(out, bbox_4326, bbox_5186, offset, warnings)
 
-    # --- 수면 표고 전용 스냅샷: 도로가 둑을 깎기 **전** DEM. 아래 surface_zs가 쓴다.
+    # --- 수계 클립만 먼저. 폴리곤이 교량 프록시(도로 ∩ 수계)의 입력이고, 수면 표고는
+    #     도로가 둑을 깎기 **전** DEM에서 읽어야 한다. 버닝·메시는 아래 §수계에서.
+    if layers.get("water") and out.dem is not None:
+        _water_clip(out, bbox_4326, bbox_5186, offset, warnings)
+
+    # --- 수면 표고 전용 스냅샷: 도로가 둑을 깎기 **전** DEM.
     out.dem_natural = out.dem
 
-    if out.road_features and out.centerlines and out.dem is not None:
+    # --- 교량 데크: 지형은 강·골짜기 그대로 두고 데크만 DEM 위로 띄운다. 도로 버닝 **전**에
+    #     풀어야 한다 — 제외 마스크와 (강 중간 샘플을 뺀) 중심선이 버닝 입력이기 때문.
+    burn_cls = out.centerlines
+    if out.dem is not None and out.centerlines:
+        _decks(out, bbox_4326, bbox_5186, offset, warnings)
+        if out.decks is not None:
+            from src.geometry.deck import split_centerlines
+
+            hide = out.decks.polygon()
+            hidden = out.decks.hidden_polygon()
+            from shapely.ops import unary_union
+
+            cut = unary_union([g for g in (hide, hidden) if g is not None]) or None
+            burn_cls = split_centerlines(out.centerlines, cut)
+
+    if out.road_features and burn_cls and out.dem is not None:
         from src.geometry.road import burn_roads
 
         out.dem = burn_roads(
-            out.dem, out.road_features, out.centerlines,
+            out.dem, out.road_features, burn_cls,
             win_m=config.ROAD_SMOOTH_WIN_M,
             sample_m=config.ROAD_CL_SAMPLE_M,
             max_dist_m=config.ROAD_CL_MAX_DIST_M,
             skirt_m=config.ROAD_SKIRT_M,
             max_dev=config.ROAD_MAX_DEV_M,
+            exclude_polys=out.decks.exclude_polys() if out.decks else None,
         )
 
     # 차선(표시용 다차선 마킹)은 버닝된 노면에 드레이프 — 버닝 중심선과 분리.
@@ -101,9 +124,9 @@ def build_surface(
     if layers.get("walls") and out.dem is not None:
         _walls(out, bbox_4326, bbox_5186, offset, solids, warnings)
 
-    # --- 수계(E계열): 표고고정 평면 수면 + 지형을 물 아래로. 수면 z는 경계(둑) DEM 저백분위.
-    if layers.get("water") and out.dem is not None:
-        _water(out, bbox_4326, bbox_5186, offset, warnings)
+    # --- 수계: 표고고정 평면 수면 + 지형을 물 아래로(위에서 클립해 둔 폴리곤으로).
+    if out.water_features:
+        _water_burn(out)
 
     # --- 통합 삼각화: 지형·도로·보도를 한 번의 Delaunay로 → 재질별 분리(정점 공유 →
     #     이음매·구멍·z-fighting 구조적 제거). 도로/보도 없으면 일반 TIN.
@@ -164,8 +187,15 @@ def _walls(out: SurfaceResult, bbox_4326, bbox_5186, offset, solids, warnings) -
     out.counts["walls"] = len(feats)
 
 
-def _water(out: SurfaceResult, bbox_4326, bbox_5186, offset, warnings) -> None:
-    from src.geometry.water import build_water_mesh, burn_water, clip_water, surface_zs
+def _water_clip(out: SurfaceResult, bbox_4326, bbox_5186, offset, warnings) -> None:
+    """수계 폴리곤 + 수면 표고. **도로 버닝 전**에 부른다.
+
+    수면 표고는 폴리곤 경계(둑) DEM의 저백분위인데, 교량 지점에서 그 경계는 도로 바로 아래를
+    지난다. 도로 버닝 후에 읽으면 `burn_roads`가 하천 바닥까지 깎아 놓은 셀을 읽게 되고,
+    저백분위는 **바로 그 낮은 이상치를 골라 쓰는** 통계라 편향이 최대가 된다. 그래서 자연 둑
+    표고(도로 버닝 전 DEM)에서 읽는다.
+    """
+    from src.geometry.water import clip_water, surface_zs
     from src.terrain.store import find_water_files
 
     wfs = find_water_files(bbox_4326)       # 넓은 지역은 수계도 타일 → 겹치는 것 전부
@@ -182,10 +212,67 @@ def _water(out: SurfaceResult, bbox_4326, bbox_5186, offset, warnings) -> None:
         warnings.append("반경 내 수계 폴리곤 없음 (E계열).")
         return
     out.water_features = feats
-    out.water_zs = surface_zs(feats, out.dem)      # 둑 기준 수면 표고
-    out.dem = burn_water(out.dem, feats, out.water_zs)
-    out.water = build_water_mesh(feats, out.water_zs, out.dem, config.WATER_CELL_M)
+    out.water_zs = surface_zs(feats, out.dem)
     out.counts["water"] = len(feats)
+
+
+def _water_burn(out: SurfaceResult) -> None:
+    from src.geometry.water import build_water_mesh, burn_water
+
+    out.dem = burn_water(out.dem, out.water_features, out.water_zs)
+    out.water = build_water_mesh(
+        out.water_features, out.water_zs, out.dem, config.WATER_CELL_M
+    )
+
+
+def _decks(out: SurfaceResult, bbox_4326, bbox_5186, offset, warnings) -> None:
+    """교량·터널 발자국 확보 → 종단 풀이. `config.DECK_SOURCE`가 데이터원을 고른다.
+
+    "auto"(기본)는 데크 레이어가 비축돼 있으면 그걸 쓰고, 없으면 **수계 프록시**(도로 ∩ 수계)로
+    떨어진다 — 재베이크 0으로 코즈웨이를 잡되, 두 경로가 완전히 같은 코드를 탄다.
+    """
+    from src.geometry import deck as D
+    from src.terrain.store import find_deck_files
+
+    src = config.DECK_SOURCE
+    if src == "off":
+        return
+    feats: list = []
+    if src in ("auto", "layer"):
+        dl = find_deck_files(bbox_4326)
+        if dl:
+            feats = D.clip_decks(
+                [config.deck_file_path(d["file"]) for d in dl], bbox_5186, offset
+            )
+    if not feats and src in ("auto", "water"):
+        feats = D.decks_from_water(
+            out.water_features or [], out.road_features or [],
+            margin_m=config.DECK_MARGIN_M,
+        )
+    if not feats:
+        return
+    surface = D.solve_decks(
+        feats, out.centerlines, out.dem, out.water_features, out.water_zs,
+        sample_m=config.ROAD_CL_SAMPLE_M,
+        anchor_span_m=config.DECK_ANCHOR_SPAN_M,
+        max_span_m=config.DECK_MAX_SPAN_M,
+        min_straightness=config.DECK_MIN_STRAIGHTNESS,
+        min_clearance_m=config.DECK_MIN_CLEARANCE_M,
+    )
+    if surface.empty():
+        if surface.dropped:
+            # 후보는 있었는데 종단을 못 풀었다 = 양쪽 아붓먼트가 육상에 없다(하천부지를 지나는
+            # 도로 등). 교량이 아니므로 만들지 않는 게 맞지만, 조용히 넘기면 진단이 안 된다.
+            warnings.append(
+                f"교량 후보 {surface.dropped}개를 버렸습니다(양단 육상 표고를 못 읽음 — "
+                "수계 폴리곤 안을 지나는 도로일 수 있습니다)."
+            )
+        return
+    out.decks = surface
+    out.counts["decks"] = len(surface.profiles)
+    if surface.flags:
+        # 추정·보정이 개입한 지점은 반드시 드러낸다(단일 앵커 수평 데크, 수면 위로 들어올림 등).
+        warnings.append("교량 데크 보정: " + ", ".join(surface.flags))
 
 
 def _surface(out: SurfaceResult, skirt: bool, layers: dict) -> None:
@@ -194,14 +281,17 @@ def _surface(out: SurfaceResult, skirt: bool, layers: dict) -> None:
         if out.road_features or out.sidewalk_features:
             from src.geometry.road import build_unified_surface
 
-            out.terrain, out.road, out.sidewalk = build_unified_surface(
+            u = build_unified_surface(
                 dem, config.TERRAIN_MAX_ERROR_M,
                 out.road_features, out.sidewalk_features,
                 config.ROAD_CELL_M, config.M2I,
                 centerlines=out.centerlines,
                 crown_pct=config.ROAD_CROWN_PCT, crown_cap=config.ROAD_CROWN_CAP_M,
                 edge_cell=config.ROAD_EDGE_CELL_M,
+                decks=out.decks,
             )
+            out.terrain, out.road = u.terrain, u.road
+            out.sidewalk, out.deck = u.sidewalk, u.deck
         else:
             from src.geometry.terrain_mesh import build_tin
 
