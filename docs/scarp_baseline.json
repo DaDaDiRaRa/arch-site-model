@@ -1,0 +1,30 @@
+{
+ "shp_dir": "C:\\Users\\20260102\\AppData\\Local\\Temp\\claude\\d--APPS-arch-site-model\\17b26594-2754-460f-ac96-cf788f19589c\\scratchpad\\lyr",
+ "levee_coverage": {
+  "top_lines": 67732,
+  "with_height": 9728,
+  "height_pct": 14.4,
+  "h_median_m": 2.0,
+  "h_p10_m": 1.5,
+  "h_p90_m": 2.0,
+  "h_max_m": 31.5
+ },
+ "levee_used": {
+  "lines": 9731,
+  "length_km": 1262.7
+ },
+ "levee_in_dem": {
+  "samples": 396,
+  "drawn_median_m": 2.0,
+  "dem_median_m": -0.67,
+  "dem_p90_m": -0.0,
+  "negative_pct": 93.4,
+  "captured_pct": -33.4
+ },
+ "scarp": {
+  "pairs": 29529,
+  "width_p10_m": 2.5,
+  "width_p50_m": 6.8,
+  "width_p90_m": 15.9
+ }
+}

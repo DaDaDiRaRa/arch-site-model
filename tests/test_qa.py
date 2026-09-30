@@ -159,3 +159,67 @@ def test_summary_not_passed_with_warning():
     qa = run_qa([_bldg("A", fp), _bldg("B", [(5, 5), (45, 5), (45, 45), (5, 45)])])
     assert qa["summary"]["passed"] is False
     assert "검토" in qa["summary"]["stamp"]
+
+
+# ---------------------------------------------------------------------------
+# 도로 수면 아래(교량 코즈웨이)
+# ---------------------------------------------------------------------------
+
+class _Mesh:
+    """RoadMesh 대역 — 검사는 vertices만 읽는다."""
+
+    def __init__(self, vertices):
+        self.vertices = vertices
+
+
+class _Water:
+    """WaterFeature 대역 — rings[0]=외곽, 이후=구멍."""
+
+    def __init__(self, rings):
+        self.rings = rings
+
+
+def _river(x0=0.0, x1=100.0, y0=0.0, y1=50.0):
+    return _Water([[(x0, y0), (x1, y0), (x1, y1), (x0, y1)]])
+
+
+def test_road_under_water_flagged():
+    """수계 안에 있고 수면보다 낮은 도로 정점 → road_under_water 경고."""
+    road = _Mesh([(50.0, 25.0, 9.0)])            # 강 안, 수면 10.0보다 1m 아래
+    qa = run_qa([], road_mesh=road, water_features=[_river()], water_zs=[10.0])
+    assert "road_under_water" in _kinds(qa)
+    f = next(x for x in qa["findings"] if x["kind"] == "road_under_water")
+    assert f["severity"] == "warn"
+    assert f["label"] == "도로 수면 아래"
+    assert "1.00m" in f["message"]
+    assert f["at"] == [50.0, 25.0]
+
+
+def test_road_above_water_and_outside_not_flagged():
+    """수면 위 데크와 강 밖 도로는 정상 — 경고 없음."""
+    road = _Mesh([
+        (50.0, 25.0, 12.0),     # 강 위 데크(수면 +2m) — 정상
+        (50.0, 80.0, 3.0),      # 강 밖 저지대 도로 — 수면과 무관
+    ])
+    qa = run_qa([], road_mesh=road, water_features=[_river()], water_zs=[10.0])
+    assert "road_under_water" not in _kinds(qa)
+
+
+def test_road_under_water_respects_tolerance_and_cap():
+    """임계(SUBMERGED_M) 이하 미세 침수는 무시하고, 보고 건수는 상한을 지킨다."""
+    from src.qa import MAX_FINDINGS_PER_KIND, SUBMERGED_M
+
+    tiny = _Mesh([(50.0, 25.0, 10.0 - SUBMERGED_M / 2)])
+    assert "road_under_water" not in _kinds(
+        run_qa([], road_mesh=tiny, water_features=[_river()], water_zs=[10.0])
+    )
+    many = _Mesh([(1.0 + i * 0.05, 25.0, 8.0) for i in range(MAX_FINDINGS_PER_KIND + 20)])
+    qa = run_qa([], road_mesh=many, water_features=[_river()], water_zs=[10.0])
+    assert sum(1 for f in qa["findings"] if f["kind"] == "road_under_water") \
+        == MAX_FINDINGS_PER_KIND
+
+
+def test_road_under_water_skipped_without_water():
+    """수계가 없으면(비축 없음·반경 밖) 이 검사는 조용히 건너뛴다."""
+    road = _Mesh([(50.0, 25.0, -5.0)])
+    assert "road_under_water" not in _kinds(run_qa([], road_mesh=road))

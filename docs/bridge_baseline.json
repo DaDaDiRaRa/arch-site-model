@@ -1,0 +1,50 @@
+[
+ {
+  "address": "서울특별시 용산구 이촌동 302",
+  "radius_m": 400,
+  "road_vertices": 15404,
+  "near_water": 4184,
+  "warnings": [],
+  "submerged": 4133,
+  "median_dz_m": -0.118,
+  "p05_dz_m": -0.155,
+  "p95_dz_m": -0.016,
+  "min_dz_m": -0.209
+ },
+ {
+  "address": "서울특별시 서초구 반포동 2",
+  "radius_m": 400,
+  "road_vertices": 24987,
+  "near_water": 1089,
+  "warnings": [],
+  "submerged": 265,
+  "median_dz_m": 0.355,
+  "p05_dz_m": -0.557,
+  "p95_dz_m": 1.929,
+  "min_dz_m": -0.829
+ },
+ {
+  "address": "서울특별시 영등포구 여의도동 8",
+  "radius_m": 400,
+  "road_vertices": 51132,
+  "near_water": 171,
+  "warnings": [],
+  "submerged": 132,
+  "median_dz_m": -0.163,
+  "p05_dz_m": -0.3,
+  "p95_dz_m": 0.583,
+  "min_dz_m": -0.3
+ },
+ {
+  "address": "서울특별시 성동구 성수동1가 685",
+  "radius_m": 400,
+  "road_vertices": 52882,
+  "near_water": 691,
+  "warnings": [],
+  "submerged": 249,
+  "median_dz_m": 0.989,
+  "p05_dz_m": -2.019,
+  "p95_dz_m": 2.738,
+  "min_dz_m": -3.855
+ }
+]

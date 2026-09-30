@@ -368,8 +368,8 @@ def generate(
         }
         warnings.append(policy_msg.get(missing_floors_policy, policy_msg["default"]))
 
-    # 6. 지형 레이어 (Phase 3B)
-    terrain_mesh = None
+    # 6. 지형 레이어 (Phase 3B) — 여기서는 DEM 클립·평탄화·건물 앉히기까지. 버닝과
+    #    삼각화는 §7.2(pipeline_surface.build_surface)에서.
     elev_range: list[float] | None = None
     terrain_tile_file: str | None = None
     dem = None  # 지적 드레이프(_build_geometry)에서도 재사용 — 함수 스코프로 유지
@@ -456,162 +456,20 @@ def generate(
         else:
             warnings.append("반경 내 지적 피처 없음 (LP_PA_CBND_BUBUN)")
 
-    # 7.3 도로 노면 (Phase R) — 지역 GeoJSON을 bbox 클립 → 폴리곤 삼각화·DEM 드레이프한 노면 메시.
-    #     도로는 실시간 API가 없어 오프라인 굽기(road_bake)한 GeoJSON을 road_manifest로 조회.
-    #     road_mesh는 F2/.3dm/.skp 3소비자 공용(로컬 미터).
-    #     클립 + 버닝 + 차선만 여기서. 지형·도로·보도 메시는 §6b에서 **한 번의 통합 삼각화**로.
-    road_mesh = None
-    sidewalk_mesh = None
-    lanes = None
-    road_features = None
-    sidewalk_features = None
-    road_centerlines = None
-    road_count = 0
-    water_mesh = None
-    water_count = 0
-    walls_geom = None
-    if layers.get("roads"):
-        from src.geometry.road import (
-            burn_roads,
-            clip_centerlines,
-            clip_lane_markings,
-            clip_roads,
-            clip_sidewalks,
-            drape_centerlines,
-        )
-        from src.terrain.store import find_road_files
+    # 7.2~6b 지형 표면 — 도로/옹벽/수계 버닝과 통합 삼각화는 `pipeline_surface.build_surface`가
+    #     **단일 출처**로 수행한다(타일 경로 `tiles_stream.generate_tile`와 같은 함수 → 두 모드가
+    #     같은 지형을 낸다). 순서가 결과를 바꾸는 지점은 그 모듈 docstring 참조.
+    from src.pipeline_surface import build_surface
 
-        rfs = find_road_files(bbox)
-        if not rfs:
-            warnings.append(
-                "도로 비축 없음: 반경이 도로 GeoJSON 밖입니다 "
-                "(road_manifest.json 확인 또는 road_bake 실행 필요)."
-            )
-        else:
-            bbox_5186_road = _bbox_4326_to_5186(bbox)
-            # 메트로는 도로가 타일로 쪼개져 겹치는 타일이 여럿 — 전부 읽어 합침(하드클립이라 중복 없음).
-            road_path = [config.road_file_path(rf["file"]) for rf in rfs]
-            road_features = clip_roads(road_path, bbox_5186_road, offset)
-            sidewalk_features = clip_sidewalks(road_path, bbox_5186_road, offset)
-            road_count = len(road_features)
-            if road_count == 0 and not sidewalk_features:
-                warnings.append("반경 내 도로/보도 폴리곤 없음 (A0010000/A0033320).")
-            else:
-                road_centerlines = clip_centerlines(road_path, bbox_5186_road, offset) if dem is not None else []
-                # R2b 버닝: 지형을 도로에 맞게 절토/성토(뚫림·먹힘 제거). §6b 통합표면이 이 DEM을 씀.
-                if dem is not None and road_features and road_centerlines:
-                    dem = burn_roads(
-                        dem, road_features, road_centerlines,
-                        win_m=config.ROAD_SMOOTH_WIN_M,
-                        sample_m=config.ROAD_CL_SAMPLE_M,
-                        max_dist_m=config.ROAD_CL_MAX_DIST_M,
-                        skirt_m=config.ROAD_SKIRT_M,
-                        max_dev=config.ROAD_MAX_DEV_M,
-                    )
-                # R3 차선: 차로수·도로폭 기반 다차선 마킹(단선 소로는 중심선 1개)을 노면에 드레이프.
-                #   버닝은 중심선(clip_centerlines)으로, 표시는 다차선 마킹(clip_lane_markings)으로 분리.
-                if dem is not None:
-                    lanes = drape_centerlines(
-                        clip_lane_markings(road_path, bbox_5186_road, offset), dem
-                    )
-
-    # 7.35 옹벽(F0040000) — 등고선 DEM이 완만한 비탈로 뭉갠 레벨차를 **실측 높이로 수직 단차**
-    #      복원. 도로 버닝 다음, 수계·TIN 앞에 둔다(수계가 이 DEM 위에서 수면 z를 잡도록).
-    if layers.get("walls") and dem is not None:
-        from src.geometry.wall import burn_walls, clip_walls, walls_to_geometry
-        from src.terrain.store import find_wall_files
-
-        wl = find_wall_files(bbox)
-        if not wl:
-            warnings.append(
-                "옹벽 비축 없음: 반경이 옹벽 GeoJSON 밖입니다 "
-                "(wall_manifest.json 확인 또는 wall_bake 실행 필요)."
-            )
-        else:
-            wall_features = clip_walls(
-                [config.wall_file_path(w["file"]) for w in wl],
-                _bbox_4326_to_5186(bbox), offset,
-            )
-            if not wall_features:
-                warnings.append("반경 내 옹벽 없음 (F0040000).")
-            else:
-                # 건물 아래 지면은 건드리지 않는다 — 건물은 버닝 전 지면에 앉아 있다(위 §6).
-                dem = burn_walls(
-                    dem, wall_features,
-                    protect_footprints=[s.footprint_m for s in solids],
-                )
-                walls_geom = walls_to_geometry(wall_features, dem)
-
-    # 7.4 수계 (E계열) — 하천/호소 폴리곤을 표고고정 평면 수면으로. 지형을 물 아래로 버닝(§6b가 이
-    #     DEM을 씀 → 지형이 수면 위로 안 삐져나옴). 수면 z = 경계(둑) DEM 저백분위. 수계는 실시간
-    #     API 없어 오프라인 굽기(water_bake) GeoJSON을 water_manifest로 조회. dem 필요(수면 z가 DEM).
-    if layers.get("water") and dem is not None:
-        from src.geometry.water import (
-            build_water_mesh,
-            burn_water,
-            clip_water,
-            surface_zs,
-        )
-        from src.terrain.store import find_water_files
-
-        wfs = find_water_files(bbox)          # 넓은 지역은 수계도 타일 → 겹치는 것 전부
-        if not wfs:
-            warnings.append(
-                "수계 비축 없음: 반경이 수계 GeoJSON 밖입니다 "
-                "(water_manifest.json 확인 또는 water_bake 실행 필요)."
-            )
-        else:
-            water_paths = [config.water_file_path(w["file"]) for w in wfs]
-            water_features = clip_water(water_paths, _bbox_4326_to_5186(bbox), offset)
-            if not water_features:
-                warnings.append("반경 내 수계 폴리곤 없음 (E계열).")
-            else:
-                water_zs = surface_zs(water_features, dem)  # 버닝 전(둑) 기준 수면 표고
-                dem = burn_water(dem, water_features, water_zs)  # 지형을 물 아래로 평탄화
-                water_mesh = build_water_mesh(
-                    water_features, water_zs, dem, config.WATER_CELL_M
-                )
-                water_count = len(water_features)
-
-    # 6b. 통합 표면 — 지형·도로·보도를 **한 번의 삼각화**로 만들어 재질별 3메시로 분리(정점 공유 →
-    #     구멍·뜸·z-fighting·겹침 구조적 제거). 도로/보도 없으면 일반 build_tin.
-    if layers.get("terrain") and dem is not None and elev_range is not None:
-        if road_features or sidewalk_features:
-            from src.geometry.road import build_unified_surface
-
-            terrain_mesh, road_mesh, sidewalk_mesh = build_unified_surface(
-                dem, config.TERRAIN_MAX_ERROR_M, road_features, sidewalk_features,
-                config.ROAD_CELL_M, config.M2I,
-                centerlines=road_centerlines,
-                crown_pct=config.ROAD_CROWN_PCT, crown_cap=config.ROAD_CROWN_CAP_M,
-                edge_cell=config.ROAD_EDGE_CELL_M,
-            )
-        else:
-            from src.geometry.terrain_mesh import build_tin
-
-            terrain_mesh = build_tin(dem, config.TERRAIN_MAX_ERROR_M)
-
-        # 지형 바깥 둘레에 스커트(벽) — 대지모델을 흙덩어리처럼 마감(TopoShaper 스타일). 도로
-        # 구멍엔 안 세우고 외곽만. 통합표면/일반 TIN 둘 다 적용. 0이면 생략.
-        if terrain_mesh is not None and config.TERRAIN_SKIRT_M > 0:
-            from src.geometry.terrain_mesh import add_skirt
-
-            terrain_mesh = add_skirt(terrain_mesh, config.TERRAIN_SKIRT_M)
-
-    # 통합표면이 안 만들어진 경우(지형 미요청/DEM 없음) 도로/보도는 드레이프 메시로 폴백.
-    if road_mesh is None and road_features:
-        from src.geometry.road import apply_crown, build_road_mesh
-
-        road_mesh = build_road_mesh(road_features, dem, config.ROAD_CELL_M)
-        if road_mesh is not None and road_centerlines and config.ROAD_CROWN_PCT > 0:
-            road_mesh = apply_crown(
-                road_mesh, road_centerlines, config.ROAD_CROWN_PCT,
-                config.ROAD_CL_SAMPLE_M, config.ROAD_CROWN_CAP_M,
-            )
-    if sidewalk_mesh is None and sidewalk_features:
-        from src.geometry.road import build_road_mesh
-
-        sidewalk_mesh = build_road_mesh(sidewalk_features, dem, config.ROAD_CELL_M)
+    surf = build_surface(
+        dem, bbox, _bbox_4326_to_5186(bbox), offset, layers, solids, warnings,
+    )
+    dem = surf.dem
+    terrain_mesh = surf.terrain
+    road_mesh, sidewalk_mesh, water_mesh = surf.road, surf.sidewalk, surf.water
+    lanes, walls_geom = surf.lanes, surf.walls_geom
+    road_count = surf.counts.get("roads", 0)
+    water_count = surf.counts.get("water", 0)
 
     # 7.6 도시계획 경계선(지구단위계획구역·도시계획시설) — 판정 없이 선형·이름만. 최종 지형(버닝 후)
     #     DEM에 드레이프해 지형 위에 얹는다. 경계 사각형은 사이트 bbox(지형 여유분 아님).
@@ -706,7 +564,11 @@ def generate(
     if layers.get("qa"):
         from src.qa import run_qa
 
-        qa_result = run_qa(solids, dem=dem, terrain_mesh=terrain_mesh, m2i=config.M2I)
+        qa_result = run_qa(
+            solids, dem=dem, terrain_mesh=terrain_mesh, m2i=config.M2I,
+            road_mesh=road_mesh, water_features=surf.water_features,
+            water_zs=surf.water_zs,
+        )
 
     if "3dm" in outputs:
         from src.output.rhino import write_3dm

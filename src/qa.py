@@ -19,6 +19,7 @@ SINK_M = 1.5           # base_z가 지형 최저보다 이만큼 아래 = 침몰
 OVERLAP_FRAC = 0.5     # 두 건물 footprint 겹침이 작은 쪽 면적의 이 비율 초과 = 중복/오류
 SPIKE_M = 6.0          # 지형 정점이 이웃 평균과 이만큼 차이 = 스파이크/웅덩이
 TINY_AREA_M2 = 2.0     # footprint 면적이 이보다 작으면 슬리버(데이터 오류 의심)
+SUBMERGED_M = 0.05     # 도로 정점이 수면보다 이만큼 아래 = 침수(교량이 강으로 가라앉음)
 MAX_FINDINGS_PER_KIND = 40  # 종류별 상한(스팸 방지, 초과분은 요약에 개수만)
 
 # finding kind → 심의/검수 실무 라벨 (내부 코드명을 사람이 읽는 말로). A-3.
@@ -31,6 +32,7 @@ KIND_LABELS = {
     "footprint_invalid": "부정형 footprint",
     "footprint_tiny": "초소형 footprint",
     "terrain_spike": "지형 돌출·웅덩이",
+    "road_under_water": "도로 수면 아래",
 }
 
 
@@ -287,16 +289,68 @@ def _check_terrain_spikes(terrain_mesh, m2i, out):
         n += 1
 
 
+def _check_road_under_water(road_mesh, water_features, water_zs, out):
+    """도로 정점이 수면보다 아래면 침수 — 교량이 강 바닥으로 끌려간 흔적.
+
+    등고선 DEM에는 교량 데크가 없다. `burn_roads`는 데크 셀을 중심선 최근접 표고로 굽는데
+    그 중심선 z 자체가 DEM 샘플(=하천 바닥)이고, 뒤이어 `burn_water`가 수계 내부를 수면
+    표고로 덮어쓴 다음 `build_unified_surface`가 도로 z를 그 DEM에서 다시 읽는다. 결과가
+    "도로가 강에 잠김"이다(실측 기준선 `docs/bridge_baseline.json`).
+
+    데크 표고를 실측 기반으로 세우기 전까지는 **이 검사가 그 결함의 가시화**다. 교량 데크가
+    들어오면 데크 정점은 수면 위에 있어야 하므로 같은 검사가 회귀 가드로 남는다.
+    """
+    if road_mesh is None or not road_mesh.vertices or not water_features or not water_zs:
+        return
+    from shapely.geometry import Point, Polygon
+    from shapely.strtree import STRtree
+
+    polys, zs = [], []
+    for f, wz in zip(water_features, water_zs):
+        rings = getattr(f, "rings", None)
+        if not rings or len(rings[0]) < 3:
+            continue
+        p = Polygon(rings[0], [r for r in rings[1:] if len(r) >= 3] or None)
+        if not p.is_valid:
+            p = p.buffer(0)
+        if p.is_empty or p.geom_type != "Polygon":
+            continue
+        polys.append(p)
+        zs.append(float(wz))
+    if not polys:
+        return
+
+    tree = STRtree(polys)
+    worst = []
+    for x, y, z in road_mesh.vertices:
+        pt = Point(x, y)
+        j = tree.nearest(pt)
+        if not polys[j].contains(pt):        # 물 안에 있는 정점만(물가 도로는 정상)
+            continue
+        dz = z - zs[j]
+        if dz < -SUBMERGED_M:
+            worst.append((dz, x, y))
+    if not worst:
+        return
+    worst.sort()                              # 가장 깊이 잠긴 것부터
+    for dz, x, y in worst[:MAX_FINDINGS_PER_KIND]:
+        out.append(_f("warn", "road_under_water",
+                      f"도로가 수면보다 {-dz:.2f}m 아래 — 교량 데크 표고가 지형에 없습니다",
+                      [round(x, 2), round(y, 2)], None))
+
+
 def _f(severity, kind, message, at, name):
     return {"severity": severity, "kind": kind, "label": KIND_LABELS.get(kind, kind),
             "message": message, "at": at, "name": name}
 
 
-def run_qa(solids, dem=None, terrain_mesh=None, m2i: float = 39.3701) -> dict:
+def run_qa(solids, dem=None, terrain_mesh=None, m2i: float = 39.3701,
+           road_mesh=None, water_features=None, water_zs=None) -> dict:
     """생성물 자동 검증 → {"findings": [...], "summary": {...}}.
 
     solids: BuildingSolid 목록(로컬 미터, seated). dem: 앉힘/지형밖 검사용(로컬 offset). terrain_mesh:
-    스파이크 검사용(정점 인치). 검사는 실패해도 조용히 건너뛴다(QA가 생성 자체를 막지 않게).
+    스파이크 검사용(정점 인치). road_mesh/water_features/water_zs: 도로 침수 검사용(로컬 미터).
+    검사는 실패해도 조용히 건너뛴다(QA가 생성 자체를 막지 않게).
     """
     findings: list[dict] = []
     for check in (
@@ -304,6 +358,7 @@ def run_qa(solids, dem=None, terrain_mesh=None, m2i: float = 39.3701) -> dict:
         lambda: _check_overlap(solids, findings),
         lambda: _check_footprints(solids, findings),
         lambda: _check_terrain_spikes(terrain_mesh, m2i, findings),
+        lambda: _check_road_under_water(road_mesh, water_features, water_zs, findings),
     ):
         try:
             check()

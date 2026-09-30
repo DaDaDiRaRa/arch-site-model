@@ -277,3 +277,66 @@ def test_generate_tile_roads_skipped_without_terrain():
     assert out["ok"] is True
     assert out["geometry"]["roads"] is None
     assert out["road_triangles"] == 0
+
+def test_generate_tile_applies_walls(monkeypatch, tmp_path):
+    """타일 모드도 옹벽을 지형에 반영한다.
+
+    회귀 가드: 예전에는 이 파일이 버닝 순서를 따로 구현해 `burn_walls`를 아예 부르지
+    않았다 — 같은 주소가 단발/타일 모드에서 다른 지형을 냈다. 이제 두 경로가
+    `pipeline_surface.build_surface` 하나를 쓴다.
+    """
+    import json
+
+    from rasterio.transform import from_bounds as _tf
+
+    import src.terrain.dem as dem_mod
+    import src.terrain.store as store_mod
+    from src.terrain.dem import DEMPatch
+
+    # 옹벽은 **레벨차가 이미 있는 곳**을 선명하게 하는 연산이다(양옆 표고가 같으면 건너뜀).
+    # 그래서 합성 지형은 평지가 아니라 서→동 경사여야 하고, 옹벽선은 경사에 직각이어야 한다.
+    monkeypatch.setattr(
+        store_mod, "find_tiles",
+        lambda bbox, manifest=None: [{"file": "synthetic.tif", "cell_m": 5.0}],
+    )
+
+    def _slope(paths, bbox_5186, offset):
+        minx, miny, maxx, maxy = bbox_5186
+        n = 64
+        col = np.arange(n, dtype=np.float32) * 0.5      # 셀마다 0.5m 상승
+        grid = np.tile(55.0 + col, (n, 1)).astype(np.float32)
+        return DEMPatch(grid=grid, transform=_tf(minx, miny, maxx, maxy, n, n),
+                        offset=offset)
+
+    monkeypatch.setattr(dem_mod, "clip_dem_mosaic", _slope)
+
+    b4326, b5186, offset = _tile_bbox_around(127.3700, 36.3400)
+    midx = (b5186[0] + b5186[2]) / 2
+    gj = tmp_path / "walls.geojson"
+    gj.write_text(json.dumps({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"h": 3.0}, "geometry": {
+            "type": "LineString",
+            "coordinates": [[midx, b5186[1] + 20], [midx, b5186[3] - 20]]}},
+    ]}), encoding="utf-8")
+    monkeypatch.setattr(
+        store_mod, "find_wall_files", lambda bbox, manifest=None: [{"file": str(gj)}]
+    )
+    monkeypatch.setattr(ts.config, "wall_file_path", lambda f: f)
+
+    base = {"buildings": True, "terrain": True}
+    feat = _feature(0, 127.3700, 36.3400)
+    off_w = generate_tile(b4326, b5186, offset, layers=base,
+                          client=FakeClient([feat]))
+    on_w = generate_tile(b4326, b5186, offset, layers={**base, "walls": True},
+                         client=FakeClient([feat]))
+
+    assert off_w["ok"] is True and on_w["ok"] is True
+    # 옹벽 상단선이 geometry에 실린다(단발 경로와 같은 키).
+    assert on_w["geometry"]["walls"]
+    assert not off_w["geometry"]["walls"]
+    # 그리고 지형이 실제로 달라진다 — 단차가 DEM에 심겼다는 뜻. 옹벽은 사면 **중간**에
+    # 있으므로 전역 최저점은 그대로다. 적응형 TIN이 새 파단선에 정점을 더 넣는지로 본다.
+    assert on_w["terrain_triangles"] > off_w["terrain_triangles"]
+    zs_off = sorted(v[2] for v in off_w["geometry"]["terrain"]["vertices"])
+    zs_on = sorted(v[2] for v in on_w["geometry"]["terrain"]["vertices"])
+    assert zs_on != zs_off

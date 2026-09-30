@@ -206,6 +206,7 @@ def generate_tile(
     sidewalk_mesh = None
     lanes = None
     water_mesh = None
+    walls_geom = None
     dem = None
     clip_5186 = None
     if layers.get("terrain"):
@@ -234,80 +235,22 @@ def generate_tile(
             else:
                 dem = None
 
-    # 도로(Phase R): 이 타일(margin 포함)만 도로/보도/중심선 클립 → DEM 버닝(절토/성토). 도로는
-    # 실시간 API 없어 road_manifest GeoJSON(오프라인 굽기) 조회. z가 DEM 표고라 dem 없으면 생략.
-    road_features = None
-    sidewalk_features = None
-    centerlines = None
-    if layers.get("roads") and dem is not None and clip_5186 is not None:
-        from src.geometry.road import (
-            burn_roads,
-            clip_centerlines,
-            clip_lane_markings,
-            clip_roads,
-            clip_sidewalks,
-            drape_centerlines,
+    # 도로·옹벽·수계 버닝과 통합 삼각화는 단발 경로와 **같은 함수**를 쓴다
+    # (`pipeline_surface.build_surface`). 예전엔 이 파일이 순서를 따로 구현해 옹벽·평탄화가
+    # 빠져 있었다 — 같은 주소가 모드에 따라 다른 지형을 냈다.
+    # 타일은 이음매 margin을 더한 clip 영역으로 조회·클립하고, 스커트는 세우지 않는다
+    # (타일마다 세우면 타일 경계에 벽이 생긴다).
+    if dem is not None and clip_5186 is not None:
+        from src.pipeline_surface import build_surface
+
+        surf = build_surface(
+            dem, _bbox_5186_to_4326(clip_5186), clip_5186, offset, layers, solids,
+            warnings=[], skirt=False,
         )
-        from src.terrain.store import find_road_files
-
-        rfs = find_road_files(_bbox_5186_to_4326(clip_5186))
-        if rfs:
-            # 메트로 도로 타일 여럿을 합쳐 읽음(하드클립 → 중복 없음).
-            road_path = [config.road_file_path(rf["file"]) for rf in rfs]
-            road_features = clip_roads(road_path, clip_5186, offset)
-            sidewalk_features = clip_sidewalks(road_path, clip_5186, offset)
-            if road_features or sidewalk_features:
-                centerlines = clip_centerlines(road_path, clip_5186, offset)
-                if road_features and centerlines:
-                    dem = burn_roads(
-                        dem, road_features, centerlines,
-                        win_m=config.ROAD_SMOOTH_WIN_M,
-                        sample_m=config.ROAD_CL_SAMPLE_M,
-                        max_dist_m=config.ROAD_CL_MAX_DIST_M,
-                        skirt_m=config.ROAD_SKIRT_M,
-                        max_dev=config.ROAD_MAX_DEV_M,
-                    )
-                # 표시용 다차선 마킹(차로수·도로폭 기반)은 별도로 — 버닝은 위 중심선으로.
-                lanes = drape_centerlines(
-                    clip_lane_markings(road_path, clip_5186, offset), dem
-                )
-
-    # 수계 — 하천/호소를 표고고정 평면 수면으로 + 지형을 물 아래로 버닝(§6b 통합표면이 이 DEM을 씀).
-    if layers.get("water") and dem is not None and clip_5186 is not None:
-        from src.geometry.water import (
-            build_water_mesh,
-            burn_water,
-            clip_water,
-            surface_zs,
-        )
-        from src.terrain.store import find_water_files
-
-        wfs = find_water_files(_bbox_5186_to_4326(clip_5186))
-        if wfs:
-            water_features = clip_water(
-                [config.water_file_path(w["file"]) for w in wfs], clip_5186, offset)
-            if water_features:
-                water_zs = surface_zs(water_features, dem)
-                dem = burn_water(dem, water_features, water_zs)
-                water_mesh = build_water_mesh(water_features, water_zs, dem, config.WATER_CELL_M)
-
-    # 지형·도로·보도 메시: 도로/보도 있으면 통합 삼각화(정점 공유 → 이음매·구멍·겹침 0),
-    # 없으면 일반 TIN. 버닝된 dem을 쓴다(도로에 맞게 절토/성토된 지형).
-    if dem is not None and dem.z_range() is not None:
-        if road_features or sidewalk_features:
-            from src.geometry.road import build_unified_surface
-
-            terrain_mesh, road_mesh, sidewalk_mesh = build_unified_surface(
-                dem, config.TERRAIN_MAX_ERROR_M, road_features, sidewalk_features,
-                config.ROAD_CELL_M, config.M2I,
-                centerlines=centerlines,
-                crown_pct=config.ROAD_CROWN_PCT, crown_cap=config.ROAD_CROWN_CAP_M,
-                edge_cell=config.ROAD_EDGE_CELL_M,
-            )
-        else:
-            from src.geometry.terrain_mesh import build_tin
-
-            terrain_mesh = build_tin(dem, config.TERRAIN_MAX_ERROR_M)
+        dem = surf.dem
+        terrain_mesh, road_mesh = surf.terrain, surf.road
+        sidewalk_mesh, water_mesh, lanes = surf.sidewalk, surf.water, surf.lanes
+        walls_geom = surf.walls_geom
 
     # 정사영상: 이 타일 영역(지형 겹침 margin 포함)만 풀해상도(zoom 18)로 → 타일 지형에 드레이프.
     ortho = None
@@ -319,6 +262,7 @@ def generate_tile(
     geometry = _build_geometry(
         solids, terrain_mesh, None,
         roads=road_mesh, sidewalks=sidewalk_mesh, lanes=lanes, water=water_mesh,
+        walls=walls_geom,
     )
     return {
         "ok": True,
