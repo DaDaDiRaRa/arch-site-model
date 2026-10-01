@@ -223,3 +223,31 @@ def test_road_under_water_skipped_without_water():
     """수계가 없으면(비축 없음·반경 밖) 이 검사는 조용히 건너뛴다."""
     road = _Mesh([(50.0, 25.0, -5.0)])
     assert "road_under_water" not in _kinds(run_qa([], road_mesh=road))
+
+
+def test_planted_breaklines_are_not_spikes():
+    """심어 둔 단차(옹벽·제방·사면) 근처는 스파이크로 신고하지 않는다.
+
+    실측 데이터로 **일부러** 세운 수직 단차다. 안 걸러내면 옹벽을 켤 때마다 가짜 경보가
+    늘어난다(실측 이촌동: 옹벽 66개를 켜면 스파이크 2 → 10건, 걸러내면 0건).
+    """
+    from src.qa import SPIKE_M
+
+    n = 7
+    spike = 3 * n + 3                                   # 내부 정점 하나(경계 아님)
+    mesh = _grid_mesh(n=n, z_of=lambda i, j:
+                      50.0 + (SPIKE_M * 2 if (i, j) == (3, 3) else 0.0))
+    mx = mesh.vertices[spike][0] / M2I
+    my = mesh.vertices[spike][1] / M2I
+
+    assert "terrain_spike" in _kinds(run_qa([], terrain_mesh=mesh, m2i=M2I))
+    # 그 자리를 지나는 단차선을 주면 신고하지 않는다.
+    bl = [{"points": [[mx - 30, my, 50.0], [mx + 30, my, 50.0]]}]
+    assert "terrain_spike" not in _kinds(
+        run_qa([], terrain_mesh=mesh, m2i=M2I, breaklines=bl)
+    )
+    # 멀리 떨어진 단차선은 가려 주지 않는다.
+    far = [{"points": [[mx, my + 200, 50.0], [mx + 60, my + 200, 50.0]]}]
+    assert "terrain_spike" in _kinds(
+        run_qa([], terrain_mesh=mesh, m2i=M2I, breaklines=far)
+    )

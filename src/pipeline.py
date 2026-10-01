@@ -575,6 +575,7 @@ def generate(
             solids, dem=dem, terrain_mesh=terrain_mesh, m2i=config.M2I,
             road_mesh=road_mesh, water_features=surf.water_features,
             water_zs=surf.water_zs,
+            breaklines=(walls_geom or []) + (scarps_geom or []),
         )
 
     if "3dm" in outputs:

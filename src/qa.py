@@ -18,6 +18,7 @@ FLOAT_M = 1.5          # base_z가 footprint 아래 지형 최저보다 이만�
 SINK_M = 1.5           # base_z가 지형 최저보다 이만큼 아래 = 침몰(파묻힘)
 OVERLAP_FRAC = 0.5     # 두 건물 footprint 겹침이 작은 쪽 면적의 이 비율 초과 = 중복/오류
 SPIKE_M = 6.0          # 지형 정점이 이웃 평균과 이만큼 차이 = 스파이크/웅덩이
+BREAKLINE_NEAR_M = 8.0 # 심어 둔 단차(옹벽·제방·사면) 이 거리 안의 스파이크는 신고하지 않는다
 TINY_AREA_M2 = 2.0     # footprint 면적이 이보다 작으면 슬리버(데이터 오류 의심)
 SUBMERGED_M = 0.05     # 도로 정점이 수면보다 이만큼 아래 = 침수(교량이 강으로 가라앉음)
 MAX_FINDINGS_PER_KIND = 40  # 종류별 상한(스팸 방지, 초과분은 요약에 개수만)
@@ -221,7 +222,7 @@ def _plane_dev(px, py, pz, x, y, z):
     return z - (A * x + B * y + C)
 
 
-def _check_terrain_spikes(terrain_mesh, m2i, out):
+def _check_terrain_spikes(terrain_mesh, m2i, out, breaklines=None):
     """지형 TIN 정점이 이웃 평면 대비 SPIKE_M 이상 튀면 스파이크/웅덩이.
 
     등고선 오류·보간 오버슈트를 잡는 검사다. 경사면·희소 삼각화를 스파이크로 오인하지
@@ -267,10 +268,26 @@ def _check_terrain_spikes(terrain_mesh, m2i, out):
             boundary.add(u)
             boundary.add(w)
 
+    # 심어 둔 단차선 근처는 제외 — 의도한 수직 단차다.
+    bl = None
+    if breaklines:
+        try:
+            from shapely.geometry import LineString, MultiLineString
+            lines = [LineString([(p[0], p[1]) for p in (b.get("points") or [])])
+                     for b in breaklines if len((b.get("points") or [])) >= 2]
+            bl = MultiLineString(lines) if lines else None
+        except Exception:  # noqa: BLE001 — 단차선 파싱 실패는 검사를 막지 않는다
+            bl = None
+
     worst = []
     for i in range(nv):
         if i in boundary or len(nbrs[i]) < 3:
             continue
+        if bl is not None:
+            from shapely.geometry import Point
+
+            if bl.distance(Point(verts[i][0] / m2i, verts[i][1] / m2i)) < BREAKLINE_NEAR_M:
+                continue
         idx = list(nbrs[i])
         dev = _plane_dev(
             [verts[j][0] / m2i for j in idx],
@@ -345,7 +362,7 @@ def _f(severity, kind, message, at, name):
 
 
 def run_qa(solids, dem=None, terrain_mesh=None, m2i: float = 39.3701,
-           road_mesh=None, water_features=None, water_zs=None) -> dict:
+           road_mesh=None, water_features=None, water_zs=None, breaklines=None) -> dict:
     """생성물 자동 검증 → {"findings": [...], "summary": {...}}.
 
     solids: BuildingSolid 목록(로컬 미터, seated). dem: 앉힘/지형밖 검사용(로컬 offset). terrain_mesh:
@@ -357,7 +374,7 @@ def run_qa(solids, dem=None, terrain_mesh=None, m2i: float = 39.3701,
         lambda: _check_seating(solids, dem, findings),
         lambda: _check_overlap(solids, findings),
         lambda: _check_footprints(solids, findings),
-        lambda: _check_terrain_spikes(terrain_mesh, m2i, findings),
+        lambda: _check_terrain_spikes(terrain_mesh, m2i, findings, breaklines),
         lambda: _check_road_under_water(road_mesh, water_features, water_zs, findings),
     ):
         try:
