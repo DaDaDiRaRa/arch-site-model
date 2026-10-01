@@ -493,8 +493,8 @@ python -m src.terrain.contour_bake <shp_dir> `
 | 도로(`road_manifest`) | 23,217 | 16개 시도. ⚠️ **대전광역시는 옛 단일 타일 1개뿐**(서구 일부만) |
 | 옹벽(`wall_manifest`) | 21,504 | 16개 시도 |
 | 수계(`water_manifest`) | 21,617 | 16개 시도 |
-| 교량·터널(`deck_manifest`) | 2,227 | 충청남도 · 서울특별시 (GCS `DECK_BASE` 서빙 중) |
-| 지형 단차(`scarp_manifest`) | 2,326 | 충청남도 · 서울특별시 (GCS `SCARP_BASE` 서빙 중) |
+| 교량·터널(`deck_manifest`) | **19,374** | 16개 시도 (전남 제외) · GCS `DECK_BASE` 서빙 |
+| 지형 단차(`scarp_manifest`) | **19,587** | 16개 시도 (전남 제외) · GCS `SCARP_BASE` 서빙 |
 
 10km 격자·5m·EPSG:5186·method=clough guard 3m·거리제한 채움 fill_dist 200m.
 동부원점(5187)·연속본(5179) 원본은 읽을 때 5186으로 재투영. **git 미추적**(`geo_store/*.tif` gitignore)
