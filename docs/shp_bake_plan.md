@@ -240,11 +240,11 @@ python scripts/dem_to_cog.py geo_store --out cog_out --bucket arch-site-model-de
 gcloud storage cp cog_out/*.tif gs://arch-site-model-dem/dem/
 
 # 도로·수계·옹벽·데크·단차 GeoJSON (COG 변환 없이 그대로)
-gcloud storage cp geo_store/roads_<지역>*.geojson gs://<버킷>/roads/
-gcloud storage cp geo_store/water_<지역>*.geojson gs://<버킷>/water/
-gcloud storage cp geo_store/walls_<지역>*.geojson gs://<버킷>/walls/
-gcloud storage cp geo_store/decks_<지역>*.geojson gs://<버킷>/decks/
-gcloud storage cp geo_store/scarps_<지역>*.geojson gs://<버킷>/scarps/
+gcloud storage cp "geo_store/roads_<지역>*.geojson" gs://<버킷>/roads/
+gcloud storage cp "geo_store/water_<지역>*.geojson" gs://<버킷>/water/
+gcloud storage cp "geo_store/walls_<지역>*.geojson" gs://<버킷>/walls/
+gcloud storage cp "geo_store/decks_<지역>*.geojson" gs://<버킷>/decks/
+gcloud storage cp "geo_store/scarps_<지역>*.geojson" gs://<버킷>/scarps/
 ```
 
 공개 버킷이라 `/vsicurl` 익명 읽기가 되고 인증·서비스계정이 필요 없다.

@@ -144,7 +144,7 @@ gcloud run services update arch-site-model --region asia-northeast3 \
 ```bash
 # 굽기: python -m src.terrain.road_bake <SHP폴더> --out geo_store/roads_<지역>.geojson --region "<지역>"
 #   (경계 폴리곤 없는 소로·골목은 실측 도로폭으로 자동 합성 — synthesize_gap_roads)
-gcloud storage cp geo_store/roads_*.geojson gs://arch-site-model-dem/roads/
+gcloud storage cp "geo_store/roads_*.geojson" gs://arch-site-model-dem/roads/
 ```
 ```bash
 gcloud run services update arch-site-model --region asia-northeast3 \
@@ -155,10 +155,10 @@ gcloud run services update arch-site-model --region asia-northeast3 \
 **수계·옹벽·데크·단차도 동형이다** — 같은 버킷의 다른 프리픽스에 올리고 env만 하나씩 더 준다:
 
 ```bash
-gcloud storage cp geo_store/water_*.geojson gs://arch-site-model-dem/water/
-gcloud storage cp geo_store/walls_*.geojson gs://arch-site-model-dem/walls/
-gcloud storage cp geo_store/decks_*.geojson gs://arch-site-model-dem/decks/
-gcloud storage cp geo_store/scarps_*.geojson gs://arch-site-model-dem/scarps/
+gcloud storage cp "geo_store/water_*.geojson" gs://arch-site-model-dem/water/
+gcloud storage cp "geo_store/walls_*.geojson" gs://arch-site-model-dem/walls/
+gcloud storage cp "geo_store/decks_*.geojson" gs://arch-site-model-dem/decks/
+gcloud storage cp "geo_store/scarps_*.geojson" gs://arch-site-model-dem/scarps/
 gcloud run services update arch-site-model --region asia-northeast3   --update-env-vars WATER_BASE=gs://arch-site-model-dem/water,WALL_BASE=gs://arch-site-model-dem/walls,DECK_BASE=gs://arch-site-model-dem/decks,SCARP_BASE=gs://arch-site-model-dem/scarps
 ```
 
@@ -175,6 +175,9 @@ gcloud run services update arch-site-model --region asia-northeast3   --update-e
 - **⚠️ `--update-env-vars`를 쓸 것 (`--set-env-vars` 아님)**: `--set-env-vars`는 **기존 env를 전부
   교체(삭제)**한다 → `DEM_TILE_BASE`·`ORTHO_SOURCE` 등이 날아가 DEM 서빙이 깨진다. `--update-env-vars`는
   지정한 것만 추가/수정하고 나머지는 보존한다. (secret으로 붙인 `VWORLD_KEY`는 env-vars 변경에 영향 없음.)
+- **⚠️ 와일드카드는 따옴표로 묶을 것**: 타일이 수천 개인 지역에서 셸이 파일명을 전부
+  펼치면 `Argument list too long`으로 죽는다(실측: 데크 2,047개에서 발생). 따옴표로 주면
+  gcloud가 직접 풀어 한 번에 올린다.
 - **버킷 공개 읽기 필수**: 객체가 공개(allUsers:objectViewer)여야 `/vsicurl`·HTTP fetch가 된다.
 - **manifest는 git 추적**(`manifest.json`·`road_manifest.json`) → 커밋하면 배포 이미지에 들어간다.
   데이터 파일명이 manifest와 일치해야 조회된다.
