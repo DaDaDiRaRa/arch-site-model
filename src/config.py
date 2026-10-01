@@ -166,6 +166,8 @@ DECK_BASE = os.environ.get("DECK_BASE", str(GEO_STORE))
 WATER_BASE = os.environ.get("WATER_BASE", str(GEO_STORE))
 # 옹벽 타일도 도로·수계와 같은 방식으로 서빙(gs:// 주면 HTTP로 읽음).
 WALL_BASE = os.environ.get("WALL_BASE", str(GEO_STORE))
+# 지형 단차(제방 C0050000 + 절토/성토면 F0030000) 타일 — 옹벽과 동형.
+SCARP_BASE = os.environ.get("SCARP_BASE", str(GEO_STORE))
 
 # --- 용도지역(zoning) — 형제 앱 arch-law-graph 연동 ---
 # 사이트 용도지역은 arch-law-graph의 GET /api/zoning?address= 로 조회한다(경계 존중: zoning=법령
@@ -190,6 +192,16 @@ def water_file_path(filename: str) -> str:
 def wall_file_path(filename: str) -> str:
     """wall_manifest의 옹벽 파일명 → 실제 읽기 위치. water_file_path와 동형."""
     base = WALL_BASE
+    if base.startswith("gs://"):
+        base = "https://storage.googleapis.com/" + base[len("gs://"):]
+    if base.startswith(("http://", "https://")):
+        return base.rstrip("/") + "/" + filename
+    return str(Path(base) / filename)
+
+
+def scarp_file_path(filename: str) -> str:
+    """scarp_manifest의 지형 단차 파일명 → 실제 읽기 위치. wall_file_path와 동형."""
+    base = SCARP_BASE
     if base.startswith("gs://"):
         base = "https://storage.googleapis.com/" + base[len("gs://"):]
     if base.startswith(("http://", "https://")):

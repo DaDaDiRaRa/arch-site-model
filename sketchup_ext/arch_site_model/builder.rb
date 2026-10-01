@@ -18,6 +18,8 @@ module ArchSiteModel
     C_LANE     = [232, 200, 74].freeze  # 노랑 — 차선/중심선 마킹 (F2 C_LANE)
     C_WATER    = [58, 110, 165].freeze  # 강물 블루 — 수계 (F2 C_WATER)
     C_DECK     = [120, 120, 128].freeze # 교량 데크 — 공중 구조물(F2 C_DECK)
+    C_SCARP    = [150, 120, 70].freeze  # 제방·절토성토 단차선(F2 C_SCARP)
+    C_WALL     = [140, 92, 60].freeze   # 옹벽 상단선(.3dm walls 레이어와 동일 RGB)
     C_QA_WARN  = [220, 38, 38].freeze   # 빨강 — QA 경고 핀
     C_QA_INFO  = [245, 158, 11].freeze  # 주황 — QA info 핀
     C_CADASTRAL = [220, 200, 100].freeze # 샌디 옐로 — 지적 경계 (rhino .3dm / F2와 동일)
@@ -82,13 +84,14 @@ module ArchSiteModel
 
     # 옹벽 상단선 → 갈색 엣지(태그 walls). 지형에는 백엔드가 이미 수직 단차를 심어 두었고, 이 선은
     # 그 위치와 실측 높이(그룹 이름)를 보여 준다. walls = [{"points"=>[[x,y,z],...], "h"=>높이}, ...]
-    def self.build_walls(model, parent_ents, walls)
+    # 단차선(옹벽 상단선·제방 마루선·절토성토 상단선) — 같은 선 렌더를 이름/색만 바꿔 쓴다.
+    def self.build_walls(model, parent_ents, walls, name = "walls", color = C_WALL)
       return unless walls && !walls.empty?
       grp = parent_ents.add_group
-      grp.name = "walls"
-      t = tag(model, "walls")
+      grp.name = name
+      t = tag(model, name)
       begin
-        t.color = Sketchup::Color.new(140, 92, 60)
+        t.color = Sketchup::Color.new(*color)
       rescue StandardError
         nil
       end
@@ -132,6 +135,8 @@ module ArchSiteModel
       n = build_buildings(model, parent_ents, geometry["buildings"] || [])
       build_cadastral(model, parent_ents, geometry["cadastral"])
       build_walls(model, parent_ents, geometry["walls"])
+      # 제방 마루선·절토성토 상단선 — 지형에 심은 단차의 위치(옹벽과 같은 선 렌더).
+      build_walls(model, parent_ents, geometry["scarps"], "scarps", C_SCARP)
       build_planning(model, parent_ents, geometry["planning"])
       build_qa(model, parent_ents, qa, geometry) if qa
       n # 건물 수 — 마지막 줄이 build_qa면 QA 목록이 반환돼 "완료 — 건물 N동"이 틀렸다(2026-09-21 무인 검증)

@@ -152,13 +152,14 @@ gcloud run services update arch-site-model --region asia-northeast3 \
 #   ROAD_BASE는 gs://…를 https://storage.googleapis.com/…로 변환해 읽는다(공개 버킷 필요).
 ```
 
-**수계·옹벽·데크도 동형이다** — 같은 버킷의 다른 프리픽스에 올리고 env만 하나씩 더 준다:
+**수계·옹벽·데크·단차도 동형이다** — 같은 버킷의 다른 프리픽스에 올리고 env만 하나씩 더 준다:
 
 ```bash
 gcloud storage cp geo_store/water_*.geojson gs://arch-site-model-dem/water/
 gcloud storage cp geo_store/walls_*.geojson gs://arch-site-model-dem/walls/
 gcloud storage cp geo_store/decks_*.geojson gs://arch-site-model-dem/decks/
-gcloud run services update arch-site-model --region asia-northeast3   --update-env-vars WATER_BASE=gs://arch-site-model-dem/water,WALL_BASE=gs://arch-site-model-dem/walls,DECK_BASE=gs://arch-site-model-dem/decks
+gcloud storage cp geo_store/scarps_*.geojson gs://arch-site-model-dem/scarps/
+gcloud run services update arch-site-model --region asia-northeast3   --update-env-vars WATER_BASE=gs://arch-site-model-dem/water,WALL_BASE=gs://arch-site-model-dem/walls,DECK_BASE=gs://arch-site-model-dem/decks,SCARP_BASE=gs://arch-site-model-dem/scarps
 ```
 
 `WALL_BASE`는 옹벽(F0040000 상단선+실측 높이) 타일 — `layers.walls=true`일 때 DEM에 수직 단차를
@@ -167,6 +168,9 @@ gcloud run services update arch-site-model --region asia-northeast3   --update-e
 `DECK_BASE`는 교량·터널 면(A0070000/A0090000/A0110020) 타일 — 도로 버닝 제외 마스크 + 데크
 표고에 쓴다(`geometry/deck.py`). **미설정이어도 교량은 동작한다** — `DECK_SOURCE="auto"`가
 수계 프록시(도로 ∩ 수계)로 물 횡단을 잡기 때문이다. 이 레이어는 물 없는 교량·터널을 더한다.
+
+`SCARP_BASE`는 제방(C0050000)·절토성토면(F0030000) 단차 타일 — `layers.scarps=true`일 때
+제방 마루를 실측 제방고로 세우고 뭉개진 사면을 실제 폭으로 조인다(`geometry/scarp.py`).
 
 - **⚠️ `--update-env-vars`를 쓸 것 (`--set-env-vars` 아님)**: `--set-env-vars`는 **기존 env를 전부
   교체(삭제)**한다 → `DEM_TILE_BASE`·`ORTHO_SOURCE` 등이 날아가 DEM 서빙이 깨진다. `--update-env-vars`는

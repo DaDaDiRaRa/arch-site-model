@@ -76,6 +76,9 @@ export default function App() {
   const [zoning, setZoning] = useState(false);
   const [planning, setPlanning] = useState(true);
   const [pads, setPads] = useState(false);          // 조성 대지 평탄화(추정) — 기본 꺼짐
+  // 지형 단차 — 실측 높이/실측 선이라 추정이 아니다. 비축(옹벽·제방·절토성토) 있는 지역만 효과.
+  const [walls, setWalls] = useState(false);
+  const [scarps, setScarps] = useState(false);
   const [floorH, setFloorH] = useState<number>(loadFloorH);
 
   // 지도 영역: 주소 검색·클릭은 반경 정사각형(반경 바꾸면 따라감), 드래그는 자유 사각형
@@ -147,6 +150,8 @@ export default function App() {
             buildings: true, terrain, orthophoto: terrain && orthophoto, cadastral, roads,
             water: terrain && water, qa, zoning, planning,
             pads: terrain && pads,
+            walls: terrain && walls,
+            scarps: terrain && scarps,
           },
           outputs: ["3dm", "dae"],
         }),
@@ -391,6 +396,32 @@ export default function App() {
                 className="h-4 w-4 rounded border-slate-300 disabled:opacity-40"
               />
               대상 대지 평탄화 <span className="text-xs text-amber-600">(추정)</span>
+            </label>
+            <label
+              className="mt-5 flex items-center gap-2 text-sm text-slate-700"
+              title="수치지형도 옹벽(F0040000) 상단선의 실측 높이로 지형에 수직 단차를 세웁니다. 등고선만으론 완만한 비탈로 뭉개집니다."
+            >
+              <input
+                type="checkbox"
+                checked={walls}
+                disabled={!terrain}
+                onChange={(e) => setWalls(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 disabled:opacity-40"
+              />
+              옹벽 단차
+            </label>
+            <label
+              className="mt-5 flex items-center gap-2 text-sm text-slate-700"
+              title="제방(실측 제방고로 마루를 세움)과 절토/성토면(뭉개진 단차를 실제 사면 폭으로 조임). 5m 등고선이 담지 못하는 지형입니다."
+            >
+              <input
+                type="checkbox"
+                checked={scarps}
+                disabled={!terrain}
+                onChange={(e) => setScarps(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 disabled:opacity-40"
+              />
+              제방·절토성토면
             </label>
             <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
               <input

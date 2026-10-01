@@ -216,3 +216,149 @@ def read_scarps(shp_dir: str | Path, target_crs: str = "EPSG:5186", bbox=None) -
         log.info("절토/성토면 상단 %d / 하단 %d → 짝 %d개 (짝짓기율 %.1f%%)",
                  len(tops), len(bots), len(pairs), 100 * len(pairs) / len(tops))
     return pairs
+
+
+# 절토/성토 `DIVI` → 런타임 종류. 코드값(연속본)과 한글 라벨 둘 다 받는다.
+_DIVI_KIND = {"SJD001": "cut", "절토": "cut", "SJD002": "fill", "성토": "fill"}
+
+
+def _scarp_manifest_path() -> Path:
+    from src import config
+
+    return config.GEO_STORE / "scarp_manifest.json"
+
+
+def _replace_region_tiles_manifest(region: str, base_stem: str, entries: list[dict]) -> None:
+    """같은 지역(또는 같은 파일 접두사)의 옛 항목을 지우고 새 타일 목록으로 교체."""
+    import json
+
+    path = _scarp_manifest_path()
+    old: list = []
+    if path.exists():
+        data = json.loads(path.read_text(encoding="utf-8"))
+        old = data.get("scarps", []) if isinstance(data, dict) else data
+    keep = [
+        e for e in old
+        if e.get("region") != region and not str(e.get("file", "")).startswith(base_stem)
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(keep + entries, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def bake_scarps_tiled(
+    shp_dir: str | Path,
+    out_path: str | Path,
+    region: str,
+    target_crs: str = "EPSG:5186",
+    tile_km: float = 2.0,
+) -> dict:
+    """제방 마루선 + 절토/성토면 짝을 tile_km 격자로 나눠 담는다.
+
+    ⚠️ **사면 짝은 자르지 않는다.** 상단선·하단선이 짝이어야 하강 방향과 사면 폭이 정해지는데
+    타일 경계에서 한쪽만 잘려 나가면 그 짝은 못 쓴다(데크와 같은 이유). 닿는 타일마다 짝을
+    **통째로** 담고, 런타임 `clip_scarps`가 짝 id `"p"`로 다시 묶는다.
+    제방은 선 하나로 완결되므로 하드클립해도 되지만, 같은 코드로 다루려고 함께 복제한다.
+
+    feature properties:
+      제방 `{"k": "levee", "h": 실측 제방고}`
+      사면 `{"k": "cut"|"fill", "u": "top"|"bot", "p": 짝 id, "d": DIVI}`
+    """
+    import json
+    import math
+
+    import geopandas as gpd
+    from shapely.geometry import box as _box, mapping
+    from shapely.strtree import STRtree
+
+    out_path = Path(out_path)
+    levees = read_levees(shp_dir, target_crs)
+    pairs = read_scarps(shp_dir, target_crs)
+    if not levees and not pairs:
+        raise ValueError(f"제방·절토성토면이 없습니다: {shp_dir}")
+
+    # 인덱싱용 평탄 목록: (대표 geometry, feature 목록)
+    items: list[tuple] = []
+    for g, h in levees:
+        items.append((g, [{"type": "Feature", "properties": {"k": "levee", "h": round(h, 2)},
+                           "geometry": mapping(g)}]))
+    for pid, p in enumerate(pairs):
+        kind = _DIVI_KIND.get(p["divi"], "fill")
+        base = {"k": kind, "p": pid, "d": p["divi"]}
+        items.append((
+            p["top"].union(p["bot"]),
+            [{"type": "Feature", "properties": {**base, "u": "top"},
+              "geometry": mapping(p["top"])},
+             {"type": "Feature", "properties": {**base, "u": "bot"},
+              "geometry": mapping(p["bot"])}],
+        ))
+
+    geoms = [it[0] for it in items]
+    tree = STRtree(geoms)
+    bs = [g.bounds for g in geoms]
+    minx = min(b[0] for b in bs); miny = min(b[1] for b in bs)
+    maxx = max(b[2] for b in bs); maxy = max(b[3] for b in bs)
+
+    tile_m = tile_km * 1000.0
+    ncols = max(1, int(math.ceil((maxx - minx) / tile_m)))
+    nrows = max(1, int(math.ceil((maxy - miny) / tile_m)))
+    log.info("=== scarp tiled bake === 전역 %.1f×%.1f km → 최대 %d×%d 타일 "
+             "(제방 %d · 사면 짝 %d)",
+             (maxx - minx) / 1000, (maxy - miny) / 1000, nrows, ncols, len(levees), len(pairs))
+
+    epsg = int(str(target_crs).split(":")[-1])
+    entries: list[dict] = []
+    made: list[str] = []
+    tot = 0
+    for r in range(nrows):
+        ty1 = maxy - r * tile_m
+        ty0 = max(ty1 - tile_m, miny)
+        for c in range(ncols):
+            tx0 = minx + c * tile_m
+            tx1 = min(tx0 + tile_m, maxx)
+            tbox = _box(tx0, ty0, tx1, ty1)
+            feats: list[dict] = []
+            for i in sorted(int(i) for i in tree.query(tbox)):  # 원본 순서 고정(결정적 산출)
+                g, fs = items[i]
+                if not g.intersects(tbox):
+                    continue
+                feats.extend(fs)              # 자르지 않고 통째로
+            if not feats:
+                continue
+            fc = {"type": "FeatureCollection", "crs_epsg": epsg, "features": feats}
+            tile_out = out_path.with_name(f"{out_path.stem}_r{r}c{c}{out_path.suffix}")
+            tile_out.parent.mkdir(parents=True, exist_ok=True)
+            tile_out.write_text(json.dumps(fc), encoding="utf-8")
+            b4326 = [float(v) for v in gpd.GeoSeries([tbox], crs=target_crs)
+                     .to_crs("EPSG:4326").total_bounds]
+            entries.append({"region": region, "file": tile_out.name,
+                            "bounds_4326": b4326, "scarps": len(feats)})
+            made.append(tile_out.name)
+            tot += len(feats)
+
+    _replace_region_tiles_manifest(region, out_path.stem, entries)
+    log.info("=== scarp tiled bake 완료: %d개 타일 (선 조각 %d) → %s_r*c*.geojson (region=%s) ===",
+             len(made), tot, out_path.stem, region)
+    return {"tiles": len(made), "levees": len(levees), "pairs": len(pairs),
+            "placed": tot, "files": made}
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+    import json
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    ap = argparse.ArgumentParser(
+        description="수치지형도 제방(C0050000)·절토성토면(F0030000) → 지형 단차 GeoJSON 굽기")
+    ap.add_argument("shp_dir", help="수치지도 SHP 상위 폴더(재귀 검색)")
+    ap.add_argument("--out", required=True, help="출력 GeoJSON 경로(geo_store 하위 권장)")
+    ap.add_argument("--region", required=True, help="지역명(manifest 메타)")
+    ap.add_argument("--target-crs", default="EPSG:5186")
+    ap.add_argument("--tile-km", type=float, default=2.0, help="타일 격자 크기(km). 기본 2")
+    args = ap.parse_args(argv)
+    res = bake_scarps_tiled(args.shp_dir, args.out, args.region, args.target_crs, args.tile_km)
+    print(json.dumps(res, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

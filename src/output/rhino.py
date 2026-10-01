@@ -38,6 +38,7 @@ def write_3dm(
     ortho_extent_m: tuple[float, float, float, float] | None = None,
     lanes: list | None = None,
     walls: list | None = None,
+    scarps: list | None = None,
     qa: dict | None = None,
     planning: list | None = None,
     drape=None,
@@ -95,6 +96,10 @@ def write_3dm(
     l_sw.Color = (176, 172, 160, 255)          # concrete beige-gray
     idx_sw = model.Layers.Add(l_sw)
 
+    l_scarp = rhino3dm.Layer()
+    l_scarp.Name = "scarps"
+    l_scarp.Color = (150, 120, 70, 255)     # 제방 마루선·절토성토 상단선(실측 단차 위치)
+    idx_scarp = model.Layers.Add(l_scarp)
     l_deck = rhino3dm.Layer()
     l_deck.Name = "decks"
     l_deck.Color = (120, 120, 128, 255)      # 교량 데크 — 지형이 아니라 공중 구조물
@@ -415,6 +420,22 @@ def _add_cadastral(
     attrs.Name = parcel.pnu
 
     model.Objects.AddCurve(curve, attrs)
+
+
+def _add_scarps(model, scarps: list, layer_idx: int) -> None:
+    """제방 마루선·절토성토 상단선 — 지형에 심은 단차의 위치를 선으로 남긴다."""
+    for i, sc in enumerate(scarps):
+        pts = [rhino3dm.Point3d(float(x), float(y), float(z))
+               for x, y, z in (sc.get("points") or [])]
+        if len(pts) < 2:
+            continue
+        attrs = rhino3dm.ObjectAttributes()
+        attrs.LayerIndex = layer_idx
+        kind = sc.get("kind", "scarp")
+        attrs.Name = f"{kind}_{i}"
+        if sc.get("h"):
+            attrs.SetUserString("levee_height_m", str(sc["h"]))
+        model.Objects.Add(rhino3dm.PolylineCurve(pts), attrs)
 
 
 def _add_walls(

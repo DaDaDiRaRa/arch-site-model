@@ -39,6 +39,7 @@ class SurfaceResult:
     water: object | None = None
     lanes: object | None = None
     walls_geom: list | None = None
+    scarps_geom: list | None = None   # 제방·절토성토면 단차선(뷰어·.3dm)
     road_features: list | None = None    # 통합표면 재구성·QA가 재사용
     sidewalk_features: list | None = None
     centerlines: list | None = None
@@ -58,6 +59,7 @@ def build_surface(
     solids: list,
     warnings: list[str],
     *,
+    pads: list | None = None,
     skirt: bool = True,
 ) -> SurfaceResult:
     """클립된 DEM + 앉힌 건물 → 버닝된 DEM + 지형/도로/보도/수계 메시.
@@ -66,10 +68,18 @@ def build_surface(
     bbox_4326 / bbox_5186: 도로·옹벽·수계 조회와 클립에 쓰는 같은 영역의 두 표현.
     solids: **이미 지면에 앉은** 건물 — 발자국이 버닝 보호 마스크로 쓰인다.
     warnings: 비축 없음·반경 내 없음 등을 append 한다(조용한 fallback 원칙).
+    pads: 조성 대지 평탄화 결과 — 평탄화한 대지를 이후 단차 버닝이 되파지 않게 보호한다.
     skirt: 지형 둘레에 스커트(벽)를 세운다. **타일 모드는 False** — 타일마다 세우면
         타일 경계에 벽이 생긴다.
     """
     out = SurfaceResult(dem=dem)
+
+    # --- 지형 단차(제방·절토/성토면): **도로보다 먼저**. 이유 둘 —
+    #     ⓐ 제방은 둑이고 수면 표고를 읽는 스냅샷(dem_natural) 안에 들어 있어야 한다.
+    #     ⓑ `ROAD_MAX_DEV_M`가 도로를 **현재 DEM** ±2m로 묶으므로, 성토 사면을 먼저 심으면
+    #        도로가 성토체 위에 앉는다(나중이면 원 골짜기로 클램프된다).
+    if layers.get("scarps") and out.dem is not None:
+        _scarps(out, bbox_4326, bbox_5186, offset, solids, pads, warnings)
 
     # --- 도로/보도 (Phase R) — 클립 + 버닝 + 차선. 메시는 아래 통합 삼각화에서.
     if layers.get("roads"):
@@ -160,6 +170,42 @@ def _roads(out: SurfaceResult, bbox_4326, bbox_5186, offset, warnings) -> None:
     out.centerlines = (
         clip_centerlines(paths, bbox_5186, offset) if out.dem is not None else []
     )
+
+
+def _scarps(out: SurfaceResult, bbox_4326, bbox_5186, offset, solids, pads, warnings) -> None:
+    """제방(마루+사면) + 절토/성토면(파단선 선명화)을 DEM에 심는다.
+
+    실측 제방고가 있는 제방만 올리고(추정 없음), 사면은 두 경계선 사이를 조이기만 한다
+    (표고는 선 바깥 실측 지반에서 읽는다). 한 번의 `ZTargets`에 모아 적용하므로 피처가
+    겹쳐도 누적 하강이 생기지 않는다.
+    """
+    from src.geometry.scarp import burn_scarps, clip_scarps, scarps_to_geometry
+    from src.terrain.store import find_scarp_files
+
+    sl = find_scarp_files(bbox_4326)
+    if not sl:
+        warnings.append(
+            "지형 단차 비축 없음: 반경이 제방·절토성토면 GeoJSON 밖입니다 "
+            "(scarp_manifest.json 확인 또는 scarp_bake 실행 필요)."
+        )
+        return
+    feats = clip_scarps(
+        [config.scarp_file_path(s["file"]) for s in sl], bbox_5186, offset
+    )
+    if not feats:
+        warnings.append("반경 내 제방·절토성토면 없음 (C0050000/F0030000).")
+        return
+    # 건물은 이미 지면에 앉아 있다 — 지반을 올리면 묻히고 내리면 뜬다. 평탄화한 대지도 보호.
+    protect = [s.footprint_m for s in solids] + [p.ring for p in (pads or [])]
+    out.dem = burn_scarps(out.dem, feats, protect_footprints=protect)
+    out.scarps_geom = scarps_to_geometry(feats, out.dem)
+    n_lev = sum(1 for f in feats if f.kind == "levee")
+    out.counts["scarps"] = len(feats)
+    if n_lev:
+        warnings.append(
+            f"제방 {n_lev}개를 실측 제방고(HEIG)로 심었습니다 — 형상은 표준단면"
+            f"(둑마루폭 3m·사면 1:2)이고 **높이만 실측**입니다."
+        )
 
 
 def _walls(out: SurfaceResult, bbox_4326, bbox_5186, offset, solids, warnings) -> None:

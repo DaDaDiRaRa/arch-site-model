@@ -40,6 +40,9 @@ export interface SiteGeometry {
     triangles: [number, number, number][];
     outlines: [number, number, number][][];
   } | null;
+  // 지형에 심은 단차의 위치선(드레이프). walls=옹벽 상단선, scarps=제방 마루선·절토성토 상단선.
+  walls?: { points: [number, number, number][]; h?: number | null }[] | null;
+  scarps?: { kind: string; points: [number, number, number][]; h?: number | null }[] | null;
   // 도시계획 경계선(지구단위계획·도시계획시설) — 지형 드레이프, 분류(cat)별 색
   planning?: { cat: string; label: string; name: string; line: [number, number, number][] }[] | null;
   ortho_extent_m: [number, number, number, number] | null;
@@ -78,6 +81,8 @@ const C_SIDEWALK = 0xb0aca0; // 콘크리트 베이지그레이 — 보도 (R3)
 const C_LANE = 0xe8c84a; // 노랑 — 차선/중심선 마킹 (R3)
 const C_WATER = 0x3a6ea5; // 강물 블루 — 수계 (평면 수면)
 const C_DECK = 0x787880; // 교량 데크 — 지형이 아니라 공중 구조물(도로보다 밝은 회색)
+const C_WALL = 0x8c5c3c; // 옹벽 상단선 (.3dm walls 레이어와 동일)
+const C_SCARP = 0x967846; // 제방 마루선·절토성토 상단선 (.3dm scarps 레이어와 동일)
 // 도시계획 분류색 — src/geo/planning.py PLANNING_LAYERS 와 동일(.3dm·.dae와 통일)
 const C_PLANNING: Record<string, number> = {
   district_plan: 0xe632b4, plan_road: 0xdc3c28, transport: 0x285ac8, open_space: 0x22a03c,
@@ -105,6 +110,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
     lanes?: THREE.Object3D | null;
     water?: THREE.Object3D | null;
     decks?: THREE.Object3D | null;
+    breaks?: THREE.Object3D | null;
     planning?: THREE.Object3D | null;
     qa?: THREE.Object3D | null;
     buildingMeshes: THREE.Mesh[];
@@ -201,6 +207,8 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
       const lanes = buildLanes(geometry.lanes);
       const water = buildSurfaceMesh(geometry.water, C_WATER, 0);
       const decks = buildSurfaceMesh(geometry.decks, C_DECK, 0);
+      const breaks = buildBreaklines(
+        [...(geometry.walls ?? []), ...(geometry.scarps ?? [])], C_SCARP);
       const qaMarkers = buildQaMarkers(qa, geometry);
       const planning = buildPlanning(geometry.planning);
       if (buildings) root.add(buildings);
@@ -211,6 +219,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
       if (lanes) root.add(lanes);
       if (water) root.add(water);
       if (decks) root.add(decks);
+      if (breaks) root.add(breaks);
       if (qaMarkers) root.add(qaMarkers);
       if (planning) root.add(planning);
 
@@ -220,7 +229,7 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
       // 지형이 없으면 그림자를 받을 바닥면을 깔아 건물 그림자가 보이게 한다.
       if (!terrain && !box.isEmpty()) root.add(shadowGround(box));
 
-      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, water, decks, planning, qa: qaMarkers, buildingMeshes: meshes, edges, sun };
+      sceneRefs.current = { buildings, terrain, cadastral, roads, sidewalks, lanes, water, decks, breaks, planning, qa: qaMarkers, buildingMeshes: meshes, edges, sun };
       if (!box.isEmpty()) {
         fitCamera(camera, controls, box);
         frameSunShadow(sun, box);
@@ -288,6 +297,8 @@ export default function Viewer3D({ geometry, orthoUrl, qa }: Props) {
   useEffect(() => {
     if (sceneRefs.current.buildings) sceneRefs.current.buildings.visible = showBuildings;
     if (sceneRefs.current.terrain) sceneRefs.current.terrain.visible = showTerrain;
+    // 단차선은 지형에 심은 것의 위치 표시 → '지형' 토글을 따른다.
+    if (sceneRefs.current.breaks) sceneRefs.current.breaks.visible = showTerrain;
     if (sceneRefs.current.cadastral) sceneRefs.current.cadastral.visible = showCadastral;
     if (sceneRefs.current.roads) sceneRefs.current.roads.visible = showRoads;
     if (sceneRefs.current.sidewalks) sceneRefs.current.sidewalks.visible = showSidewalks;
@@ -707,6 +718,31 @@ function buildLanes(lanes: Props["geometry"]["lanes"]): THREE.Group | null {
 }
 
 // 도시계획 경계선: 분류색 라인. 드레이프 z에 살짝 더 띄워 지형 위로.
+// 단차선(옹벽·제방·절토성토 상단선) — 지형에 심은 단차가 **어디**인지 보여 주는 선.
+// 지형 표면 자체는 이미 버닝돼 있으므로 이 선은 위치 표시용이다.
+function buildBreaklines(
+  items: { points: [number, number, number][] }[] | null | undefined,
+  color: number,
+): THREE.Group | null {
+  if (!items || !items.length) return null;
+  const g = new THREE.Group();
+  const mat = new THREE.LineBasicMaterial({ color });
+  for (const it of items) {
+    const pts = it.points;
+    if (!pts || pts.length < 2) continue;
+    const pos = new Float32Array(pts.length * 3);
+    for (let i = 0; i < pts.length; i++) {
+      pos[3 * i] = pts[i][0];
+      pos[3 * i + 1] = pts[i][1];
+      pos[3 * i + 2] = pts[i][2] + PLANNING_LIFT;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.add(new THREE.Line(geo, mat));
+  }
+  return g;
+}
+
 function buildPlanning(items: SiteGeometry["planning"]): THREE.Group | null {
   if (!items || !items.length) return null;
   const g = new THREE.Group();

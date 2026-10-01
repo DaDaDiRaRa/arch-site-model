@@ -29,6 +29,7 @@ _MATERIALS = {
     "mat_sidewalk": ("보도", (0.69, 0.67, 0.63)),
     "mat_water": ("수계", (0.23, 0.43, 0.65)),
     "mat_deck": ("교량데크", (0.47, 0.47, 0.50)),
+    "mat_scarp": ("지형단차", (0.59, 0.47, 0.27)),
     "mat_lane": ("차선", (0.91, 0.78, 0.29)),
     "mat_cadastral": ("지적", (0.86, 0.78, 0.39)),
     "mat_wall": ("옹벽", (0.55, 0.36, 0.24)),
@@ -216,6 +217,7 @@ def write_dae(
     cadastral=None,
     drape=None,
     walls=None,
+    scarps=None,
     planning=None,
     ortho_image: str | None = None,
     ortho_extent_m=None,
@@ -290,6 +292,13 @@ def write_dae(
                 m.polyline([(x, y, (drape(x, y) + 0.1) if drape else 0.0) for x, y in ring + ring[:1]])
         if not m.empty():
             groups.append(("n_cadastral", "지적", [m]))
+    if scarps:
+        m = _Mesh("g_scarps", "지형단차", "mat_scarp", kind="lines")
+        for sc in scarps:
+            m.polyline([tuple(p) for p in (sc.get("points") or [])])
+        if not m.empty():
+            groups.append(("n_scarps", "지형단차", [m]))
+
     if walls:
         m = _Mesh("g_walls", "옹벽", "mat_wall", kind="lines")
         for w in walls:

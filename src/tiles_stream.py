@@ -208,6 +208,7 @@ def generate_tile(
     water_mesh = None
     walls_geom = None
     deck_mesh = None
+    scarps_geom = None
     dem = None
     clip_5186 = None
     if layers.get("terrain"):
@@ -252,6 +253,7 @@ def generate_tile(
         terrain_mesh, road_mesh = surf.terrain, surf.road
         sidewalk_mesh, water_mesh, lanes = surf.sidewalk, surf.water, surf.lanes
         walls_geom, deck_mesh = surf.walls_geom, surf.deck
+        scarps_geom = surf.scarps_geom
 
     # 정사영상: 이 타일 영역(지형 겹침 margin 포함)만 풀해상도(zoom 18)로 → 타일 지형에 드레이프.
     ortho = None
@@ -263,7 +265,7 @@ def generate_tile(
     geometry = _build_geometry(
         solids, terrain_mesh, None,
         roads=road_mesh, sidewalks=sidewalk_mesh, lanes=lanes, water=water_mesh,
-        walls=walls_geom, decks=deck_mesh,
+        walls=walls_geom, decks=deck_mesh, scarps=scarps_geom,
     )
     return {
         "ok": True,
