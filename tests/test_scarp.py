@@ -257,3 +257,57 @@ def test_levee_rises_by_height_at_every_sample_including_ends():
     rises = [_at(out, 40.0, y) - _at(dem, 40.0, y) for y in (9.0, 20.0, 40.0, 60.0, 71.0)]
     assert min(rises) > h * 0.8, f"끝부분이 안 올라감: {rises}"
     assert max(rises) < h * 1.2
+
+
+def test_levee_never_raises_more_than_measured_height():
+    """어떤 셀도 **자기 지반 + 실측 제방고**를 넘지 않는다.
+
+    제방고의 정의가 "인접 지반 위 높이"다. 종단 평활(창 30m)은 마루선이 비탈을 오르내리면
+    기준 지반고를 부풀린다 — 실측(충남 r7c26): 제방고 2.0m인데 +4.08m까지 올랐다.
+    """
+    xs = (np.arange(N) + 0.5) * CELL
+    grid = np.tile((50.0 + xs * 0.25).astype(np.float32), (N, 1))   # 25% 급경사
+    dem = DEMPatch(grid=grid, transform=Affine(CELL, 0, 0.0, 0, -CELL, N * CELL),
+                   offset=(0.0, 0.0))
+    h = 2.0
+    # 비탈을 **가로질러** 오르내리는 마루선 — 평활이 기준고를 부풀리기 가장 쉬운 형상
+    diag = ScarpFeature(kind="levee", height_m=h,
+                        top=[(10.0, 10.0), (40.0, 40.0), (70.0, 70.0)])
+    out = burn_scarps(dem, [diag])
+    rise = out.grid.astype(float) - dem.grid.astype(float)
+    assert rise.max() <= h + 0.01, f"실측 제방고를 넘어 올라감: {rise.max():.2f}m"
+    assert rise.max() > h * 0.5                      # 그래도 제대로 서기는 한다
+
+
+def test_slope_change_is_clamped_to_own_ground():
+    """사면은 셀을 자기 지반에서 `SCARP_MAX_DEV_M`보다 멀리 옮기지 않는다.
+
+    사면 조이기는 이미 있는 표고차를 좁은 폭으로 모으는 연산이지 표고를 만드는 연산이
+    아니다(도로 `ROAD_MAX_DEV_M`와 같은 발상). 실측: 없으면 p99 5.06m·최대 10.01m.
+    """
+    from src.geometry.scarp import SCARP_MAX_DEV_M, SCARP_TOL_M
+
+    # 상단 바깥이 급격히 높은 지형 — 클램프가 없으면 스트립이 그 높이로 끌려 올라간다
+    xs = (np.arange(N) + 0.5) * CELL
+    z = np.where(xs < 30.0, 60.0, 20.0).astype(np.float32)
+    dem = DEMPatch(grid=np.tile(z, (N, 1)),
+                   transform=Affine(CELL, 0, 0.0, 0, -CELL, N * CELL), offset=(0.0, 0.0))
+    pair = ScarpFeature(kind="fill", divi="SJD002",
+                        top=[(34.0, 5.0), (34.0, 75.0)], bot=[(46.0, 5.0), (46.0, 75.0)])
+    out = burn_scarps(dem, [pair])
+    d = np.abs(out.grid.astype(float) - dem.grid.astype(float))
+    assert d.max() <= SCARP_MAX_DEV_M - SCARP_TOL_M + 0.01
+
+
+def test_implausibly_steep_pair_is_dropped():
+    """조성 사면이라기엔 너무 급한 짝(낙차/폭 > SCARP_MAX_GRADE)은 버린다."""
+    from src.geometry.scarp import SCARP_MAX_GRADE
+
+    xs = (np.arange(N) + 0.5) * CELL
+    z = np.where(xs < 38.0, 70.0, 20.0).astype(np.float32)       # 50m 절벽
+    dem = DEMPatch(grid=np.tile(z, (N, 1)),
+                   transform=Affine(CELL, 0, 0.0, 0, -CELL, N * CELL), offset=(0.0, 0.0))
+    narrow = ScarpFeature(kind="cut", divi="SJD001",             # 폭 4m에 낙차 50m
+                          top=[(37.0, 5.0), (37.0, 75.0)], bot=[(41.0, 5.0), (41.0, 75.0)])
+    assert SCARP_MAX_GRADE > 0
+    assert np.allclose(burn_scarps(dem, [narrow]).grid, dem.grid)

@@ -37,6 +37,14 @@ SCARP_PROBE_NEAR_M = 1.5     # 자연 사면 쪽 — 멀리 읽으면 경사지�
 SCARP_PROBE_FAR_M = 6.0      # 인공 평탄면 쪽 — 뭉개진 전이부를 넘어가야 한다
 SCARP_TOL_M = 0.3            # 이 안쪽은 손대지 않는다(이미 맞는 곳은 그대로)
 SCARP_MIN_DROP_M = 0.5       # 이보다 낮은 단차는 짝짓기 오류·사면고 0 → 버린다
+# 사면 경사 상한(낙차/폭). 조성 사면은 보통 1:1.5~1:2(=0.5~0.67)이고 암반 절취도 1:0.5(=2.0)를
+# 넘지 않는다. 그보다 급하면 짝짓기 오류이거나 probe가 다른 지형을 읽은 것이다 —
+# 실측(충남 5구역 1,517단면): p50 0.15 · p99 1.47인데 최대 5.48까지 꼬리가 있다.
+SCARP_MAX_GRADE = 2.0
+# 사면이 셀을 자기 지반에서 옮길 수 있는 최대치(m). 사면 조이기는 **이미 있는 표고차를
+# 좁은 폭으로 모으는** 연산이지 표고를 만드는 연산이 아니다. 도로 버닝의 `ROAD_MAX_DEV_M`와
+# 같은 발상의 클램프다 — 실측(충남 6구역): 없으면 p99 5.06m·최대 10.01m까지 움직였다.
+SCARP_MAX_DEV_M = 3.0
 
 # `DIVI` 값 → (상단 probe 거리, 하단 probe 거리). 한쪽은 인공 평탄면, 다른 쪽은 자연 지반이다.
 _PROBE = {
@@ -260,6 +268,12 @@ def _burn_levee(f: ScarpFeature, tg: ZTargets, sample, tf, offset, shape) -> Non
             if d > toe_r:
                 continue
             target = z_crown if d <= half else z_crown - (d - half) / LEVEE_SLOPE_RATIO
+            # **어떤 셀도 자기 지반보다 실측 제방고 이상 올리지 않는다.** 제방고의 정의가
+            # "인접 지반 위 높이"다. 종단 평활(창 30m)은 마루선이 비탈을 따라 오르내리면
+            # 기준 지반고를 부풀린다 — 실측(충남 r7c26): 제방고 2.0m인데 +4.08m까지 올랐다.
+            zc = sample(px, py)
+            if zc is not None:
+                target = min(target, zc + h)
             tg.raise_to(rr, cc, target)
 
 
@@ -289,6 +303,8 @@ def _burn_slope(f: ScarpFeature, tg: ZTargets, sample, tf, offset, shape) -> Non
         zb = sample(q.x + ux * near_b, q.y + uy * near_b)  # 하단 **바깥**(저지대 쪽)
         if zt is None or zb is None or zt - zb < SCARP_MIN_DROP_M:
             continue                      # 뒤집힌 짝·사면고 0 → 버린다(지형을 거꾸로 세우지 않게)
+        if zt - zb > SCARP_MAX_GRADE * L:
+            continue                      # 조성 사면이라기엔 너무 급하다 → 짝·probe 오류
         T.append((x, y)); B.append((q.x, q.y)); ZT.append(zt); ZB.append(zb)
     if not T:
         return
@@ -297,6 +313,13 @@ def _burn_slope(f: ScarpFeature, tg: ZTargets, sample, tf, offset, shape) -> Non
 
     tree = cKDTree(np.asarray(T, dtype=float))
     Lm = [((b[0] - t[0]) ** 2 + (b[1] - t[1]) ** 2) ** 0.5 for t, b in zip(T, B)]
+    # 선 방향(접선) — 셀이 **자기 단면**에만 속하게 하는 데 쓴다.
+    tan = []
+    for i in range(len(T)):
+        a, b = T[max(0, i - 1)], T[min(len(T) - 1, i + 1)]
+        dxt, dyt = b[0] - a[0], b[1] - a[1]
+        nt = (dxt * dxt + dyt * dyt) ** 0.5 or 1.0
+        tan.append((dxt / nt, dyt / nt))
     reach = max(Lm) + max(near_t, near_b)
     for (x, y), L in zip(T, Lm):
         for rr, cc, px, py in _cells_near(tf, offset, rows, cols, x, y, reach):
@@ -304,16 +327,29 @@ def _burn_slope(f: ScarpFeature, tg: ZTargets, sample, tf, offset, shape) -> Non
             tx, ty = T[i]
             bx, by = B[i]
             li = Lm[i] or 1.0
+            # 선 **방향**으로 한 샘플 간격을 넘어서면 그 셀은 다른 단면 소관이다.
+            # 이 띠 제한이 없으면 먼 셀이 엉뚱한 단면의 ruled surface에 끌려와 지형이
+            # 크게 솟는다 — 실측(충남 r7c26): 스트립 폭 4.6~14m인데 +9.77m까지 올랐다.
+            vx, vy = tan[i]
+            if abs((px - tx) * vx + (py - ty) * vy) > SCARP_STEP_M:
+                continue
             ux, uy = (bx - tx) / li, (by - ty) / li
             t = ((px - tx) * ux + (py - ty) * uy) / li     # 0=상단, 1=하단
             if t < 0:
                 if -t * li <= near_t:
-                    tg.raise_to(rr, cc, ZT[i] - SCARP_TOL_M)   # 고지대 쪽은 처지지 않게
+                    zc = sample(px, py)
+                    zz = ZT[i] if zc is None else min(ZT[i], zc + SCARP_MAX_DEV_M)
+                    tg.raise_to(rr, cc, zz - SCARP_TOL_M)      # 고지대 쪽은 처지지 않게
             elif t > 1:
                 if (t - 1) * li <= near_b:
-                    tg.lower_to(rr, cc, ZB[i] + SCARP_TOL_M)   # 저지대 쪽은 뜨지 않게
+                    zc = sample(px, py)
+                    zz = ZB[i] if zc is None else max(ZB[i], zc - SCARP_MAX_DEV_M)
+                    tg.lower_to(rr, cc, zz + SCARP_TOL_M)      # 저지대 쪽은 뜨지 않게
             else:
                 z = ZT[i] + (ZB[i] - ZT[i]) * t
+                zc = sample(px, py)
+                if zc is not None:        # 자기 지반에서 너무 멀리 끌고 가지 않는다
+                    z = min(max(z, zc - SCARP_MAX_DEV_M), zc + SCARP_MAX_DEV_M)
                 tg.raise_to(rr, cc, z - SCARP_TOL_M)
                 tg.lower_to(rr, cc, z + SCARP_TOL_M)
 
