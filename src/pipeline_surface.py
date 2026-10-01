@@ -193,7 +193,12 @@ def _scarps(out: SurfaceResult, bbox_4326, bbox_5186, offset, solids, pads, warn
         [config.scarp_file_path(s["file"]) for s in sl], bbox_5186, offset
     )
     if not feats:
-        warnings.append("반경 내 제방·절토성토면 없음 (C0050000/F0030000).")
+        # manifest엔 타일이 있는데 피처가 0이면 "없는" 게 아니라 **파일을 못 읽은** 것이다
+        # (GeoJSON은 gitignore라 배포 이미지에 없다 → SCARP_BASE로 GCS를 가리켜야 한다).
+        warnings.append(
+            f"지형 단차 타일 {len(sl)}개를 못 읽었습니다 — SCARP_BASE 설정(GCS 서빙) 확인 "
+            "필요. 데이터가 정말 없으면 반경 내 제방·절토성토면이 없는 것입니다."
+        )
         return
     # 건물은 이미 지면에 앉아 있다 — 지반을 올리면 묻히고 내리면 뜬다. 평탄화한 대지도 보호.
     protect = [s.footprint_m for s in solids] + [p.ring for p in (pads or [])]
