@@ -9,7 +9,9 @@
 
 > 완료하면 해당 줄을 삭제한다(항상 "남은 일"만 남게 유지). 완료 기능 상세는 아래 "구현 단계 현황"·모듈 구조 참조.
 
-- [ ] **전국 5m DEM 확장**: 6개 광역단체(대전·서울·부산·대구·울산·세종 120타일) GCS 라이브. 건물·지적은
+- [ ] **전국 5m DEM 확장**: DEM은 **17개 시도 1,593타일**로 사실상 전국 완료(실측 2026-10-01).
+      도로·옹벽·수계도 16개 시도 각 2만여 타일. ⚠️ **대전광역시 도로만 옛 단일 타일 1개**(반경이
+      금방 밖으로 나간다 — 재베이크 필요). 건물·지적은
       VWorld 실시간이라 이미 전국이고 남은 건 지형(DEM)·도로·수계뿐. **2026-08-27 소스 경로 전환: 도엽별
       수치지도(1:5,000) → 연속수치지형도 [도 영역]**. 국토정보플랫폼에서 시도 하나를 한 번에 받는다(경기도
       = 도엽 약 1,570개 → 파일 1세트, 1.8GB). 품질 실측 동급(도엽별과 상관 0.999, RMS 1.5m). 받을 때
@@ -38,11 +40,14 @@
       보관: `ctnu_도영역\전라남도\_복구_등고선\` + 같은 폴더 `_읽어보기.txt`.
       **없는 것: 표고점(F0020000)·도로(A00*)·수계(E0*)** → DEM은 굽되 **봉우리가 평면**이 될 수 있고
       도로·수계는 불가. 채우려면 포털에서 **[시군구 영역]으로 전남 22개 시군**을 받으면 된다(도 영역만 결함).
-- [ ] **절토/성토면(F0030000) 지형 반영(옹벽 후속)**: 옹벽(F0040000)은 반영 완료(아래 참조).
-      남은 건 `F0030000` **절토/성토면**(구분 절토/성토 · 상하구분 상단/하단, 경기도 83,362개)인데
-      **높이 속성이 없다** — 상단선·하단선 두 줄 사이의 사면이라 높이는 DEM에서 읽어야 한다.
-      옹벽처럼 "선+실측높이"로 바로 심을 수 없어 상단/하단 짝짓기가 선행돼야 한다.
-      `scripts/extract_layers.py`의 WANTED에 F0030000을 추가하면 소스는 바로 확보된다.
+- [ ] **교량·단차 레이어 전국 베이크(반복 작업)**: 교량 데크(`deck_bake`)와 지형 단차
+      (`scarp_bake`)는 구현·실측 검증 완료인데 **충청남도만** 구워져 있다(데크 2,047타일 /
+      단차 2,146타일). 나머지 15개 시도는 `extract_layers` → `deck_bake`·`scarp_bake` →
+      GCS 업로드 → manifest 커밋을 반복하면 된다(DEM·도로와 같은 루프, `docs/shp_bake_plan.md`
+      §4c·§4d). **교량은 레이어 없이도 동작한다** — `DECK_SOURCE="auto"`가 수계 프록시
+      (도로 ∩ 수계)와 합집합으로 쓰므로 물 횡단은 전국이 이미 커버된다. 레이어가 추가하는 건
+      물 없는 교량·터널이다. 단차(제방·절토성토면)는 레이어가 **있어야만** 동작한다.
+      ⚠️ 서빙 env는 `DECK_BASE`/`SCARP_BASE`(`docs/deploy.md`) — 아직 Cloud Run에 미설정.
 - [ ] **NGII 공개제한 DEM 기관 신청 검토(병행)**: 공간정보 안심구역(datafreezone.or.kr, 02-844-4206)이
       **도심지 1m·전국 5m DEM** 보유. 절차 확정(2026-08-25): 온라인 신청(**연구과제 계획서**+보안서약서+
       반입자료, 최대 25일) → 심의 → **센터 현장방문 분석** → 반출신청·재심의 → 승인 파일만 30일 내 다운로드.
@@ -73,10 +78,12 @@
       `docs/deploy.md` §5, [[road-tiling-metro-serving]]. 입체 데크(고가/
       교량 A0070000/A0090000/A0110020)는 DSM 블로커 — `구분` 필드로 분류만 됨(고가=T0 휴리스틱, 지하/터널=
       생략, 복층=QA 플래그). 상세 `docs/road_surface_plan.md`.
-- [ ] **DEM/DSM 이원화(고가/교량 데크 실측) — 블로커**: 지면=DEM, 공중 구조물=DSM 원리는 유효하나
-      고해상도 DSM 민간 취득 불가(2026-07-08 확정: NGII 라이다=공문/기관 한정, 지자체 DSM=₩10M+"민간
-      제공 불가", 무료 글로벌=30m라 데크·건물에 무용). 기관 접근/데이터 협약 생기면 승격(정사영상·setback과
-      같은 블로커 대기). 상세 `docs/dem_dsm_strategy.md`, [[dsm-acquisition-blocker]].
+- [ ] **고가차도(viaduct) 데크 — 남은 DSM 블로커**: **교량·터널은 DSM 없이 해결됐다**
+      (2026-10-01) — 양단 아붓먼트 실측 표고를 호장 선형으로 이어 데크를 띄운다(`geometry/deck.py`).
+      남은 건 **고가차도**다: `A0090000`의 `HEIG`는 통과높이이고 고가차도는 빈값이며, 아붓먼트가
+      지면이라 2점 보간이 물리적으로 틀리다 → 데이터만 실어 두고 **비활성**. 고해상도 DSM 민간
+      취득 불가(2026-07-08 확정: NGII 라이다=공문/기관 한정, 지자체 DSM=₩10M+"민간 제공 불가",
+      무료 글로벌=30m). 기관 접근 생기면 승격. 상세 `docs/dem_dsm_strategy.md`, [[dsm-acquisition-blocker]].
 - [ ] **Phase B — SketchUp 확장(.rbz)**: B1(지형+건물)·대반경 타일 순차조립·지형 LOD·**B2 정사영상
       드레이프**(단일+타일 경로 모두, `Face#position_material` 위→아래 평면투영·양면) 모두 **코드 완성·테스트
       통과**(pytest green — ortho/pipeline/tiles_stream 등 전체 325, UV 정합 손검증 완료, .rbz 최신 재빌드). 남은 건
@@ -212,6 +219,9 @@ src/
   server.py              FastMCP 서버 진입점 (MCP 도구 4개 등록, Claude 연동)
   api.py                 FastAPI 백엔드 (배포용 HTTP API — /api/generate(주소+반경 또는 **지도 영역 bbox_4326**, 한 변 20m~4km), /api/geocode(주소→좌표), /api/basemap/{base|satellite|hybrid}/z/x/y(VWorld 배경지도 **서버 중계** — 키 비노출), /api/tile_plan+/api/generate_tile(대반경 타일 순차조립), 파일 다운로드(3dm·ortho·**package** zip, JOBS_GCS_BUCKET로 인스턴스 간 공유), frontend/dist 서빙)
   pipeline.py            generate_site_model 파이프라인
+  pipeline_surface.py    **버닝 시퀀스의 단일 출처** — build_surface(단차→도로→데크→옹벽→수계→통합삼각화).
+                         단발(pipeline)과 타일(tiles_stream)이 같은 함수를 쓴다. 예전엔 각자 구현해
+                         타일 경로가 burn_walls·burn_pads를 아예 안 불렀다(같은 주소가 모드에 따라 다른 지형)
   tiles.py               generate_site_tiles — 대량건물 타일분할 .skp 코드 (백로그5)
   tiles_stream.py        tile_plan + generate_tile — SketchUp 확장 대반경(1~2km) 순차조립용 타일별 geometry JSON (계획→타일별 fetch, centroid 중복제거, 타일별 정사영상·도로/보도/차선 통합표면)
   site_check.py          check_site_data 핵심 로직
@@ -233,6 +243,13 @@ src/
     terrain_mesh.py      DEMPatch → TerrainMesh (TIN 삼각망, Phase 3B). grid_to_tin(균일) + adaptive_tin(오차 한계 적응형, scipy greedy insertion) + adaptive_select/pixel_to_local_m(통합표면용 분리) + build_tin(디스패처, config.TERRAIN_MAX_ERROR_M)
     pad.py               조성 대지 평탄화(추정) — detect_pads(지목·건물·고저차 규칙)·burn_pads(필지 안 DEM을 pad_z로). 건물 앉히기 **전에** 적용(pipeline §6a). 경계 옹벽 버닝 재사용은 같은 셀 반복 하강으로 지형이 더 파여 폐기(2026-09-28)
     seating.py           BuildingSolid + DEMPatch → base_z 앉힘 (Phase 3B)
+    deck.py              교량 데크 — 지형은 강·골짜기 그대로 두고 데크만 DEM 위로 띄운다. clip_decks(실측
+                         레이어)·decks_from_water(수계 프록시, 재베이크 0)·solve_decks(양단 아붓먼트 실측
+                         표고를 호장 선형 보간 + 경간·직진성·수면여유고 가드)·split_centerlines(강 중간
+                         중심선 샘플 제거 — IDW가 아붓먼트를 끌어내림). 터널은 hidden으로 노면 생략
+    scarp.py             지형 단차 — 제방(실측 HEIG로 마루 올리기만)·절토성토면(두 경계선 사이를 조여
+                         단차 폭 선명화, 표고는 선 바깥 실측 지반에서). ZTargets(하한 fmax/상한 fmin)에
+                         목표만 모아 한 번 적용 → 피처 순서·중복 무관(pad 누적 하강 재발 불가)
     cadastral.py         LP_PA_CBND_BUBUN features → CadastralParcel (Phase 5)
     road.py              도로/보도 런타임 (Phase R). clip_roads/clip_sidewalks/clip_centerlines/clip_lane_markings(GeoJSON→로컬미터, json+shapely — _load_features로 단일 경로 또는 겹치는 타일 리스트 병합 수용, 메트로 타일 서빙) + burn_roads(도로를 DEM에 소각: footprint 절토/성토·스커트·IDW교차블렌딩·자기지면 클램프) + build_unified_surface(★지형·도로·보도를 1번 Delaunay로 삼각화→재질별 3메시, 정점공유로 이음매0. 보도우선(도로겹침 컬링 방지)·경계 edge_cell 샤프닝) + clip_lane_markings(중심선 props 차로수·도로폭→평행 차선 구분선, offset_curve, 구분선은 _dash_line 점선·중앙선 실선)/drape_centerlines(차선 드레이프) + _read_geojson_text(로컬/HTTP fetch+캐시 — 클라우드 도로 서빙) + apply_crown + build_road_mesh/carve_terrain/build_terrain_conformed(폴백·구버전)
     wall.py              옹벽 런타임. clip_walls(선+높이 → 로컬미터) + burn_walls(★DEM에 **수직 단차** 심기 — 선 양옆 DEM으로 위/아래 판정, 좁은 복도 안에서 윗면은 상단표고로/아랫면은 상단-높이로 클램프. 파라미터는 격자 해상도에 맞춰 스케일. **건물 발자국은 보호**(건물은 버닝 전 지면에 앉으므로 부유 방지)) + walls_to_geometry(뷰어·.3dm용 드레이프 선)
@@ -245,6 +262,10 @@ src/
     store.py             manifest.json/road_manifest.json 조회 (find_tiles/find_road_files(겹치는 도로 타일 전부)/find_road_file(대표 1개)/find_water_file)
     contour_bake.py      수치지형도 등고선 SHP → DEM(.tif) 오프라인 굽기 (Phase 3A) + bake_tiled(대용량 지역 타일 배치) + 좌표대 재투영(5187→5186)·도엽 중복제거·거리제한 채움(fill_dist_m) + method: clough(기본)/linear/solver(라플라스 조화 격자 솔버 _grid_relax — 계단 완전제거, opt-in)
     road_bake.py         수치지도 A0010000 도로경계·A0020000 중심선(+실측 `도로폭`·`차로수`, 연속수치지형도는 영문 `RVWD`/`RDLN`/`RDDV` 별칭)·A0033320 보도 SHP → 지역 GeoJSON(EPSG:5186) 오프라인 굽기 (Phase R) + road_manifest.json 갱신 (contour_bake 헬퍼 재사용) + synthesize_gap_roads(경계 폴리곤 없는 도로를 실측 도로폭으로 버퍼해 노면 합성 {"syn":1}, --no-fill-gaps로 끔) + 중심선 props에 도로폭/차로수 담음(다차선 마킹용) + bake_roads_tiled(--tile-km: 메트로용 2km 하드클립 타일링, STRtree 후보추출+타일박스 교집합, 갭채움 union은 타일 내부로 한정 → 단일파일 311MB/요청당 3분+ 회피, 서울 247타일; `--stream`이면 타일마다 그 영역만 읽어 도 단위 소스도 메모리 고정, 산출 동일)
+    deck_bake.py         교량 A0070000·지하/고가차도 A0090000·터널 A0110020 **면** → 데크 GeoJSON 타일.
+                         ⚠️ 하드클립 금지(양 끝이 종단 z를 정의) → 닿는 타일마다 통째로 복제 + 전역 id
+    scarp_bake.py        제방 C0050000(HEIG 있는 상단선만)·절토성토면 F0030000(상단·하단 평행 스트립
+                         짝짓기, 최근접 거리 쓰면 안 됨 — 양 끝에서 맞닿아 늘 0m) → 단차 GeoJSON 타일
     wall_bake.py         수치지형도 옹벽(F0040000, 상단선+실측높이) SHP → 지역 GeoJSON 타일 굽기 + wall_manifest.json (도로/수계와 동형, --tile-km 2)
     water_bake.py        수치지도 E계열 수계 면(N3A_E0* 하천경계·호소) SHP → 지역 GeoJSON(EPSG:5186) 오프라인 굽기 + water_manifest.json 갱신 (road_bake 동형)
     dem.py               DEM 타일 클립 + 표고 보간 (Phase 3B) + clip_dem_mosaic(다중 타일 rasterio.merge 병합)
@@ -323,6 +344,8 @@ tests/                   pytest 단위 테스트 (API 호출은 mock; test_api.p
 | `{"buildings": true, "cadastral": true}` | 건물 + 대지 경계 폴리곤 (Phase 5) |
 | `{"buildings": true, "terrain": true, "roads": true}` | 지형 + 도로 노면(A0010000 DEM 드레이프 메시, Phase R). 도로는 `road_manifest.json`/GeoJSON 비축 필요 — 없으면 조용히 생략+warnings |
 | `{"buildings": true, "terrain": true, "walls": true}` | 지형 + **옹벽 단차**(F0040000 상단선의 실측 높이로 DEM에 수직 단차). 등고선만으로는 옹벽 자리가 완만한 비탈로 뭉개진다 — 실측(성남 태평동) 12m 구간 표고차 1.22m → 2.34m. `wall_manifest.json`/GeoJSON 비축 + 지형 필요. 건물 아래 지면은 건드리지 않음 |
+| `{..., "roads": true}` (자동) | **교량 데크** — 도로가 강 아래로 잠기는 것을 막는다. 지형은 강·골짜기 그대로 두고 데크만 DEM 위로 띄운다(양단 아붓먼트 실측 표고를 호장 선형 보간). `config.DECK_SOURCE="auto"`가 실측 데크 레이어(`deck_manifest.json`)와 수계 프록시(도로 ∩ 수계)를 **합집합**으로 쓰므로 레이어 비축이 없어도 물 횡단은 동작한다. 실측: 수면 근처 도로 정점 중 수면 아래가 4,779 → **254(-95%)**. `geometry.decks`·`stats.decks`. 터널·지하차도는 그 구간 노면 생략 + 지형 불변 |
+| `{"buildings": true, "terrain": true, "scarps": true}` | **제방 + 절토/성토면**. 제방은 실측 제방고(`HEIG`)로 마루를 **올리고**(형상만 표준단면: 둑마루폭 3m·사면 1:2, 실측 도면 2.00m → 마루 상승 1.83m), 절토/성토면은 두 경계선 사이를 조여 **뭉개진 단차 폭을 선명하게** 한다(표고는 선 바깥 실측 지반에서 → 추정 0). `scarp_manifest.json` 비축 + 지형 필요. 건물 발자국·평탄화 대지는 보호 |
 | `{"buildings": true, "terrain": true, "water": true}` | 지형 + 수계(E계열 하천·호소 → 표고고정 평면 수면 + 지형 물 아래로 버닝). `water_manifest.json`/GeoJSON 비축 필요, 지형(DEM) 필요 — 없으면 조용히 생략+warnings |
 | `{..., "qa": true}` | 자동 QA(검증) 실행 → `result.qa = {findings, summary}` (건물 앉힘·겹침·지형 스파이크). 다른 레이어와 무관하게 켤 수 있음. 웹 UI가 결함 목록 표시 |
 | `{"buildings": true, "terrain": true, "orthophoto": true}` | 지형에 정사영상 텍스처 (.3dm=Rhino 텍스처 / .skp=데스크톱 확장 B2 드레이프) |
@@ -459,9 +482,19 @@ python -m src.terrain.contour_bake <shp_dir> `
 (각 폴더에 `N3L_F0010000.shp` 등고선 + `N3P_F0020000.shp` 표고점). `<shp_dir>`로 상위 "새 폴더"를
 주면 rglob으로 양 도엽을 함께 읽는다(`--sheets`는 manifest 메타용일 뿐 필터 아님).
 
-**현재 비축 (6개 광역단체):** 대전·서울·부산·대구·울산·세종 = **120타일**(대전14·서울15·부산24·
-대구36·울산20·세종11). 10km 격자·5m·EPSG:5186·method=clough guard 3m·거리제한 채움 fill_dist 200m.
-부산·대구·울산은 동부원점(5187) 원본을 5186으로 재투영. **git 미추적**(`geo_store/*.tif` gitignore)
+**현재 비축 (2026-10-01 실측, `geo_store/*manifest*.json`):**
+
+| 레이어 | 타일 | 커버리지 |
+|---|---|---|
+| DEM | **1,593** | 17개 시도 — 사실상 전국 |
+| 도로(`road_manifest`) | 23,217 | 16개 시도. ⚠️ **대전광역시는 옛 단일 타일 1개뿐**(서구 일부만) |
+| 옹벽(`wall_manifest`) | 21,504 | 16개 시도 |
+| 수계(`water_manifest`) | 21,617 | 16개 시도 |
+| 교량·터널(`deck_manifest`) | 2,047 | **충청남도만** |
+| 지형 단차(`scarp_manifest`) | 2,146 | **충청남도만** |
+
+10km 격자·5m·EPSG:5186·method=clough guard 3m·거리제한 채움 fill_dist 200m.
+동부원점(5187)·연속본(5179) 원본은 읽을 때 5186으로 재투영. **git 미추적**(`geo_store/*.tif` gitignore)
 → 공개 GCS `gs://arch-site-model-dem/dem/`에 COG로 서빙(`/vsicurl`), `manifest.json`만 git 추적.
 지역 추가는 폴더 경로 → `bake_tiled`(재투영·중복제거·거리채움 자동) → `dem_to_cog` → 업로드 → manifest 커밋.
 
