@@ -739,6 +739,41 @@ def _polygon_sample_points(rings, cell: float, edge_cell: float | None = None):
     return list(pts)
 
 
+# 데크 가장자리와 지면의 수직 간격이 이보다 작으면 측면을 세우지 않는다 — 아붓먼트에서
+# 데크가 도로와 만나는 이음매는 간격이 0이고, 거기에 면을 세우면 종잇장이 생긴다.
+DECK_FASCIA_MIN_M = 0.3
+
+
+def _add_fascia(deck_t, P, Zd, Z, verts, tris) -> None:
+    """데크 **경계 변**마다 지면까지 수직 면(교량 측면)을 세운다.
+
+    데크는 지형과 정점을 공유하지 않으므로(같은 x,y에 노면 z와 지면 z가 따로 있다) 옆에서
+    보면 데크와 강바닥 사이가 뚫려 보인다. 그 간격이 곧 교량 측면이므로 면으로 닫는다.
+    높이를 지어내지 않는다 — 위는 데크 종단 z, 아래는 그 자리 지면 z다.
+    """
+    from collections import Counter
+
+    cnt: Counter = Counter()
+    for a, b, c in deck_t:
+        for u, w in ((a, b), (b, c), (c, a)):
+            cnt[(u, w) if u < w else (w, u)] += 1
+    base = len(verts)
+    for (i, j), n in cnt.items():
+        if n != 1:                      # 삼각형 둘에 속하면 내부 변
+            continue
+        zt_i, zt_j = float(Zd[i]), float(Zd[j])
+        zg_i, zg_j = float(Z[i]), float(Z[j])
+        if (zt_i - zg_i) < DECK_FASCIA_MIN_M and (zt_j - zg_j) < DECK_FASCIA_MIN_M:
+            continue                    # 아붓먼트 이음매 — 간격 없음
+        xi, yi = float(P[i, 0]), float(P[i, 1])
+        xj, yj = float(P[j, 0]), float(P[j, 1])
+        verts.extend([(xi, yi, zt_i), (xj, yj, zt_j),
+                      (xj, yj, min(zg_j, zt_j)), (xi, yi, min(zg_i, zt_i))])
+        tris.append((base, base + 1, base + 2))
+        tris.append((base, base + 2, base + 3))
+        base += 4
+
+
 @dataclass
 class UnifiedSurface:
     """통합 삼각화 산출물. 튜플 대신 이름으로 — 재질 클래스가 늘어도 호출부가 안 깨진다."""
@@ -921,6 +956,7 @@ def build_unified_surface(
     deck_mesh = None
     if len(deck_t):
         verts, tris = _split(deck_t, 1.0, Zd)
+        _add_fascia(deck_t, P, Zd, Z, verts, tris)
         deck_mesh = RoadMesh(
             vertices=verts, triangles=tris,
             outlines=[[(x, y, z) for (x, y), z in zip(p.xy, p.z)]

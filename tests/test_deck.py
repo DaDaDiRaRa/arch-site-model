@@ -206,12 +206,24 @@ def _unified(decks):
                                  decks=surf if decks else None)
 
 
+def _top_z(mesh):
+    """같은 (x,y)에 윗면(노면)과 아랫면(측면 밑동)이 함께 있으므로 **윗면만** 뽑는다."""
+    top: dict = {}
+    for x, y, z in mesh.vertices:
+        k = (round(x, 2), round(y, 2))
+        top[k] = max(top.get(k, -1e9), z)
+    return list(top.values())
+
+
 def test_deck_mesh_is_above_water_and_separate():
-    """데크가 별도 메시로 나오고 수면 위에 있다 — 정점을 지형과 공유하지 않는다."""
+    """데크 **노면**이 수면 위에 있다 — 정점을 지형과 공유하지 않는다.
+
+    (측면(fascia)은 지면까지 내려가므로 전체 정점의 최저값으로 재면 안 된다.)
+    """
     u = _unified(True)
     assert u.deck is not None and u.deck.triangles
-    dz = [z for _x, _y, z in u.deck.vertices]
-    assert min(dz) > WATER_Z                      # 데크 전체가 수면 위
+    dz = _top_z(u.deck)
+    assert min(dz) > WATER_Z                      # 노면 전체가 수면 위
     assert max(dz) - min(dz) < 1.0                # 수평 데크(양안 같은 높이)
     # 지형은 여전히 골짜기 — 데크 높이로 솟지 않았다.
     tz = [z / M2I for _x, _y, z in u.terrain.vertices]
@@ -221,8 +233,8 @@ def test_deck_mesh_is_above_water_and_separate():
 def test_deck_is_flat_despite_crown():
     """크라운(횡단구배)은 데크에 적용되지 않는다 — 데크 z는 종단에서 온다."""
     a = _unified(True).deck
-    zs = sorted({round(z, 3) for _x, _y, z in a.vertices})
-    assert len(zs) <= 3                            # 사실상 한 평면
+    zs = sorted({round(z, 3) for z in _top_z(a)})
+    assert len(zs) <= 3                            # 노면은 사실상 한 평면
 
 
 def test_without_decks_road_sinks_into_river():
@@ -231,3 +243,22 @@ def test_without_decks_road_sinks_into_river():
     assert u.deck is None
     mid = [z for x, _y, z in u.road.vertices if RIVER_X0 + 10 < x < RIVER_X1 - 10]
     assert mid and min(mid) < WATER_Z
+
+
+def test_deck_has_side_faces_down_to_terrain():
+    """데크 가장자리에서 지면까지 수직 면(교량 측면)이 선다.
+
+    데크는 지형과 정점을 공유하지 않으므로(같은 x,y에 노면 z와 지면 z가 따로) 측면을 안
+    닫으면 옆에서 봤을 때 데크와 강바닥 사이가 뚫려 보인다.
+    """
+    from src.geometry.road import DECK_FASCIA_MIN_M
+
+    u = _unified(True)
+    zs = [z for _x, _y, z in u.deck.vertices]
+    top = _top_z(u.deck)
+    # 노면보다 한참 아래까지 내려간 정점이 있어야 한다(= 측면 밑동)
+    assert min(zs) < min(top) - DECK_FASCIA_MIN_M
+    # 측면 밑동은 그 자리 지형 높이다 — 강바닥(0)까지 내려간다
+    assert min(zs) < 1.0
+    # 그래도 노면 자체는 수면 위에 그대로 있다
+    assert min(top) > WATER_Z
